@@ -1,0 +1,61 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# pil2's chained linear hash — the Merkle leaf hasher (NOT a zorch Sponge).
+py_library(
+    name = "linear_hash",
+    srcs = [
+        "__init__.py",
+        "linear_hash.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@zorch//zorch/hash/poseidon2",
+        requirement("jax"),
+    ],
+)
+
+# Stage-1 trace commit: coset-7 LDE + linear-hash leaves + k-ary Poseidon2 tree.
+py_library(
+    name = "trace_commit",
+    srcs = ["trace_commit.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":linear_hash",
+        "//zisk_zorch/poseidon2:goldilocks",
+        "@zorch//zorch/coding:reed_solomon",
+        "@zorch//zorch/commit:merkle",
+        "@zorch//zorch/hash:compression",
+        requirement("jax"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "linear_hash_test",
+    size = "medium",
+    srcs = ["linear_hash_test.py"],
+    data = glob(["testdata/golden/linear_hash.json"]),
+    deps = [
+        ":linear_hash",
+        "//zisk_zorch:golden",
+        "//zisk_zorch/poseidon2:goldilocks",
+        requirement("absl_py"),
+    ],
+)
+
+py_test(
+    name = "trace_commit_test",
+    size = "large",
+    srcs = ["trace_commit_test.py"],
+    data = glob([
+        "testdata/golden/lde.json",
+        "testdata/golden/merkle_root.json",
+        "testdata/golden/stage1_commit.json",
+    ]),
+    deps = [
+        ":trace_commit",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+    ],
+)

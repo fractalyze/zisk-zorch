@@ -1,0 +1,30 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# pil2-stark's concrete Poseidon2-Goldilocks instances over zorch's agnostic
+# engine.
+py_library(
+    name = "goldilocks",
+    srcs = [
+        "__init__.py",
+        "goldilocks.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@zorch//zorch/hash/poseidon2",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "goldilocks_test",
+    size = "medium",
+    srcs = ["goldilocks_test.py"],
+    data = glob(["testdata/golden/**"]),
+    deps = [
+        ":goldilocks",
+        requirement("absl_py"),
+    ],
+)

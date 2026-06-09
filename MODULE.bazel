@@ -1,0 +1,49 @@
+"""zisk-zorch — a lean ZisK prover built on zorch's scheme-agnostic blocks.
+
+bzlmod module. bazel 9 dropped WORKSPACE, so dependencies and the hermetic
+Python toolchain are declared here.
+
+zisk-zorch consumes fractalyze/zorch (hashing + Merkle commitment + the rest
+of the SNARK spine) and adds ONLY the ZisK-specific glue: pil2-stark's
+Poseidon2-Goldilocks parameters, the pil2 transcript / linear-hash
+conventions, and the byte-match against the pil2-proofman reference prover.
+Nothing ZisK-specific belongs in zorch — it lives here.
+"""
+
+module(
+    name = "zisk_zorch",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_python", version = "1.7.0")
+
+# zorch is not published on a Bazel registry; pin it from GitHub so CI builds
+# are reproducible. For local dev against a working copy, add to .bazelrc.user
+# (gitignored):
+#   common --override_module=zorch=/abs/path/to/your/zorch/checkout
+bazel_dep(name = "zorch", version = "0.0.0")
+git_override(
+    module_name = "zorch",
+    remote = "https://github.com/fractalyze/zorch.git",
+    # main @ transcript PoW grind. The trace-commit slice additionally needs
+    # the k-ary MerkleTree (arity follows the compressor; pil2-stark commits
+    # with arity 2/3/4) — bump this pin once fractalyze/zorch's k-ary commit
+    # lands on main.
+    commit = "b2a15826abc5036517415a8dd8b5ffc700dee75f",
+)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.11",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    # jax / jaxlib / zkx-cuda-pjrt are published on the Fractalyze index.
+    extra_pip_args = ["--extra-index-url=https://fractalyze.github.io/pypi/simple/"],
+    hub_name = "zisk_zorch_pip",
+    python_version = "3.11",
+    requirements_lock = "//:requirements_lock_3_11.txt",
+)
+use_repo(pip, "zisk_zorch_pip")

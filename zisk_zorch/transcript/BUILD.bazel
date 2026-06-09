@@ -1,0 +1,31 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# pil2's Fiat-Shamir transcript — pending/out buffer discipline, host-driven.
+py_library(
+    name = "transcript",
+    srcs = [
+        "__init__.py",
+        "transcript.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//zisk_zorch/poseidon2:goldilocks",
+        "@zorch//zorch/hash/poseidon2",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "transcript_test",
+    size = "medium",
+    srcs = ["transcript_test.py"],
+    data = glob(["testdata/golden/**"]),
+    deps = [
+        ":transcript",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+    ],
+)
