@@ -9,7 +9,7 @@
 //! numbers cannot carry 64-bit values exactly.
 
 use fields::{
-    intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon2_hash, Field, Goldilocks,
+    intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon2_hash, verify_mt, Field, Goldilocks,
     PrimeField64, Poseidon12, Poseidon16, Poseidon2Constants, Poseidon4, Poseidon8, Transcript,
 };
 use serde_json::{json, Value};
@@ -130,6 +130,115 @@ fn merkle_cases(seed: u64) -> Value {
                 "rows": flat,
                 "root": ser(&root),
             }));
+        }
+    }
+    json!({"cases": out})
+}
+
+/// One query-phase case: rebuild the padded digest levels (the shape
+/// `partial_merkle_tree`'s cursor stores), extract each query's sibling path
+/// in `MerkleTreeGL::genMerkleProof` order — per level the (arity-1) group
+/// digests with the node's own slot skipped — and emit the flat
+/// `getGroupProof` array [row..., mp levels...].
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.15.0/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
+///
+/// Self-checked twice against the reference: the rebuilt root must equal
+/// `partial_merkle_tree`, and every extracted path must pass `verify_mt`.
+fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
+    rows: &[Vec<Goldilocks>],
+    arity: u64,
+) -> Value {
+    let height = rows.len() as u64;
+    let n_cols = rows[0].len() as u64;
+
+    // Leaf digests, then fold; each stored level is zero-padded to a multiple
+    // of the arity so boundary openings read their zero siblings like any node.
+    let mut levels: Vec<Vec<Goldilocks>> = Vec::new();
+    let mut level: Vec<Goldilocks> = rows
+        .iter()
+        .flat_map(|row| linear_hash_seq::<Goldilocks, C, W>(row)[..4].to_vec())
+        .collect();
+    while level.len() > 4 {
+        while (level.len() / 4) % arity as usize != 0 {
+            level.extend_from_slice(&[Goldilocks::ZERO; 4]);
+        }
+        levels.push(level.clone());
+        let mut next = Vec::with_capacity(level.len() / arity as usize);
+        for group in level.chunks(W) {
+            let mut input = [Goldilocks::ZERO; W];
+            input.copy_from_slice(group);
+            next.extend_from_slice(&poseidon2_hash::<Goldilocks, C, W>(&input)[..4]);
+        }
+        level = next;
+    }
+    levels.push(level);
+
+    let root = levels.last().unwrap()[..4].to_vec();
+    let ref_root = partial_merkle_tree::<Goldilocks, C, W>(
+        &levels[0][..(height * 4) as usize],
+        height,
+        arity,
+    );
+    assert_eq!(root, ref_root, "level fold diverged from partial_merkle_tree");
+
+    let mut indices = vec![0, height / 2, height - 1];
+    indices.dedup();
+    let mut queries = Vec::new();
+    for &index in &indices {
+        let mut mp: Vec<Vec<Goldilocks>> = Vec::new();
+        let mut idx = index;
+        for lvl in &levels[..levels.len() - 1] {
+            let pos = idx % arity;
+            let group = (idx - pos) as usize;
+            let mut siblings = Vec::new();
+            for i in 0..arity as usize {
+                if i as u64 == pos {
+                    continue;
+                }
+                siblings.extend_from_slice(&lvl[(group + i) * 4..(group + i + 1) * 4]);
+            }
+            mp.push(siblings);
+            idx /= arity;
+        }
+        assert!(
+            verify_mt::<Goldilocks, C, W>(&root, &[], &mp, index, &rows[index as usize], arity, 0),
+            "verify_mt rejected the extracted path (arity {arity}, height {height}, index {index})"
+        );
+        let mut proof = rows[index as usize].clone();
+        for siblings in &mp {
+            proof.extend_from_slice(siblings);
+        }
+        queries.push(json!({"index": index, "proof": ser(&proof)}));
+    }
+
+    json!({
+        "arity": arity,
+        "height": height,
+        "n_cols": n_cols,
+        "rows": rows.iter().flat_map(|r| ser(r)).collect::<Vec<_>>(),
+        "root": ser(&root),
+        "queries": queries,
+    })
+}
+
+fn merkle_proof_cases(seed: u64) -> Value {
+    // Heights hit every proof regime: 1 (empty path), 2 (single level), 6/8
+    // (leaf-level padding for arity 4 / 3), 32 (interior padding: arity 4
+    // leaves a 2-node top level). Indices probe both group boundaries.
+    let heights = [1u64, 2, 6, 8, 32];
+    let n_cols = 9u64; // > one rate block for width 8 — exercises leaf chaining
+    let mut out = Vec::new();
+    for &arity in &[2u64, 3, 4] {
+        let mut state = seed ^ arity;
+        for &height in &heights {
+            let rows: Vec<Vec<Goldilocks>> =
+                (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
+            out.push(match arity {
+                2 => merkle_proof_case::<8, Poseidon8>(&rows, arity),
+                3 => merkle_proof_case::<12, Poseidon12>(&rows, arity),
+                4 => merkle_proof_case::<16, Poseidon16>(&rows, arity),
+                _ => unreachable!(),
+            });
         }
     }
     json!({"cases": out})
@@ -284,6 +393,7 @@ fn main() {
         }),
     );
     write("zisk_zorch/commit/testdata/golden/merkle_root.json", merkle_cases(0xC0));
+    write("zisk_zorch/commit/testdata/golden/merkle_proof.json", merkle_proof_cases(0xC1));
     write(
         "zisk_zorch/transcript/testdata/golden/transcript.json",
         json!({

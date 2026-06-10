@@ -45,12 +45,13 @@ root (4 Goldilocks) ──▶ transcript.put(root)   zisk_zorch.transcript
 - **Transcript** ([`../zisk_zorch/transcript/transcript.py`](../zisk_zorch/transcript/transcript.py)):
   pil2's pending/out buffer discipline; 3-limb cubic challenges; 63-bit query
   index packing.
+- **Openings** ([`../zisk_zorch/commit/openings.py`](../zisk_zorch/commit/openings.py)):
+  `MerkleTreeGL::getGroupProof`'s flat `[row..., mp levels...]` array. zorch's
+  k-ary `open` already packs siblings in pil2's mp order (group order, own
+  slot skipped), so serialization is flatten-and-concatenate; the merkle_proof
+  golden pins both directions (proof bytes and reconstruct-root verification).
 
 ## What the next slices need
-
-- **Openings / query phase**: `MerkleTreeGL::getGroupProof` layout over the
-  k-ary digest layers; zorch's k-ary `open`/`reconstruct_root` exist, the
-  pil2 proof serialization does not yet.
 - **FRI fold**: needs the Goldilocks cubic extension x³ − x − 1 —
   zk_dtypes' `goldilocksx3` is u³ − 7, so a new dtype (or parameterized
   modulus) is a zk_dtypes prerequisite.

@@ -31,6 +31,17 @@ py_library(
     ],
 )
 
+# Query-phase opening: pil2's getGroupProof serialization over the k-ary tree.
+py_library(
+    name = "openings",
+    srcs = ["openings.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@zorch//zorch/commit:merkle",
+        requirement("jax"),
+    ],
+)
+
 py_test(
     name = "linear_hash_test",
     size = "medium",
@@ -41,6 +52,20 @@ py_test(
         "//zisk_zorch:golden",
         "//zisk_zorch/poseidon2:goldilocks",
         requirement("absl_py"),
+    ],
+)
+
+py_test(
+    name = "openings_test",
+    size = "medium",
+    srcs = ["openings_test.py"],
+    data = glob(["testdata/golden/merkle_proof.json"]),
+    deps = [
+        ":openings",
+        ":trace_commit",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+        requirement("zk_dtypes"),
     ],
 )
 
