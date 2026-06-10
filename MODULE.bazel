@@ -25,10 +25,10 @@ bazel_dep(name = "zorch", version = "0.0.0")
 git_override(
     module_name = "zorch",
     remote = "https://github.com/fractalyze/zorch.git",
-    # kary-merkle branch (fractalyze/zorch#207) — the trace-commit slice needs
-    # the k-ary MerkleTree (arity follows the compressor; pil2-stark commits
-    # with arity 2/3/4). Re-pin to main once #207 merges.
-    commit = "25fe2af9ea685383a2f9fff4722f677971914be6",
+    # main @ k-ary MerkleTree (fractalyze/zorch#207) — the trace-commit slice
+    # commits with pil2-stark's merkleTreeArity 2/3/4, so the tree's arity
+    # follows the compressor.
+    commit = "e0fcd76729c226c36d60e66ae22c88b22d544494",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
