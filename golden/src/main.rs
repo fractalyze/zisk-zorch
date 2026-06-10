@@ -1,6 +1,6 @@
 //! Golden-vector generator for zisk-zorch's byte-match tests.
 //!
-//! Links pil2-proofman v0.15.0's `fields` crate — the same code the ZisK
+//! Links pil2-proofman v0.18.0's `fields` crate — the same code the ZisK
 //! prover runs — and emits JSON fixtures under zisk_zorch/**/testdata/golden/.
 //! Deterministic (fixed splitmix64 seeds): regeneration is a no-op unless the
 //! reference pin changes.
@@ -67,9 +67,10 @@ fn permutation_cases<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Val
 }
 
 fn linear_hash_cases<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Value {
-    // Lengths probe every linear_hash regime: the <=4 copy-without-permute
-    // shortcut, exactly one rate block, a partial last block, and multi-block
-    // chaining (where the previous capacity feeds back into the state).
+    // Lengths probe every linear_hash regime: short single-block rows
+    // (v0.15.0's <=4 unhashed shortcut is gone in v0.18.0 — they permute),
+    // exactly one rate block, a partial last block, and multi-block chaining
+    // (where the previous capacity feeds back into the state).
     let rate = C::RATE as u64;
     let lens = [
         1,
@@ -140,7 +141,7 @@ fn merkle_cases(seed: u64) -> Value {
 /// in `MerkleTreeGL::genMerkleProof` order — per level the (arity-1) group
 /// digests with the node's own slot skipped — and emit the flat
 /// `getGroupProof` array [row..., mp levels...].
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.15.0/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
 ///
 /// Self-checked twice against the reference: the rebuilt root must equal
 /// `partial_merkle_tree`, and every extracted path must pass `verify_mt`.

@@ -8,7 +8,7 @@ flatten-and-concatenate with no re-ordering (pinned by the merkle_proof golden);
 the only shape glue is arity 2, where zorch keeps its historical single-sibling
 `(digest_elems,)` path entries.
 
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.15.0/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
 """
 
 from __future__ import annotations

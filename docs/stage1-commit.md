@@ -2,7 +2,7 @@
 
 The first slice of the ZisK prover: pil2-stark's `extendAndMerkelize`
 (commitStage(1)) — commit the execution-trace columns before any challenge is
-drawn. Everything here is byte-matched against pil2-proofman v0.15.0's
+drawn. Everything here is byte-matched against pil2-proofman v0.18.0's
 `fields` crate via [`../golden/`](../golden/).
 
 ## Pipeline
@@ -36,8 +36,8 @@ root (4 Goldilocks) ──▶ transcript.put(root)   zisk_zorch.transcript
   the native NTT so the extended matrix lands in pil2's row order. A
   root-parameterized native NTT is the gather-free zkx follow-up.
 - **Leaf hashing** ([`../zisk_zorch/commit/linear_hash.py`](../zisk_zorch/commit/linear_hash.py)):
-  pil2's chained linear hash (zero-padded blocks, capacity chaining, <= 4
-  shortcut) is NOT zorch's padding-free sponge, so it lives here and
+  pil2's chained linear hash (zero-padded blocks, capacity chaining) is
+  NOT zorch's padding-free sponge, so it lives here and
   duck-types the leaf-hasher seam.
 - **Tree** : one width-`4*arity` permutation hashes both leaves and nodes;
   incomplete levels complete with zero digests (zorch's k-ary MerkleTree

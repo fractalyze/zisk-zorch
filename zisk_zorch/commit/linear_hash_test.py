@@ -1,6 +1,6 @@
 """Byte-match of the chained linear hash against pil2-proofman's
-`linear_hash_seq`, across every regime the goldens probe (<= 4 shortcut, one
-block, partial block, multi-block chaining) and every tree width."""
+`linear_hash_seq`, across every regime the goldens probe (short single-block
+rows, one block, partial block, multi-block chaining) and every tree width."""
 
 from __future__ import annotations
 

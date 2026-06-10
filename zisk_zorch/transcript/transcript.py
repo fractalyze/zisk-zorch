@@ -7,7 +7,7 @@ the full output as both the next state and the squeeze buffer. Squeezes read
 the out buffer front-to-back and any absorb invalidates it. Challenges for the
 cubic extension are 3 consecutive squeezes; query indices pack 63 bits per
 squeezed element, LSB first. Reference:
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.15.0/fields/src/transcript.rs
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/fields/src/transcript.rs
 
 Host-driven and eager by design — proof orchestration glue, not a traced round
 body (the device-side transcript story is zorch's DuplexTranscript; pil2

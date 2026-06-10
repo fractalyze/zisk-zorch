@@ -1,11 +1,12 @@
 """pil2-stark's chained linear hash — the Merkle leaf hasher ZisK commits with.
 
 NOT a zorch Sponge: pil2's `linear_hash_seq` zero-pads a partial block (zorch's
-sponge is padding-free overwrite), chains by copying the previous output's
+sponge is padding-free overwrite) and chains by copying the previous output's
 first 4 lanes into the capacity slots `[rate, rate+4)` before each block after
-the first, and short-circuits rows of <= 4 elements to the zero-padded row
-itself — no permutation at all. Reference:
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.15.0/fields/src/poseidon2.rs#L101-L127
+the first. (v0.15.0 short-circuited rows of <= 4 elements to the zero-padded
+row unhashed; v0.18.0 removed that shortcut — every row is permuted.)
+Reference:
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/fields/src/poseidon2.rs#L135-L157
 
 Duck-types zorch's Merkle leaf-hasher surface (`hash`, `out`,
 `has_dedicated_fusion`), so `MerkleTree(LinearHash(perm), compressor)` builds
@@ -44,10 +45,6 @@ class LinearHash:
         if input.ndim != 1:
             raise ValueError(f"input must be 1-D, got ndim={input.ndim}")
         n = input.shape[0]
-        if n <= DIGEST_ELEMS:
-            # The <= 4 shortcut: the digest IS the zero-padded row, unhashed.
-            pad = jnp.zeros((DIGEST_ELEMS - n,), input.dtype)
-            return jnp.concatenate([input, pad])
         width = self._permutation.width
         state = jnp.zeros((width,), input.dtype)
         for start in range(0, n, self.rate):
