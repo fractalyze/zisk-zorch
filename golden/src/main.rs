@@ -146,15 +146,14 @@ fn merkle_cases(seed: u64) -> Value {
 ///
 /// Self-checked twice against the reference: the rebuilt root must equal
 /// `partial_merkle_tree`, and every extracted path must pass `verify_mt`.
-fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
+/// Rebuild the zero-padded digest levels `partial_merkle_tree`'s cursor stores:
+/// `levels[0]` is the leaf digests, `levels.last()` the 4-element root. Each
+/// level is padded to a multiple of the arity so boundary openings read their
+/// zero siblings like any node.
+fn build_levels<const W: usize, C: Poseidon2Constants<W>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
-) -> Value {
-    let height = rows.len() as u64;
-    let n_cols = rows[0].len() as u64;
-
-    // Leaf digests, then fold; each stored level is zero-padded to a multiple
-    // of the arity so boundary openings read their zero siblings like any node.
+) -> Vec<Vec<Goldilocks>> {
     let mut levels: Vec<Vec<Goldilocks>> = Vec::new();
     let mut level: Vec<Goldilocks> = rows
         .iter()
@@ -174,7 +173,48 @@ fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
         level = next;
     }
     levels.push(level);
+    levels
+}
 
+/// One query's sibling path in `MerkleTreeGL::genMerkleProof` order: per level
+/// (leaf-first) the (arity-1) group digests with the node's own slot skipped.
+fn build_mp(levels: &[Vec<Goldilocks>], index: u64, arity: u64) -> Vec<Vec<Goldilocks>> {
+    let mut mp: Vec<Vec<Goldilocks>> = Vec::new();
+    let mut idx = index;
+    for lvl in &levels[..levels.len() - 1] {
+        let pos = idx % arity;
+        let group = (idx - pos) as usize;
+        let mut siblings = Vec::new();
+        for i in 0..arity as usize {
+            if i as u64 == pos {
+                continue;
+            }
+            siblings.extend_from_slice(&lvl[(group + i) * 4..(group + i + 1) * 4]);
+        }
+        mp.push(siblings);
+        idx /= arity;
+    }
+    mp
+}
+
+/// Flat `getGroupProof` array for one opening: the committed row, then each
+/// level's sibling group.
+fn group_proof(row: &[Goldilocks], mp: &[Vec<Goldilocks>]) -> Vec<Goldilocks> {
+    let mut proof = row.to_vec();
+    for siblings in mp {
+        proof.extend_from_slice(siblings);
+    }
+    proof
+}
+
+fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
+    rows: &[Vec<Goldilocks>],
+    arity: u64,
+) -> Value {
+    let height = rows.len() as u64;
+    let n_cols = rows[0].len() as u64;
+
+    let levels = build_levels::<W, C>(rows, arity);
     let root = levels.last().unwrap()[..4].to_vec();
     let ref_root = partial_merkle_tree::<Goldilocks, C, W>(
         &levels[0][..(height * 4) as usize],
@@ -187,29 +227,12 @@ fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
     indices.dedup();
     let mut queries = Vec::new();
     for &index in &indices {
-        let mut mp: Vec<Vec<Goldilocks>> = Vec::new();
-        let mut idx = index;
-        for lvl in &levels[..levels.len() - 1] {
-            let pos = idx % arity;
-            let group = (idx - pos) as usize;
-            let mut siblings = Vec::new();
-            for i in 0..arity as usize {
-                if i as u64 == pos {
-                    continue;
-                }
-                siblings.extend_from_slice(&lvl[(group + i) * 4..(group + i + 1) * 4]);
-            }
-            mp.push(siblings);
-            idx /= arity;
-        }
+        let mp = build_mp(&levels, index, arity);
         assert!(
             verify_mt::<Goldilocks, C, W>(&root, &[], &mp, index, &rows[index as usize], arity, 0),
             "verify_mt rejected the extracted path (arity {arity}, height {height}, index {index})"
         );
-        let mut proof = rows[index as usize].clone();
-        for siblings in &mp {
-            proof.extend_from_slice(siblings);
-        }
+        let proof = group_proof(&rows[index as usize], &mp);
         queries.push(json!({"index": index, "proof": ser(&proof)}));
     }
 
@@ -373,17 +396,20 @@ fn stage1_case(n_bits: usize, blowup_bits: usize, n_cols: usize, arity: u64, see
 /// challenge. Truth is the reference `verify_fold` itself (the same INTT + coset
 /// rescale + Horner the C++ `FRI::fold` runs per group), called once per output.
 /// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L36-L113
-fn fri_fold_case(n_bits_ext: u64, prev_bits: u64, current_bits: u64, seed: u64) -> Value {
-    let prev_n = 1usize << prev_bits;
+/// One fold step over the whole codeword: each output group `g` reads the nX =
+/// 2^(prevBits - currentBits) entries strided by pol2N = 2^currentBits and runs
+/// the reference `verify_fold` (the INTT + coset rescale + Horner the C++
+/// `FRI::fold` applies per group) at the cubic challenge.
+fn fri_fold_step(
+    pol: &[Goldilocks],
+    challenge: [Goldilocks; 3],
+    n_bits_ext: u64,
+    prev_bits: u64,
+    current_bits: u64,
+) -> Vec<Goldilocks> {
     let cur_n = 1usize << current_bits;
     let n_x = 1usize << (prev_bits - current_bits);
     let pol2n = cur_n;
-
-    let mut state = seed;
-    // The codeword is one cubic column: prev_n elements, 3 Goldilocks limbs each.
-    let pol: Vec<Goldilocks> = (0..prev_n * 3).map(|_| rand_fe(&mut state)).collect();
-    let challenge = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
-
     let mut folded = Vec::with_capacity(cur_n * 3);
     for g in 0..cur_n {
         // ppar[j] = pol[j * pol2N + g] — the nX entries the fold reads for group g.
@@ -402,6 +428,17 @@ fn fri_fold_case(n_bits_ext: u64, prev_bits: u64, current_bits: u64, seed: u64) 
         );
         folded.extend_from_slice(&out);
     }
+    folded
+}
+
+fn fri_fold_case(n_bits_ext: u64, prev_bits: u64, current_bits: u64, seed: u64) -> Value {
+    let prev_n = 1usize << prev_bits;
+    let mut state = seed;
+    // The codeword is one cubic column: prev_n elements, 3 Goldilocks limbs each.
+    let pol: Vec<Goldilocks> = (0..prev_n * 3).map(|_| rand_fe(&mut state)).collect();
+    let challenge = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
+
+    let folded = fri_fold_step(&pol, challenge, n_bits_ext, prev_bits, current_bits);
 
     json!({
         "n_bits_ext": n_bits_ext,
@@ -411,6 +448,125 @@ fn fri_fold_case(n_bits_ext: u64, prev_bits: u64, current_bits: u64, seed: u64) 
         "challenge": ser(&challenge),
         "folded": ser(&folded),
     })
+}
+
+/// pil2's `getTransposed`: regroup a degree-`2^currentBits` cubic codeword into
+/// `2^nextBits` rows of `2^(currentBits - nextBits)` cubic entries, row `i`
+/// holding the strided coset `pol[j*2^nextBits + i]` the next fold will read.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L126-L143
+fn fri_transpose(pol: &[Goldilocks], current_bits: u64, next_bits: u64) -> Vec<Vec<Goldilocks>> {
+    let w = 1usize << next_bits;
+    let h = 1usize << (current_bits - next_bits);
+    let mut rows = vec![Vec::with_capacity(h * 3); w];
+    for (i, row) in rows.iter_mut().enumerate() {
+        for j in 0..h {
+            let fi = j * w + i;
+            row.extend_from_slice(&pol[fi * 3..fi * 3 + 3]);
+        }
+    }
+    rows
+}
+
+/// The full FRI prover loop (`gen_proof.hpp` STARK_FRI_FOLDING / QUERIES) over
+/// one random cubic FRI polynomial `f`: fold the layer chain, commit each
+/// intermediate layer's regrouped k-ary tree, drive challenges through the pil2
+/// transcript (a fixed seed absorb stands in for the proof state preceding FRI),
+/// send the final polynomial in clear, and open every layer at each query.
+/// Self-checked: each layer root equals `partial_merkle_tree` and every opening
+/// passes `verify_mt`.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L235-L282
+fn fri_prove_case<const W: usize, C: Poseidon2Constants<W>>(
+    n_bits_ext: u64,
+    steps: &[u64],
+    arity: u64,
+    queries: &[u64],
+    seed: u64,
+) -> Value {
+    let n_steps = steps.len();
+    assert_eq!(steps[0], n_bits_ext, "steps[0] must be nBitsExt");
+
+    let mut state = seed;
+    let mut pol: Vec<Goldilocks> = (0..(1usize << n_bits_ext) * 3).map(|_| rand_fe(&mut state)).collect();
+    let init_pol = pol.clone();
+
+    // The transcript width follows transcriptArity = 3 (width 12); the merkle
+    // tree arity is independent. A fixed absorb seeds it deterministically.
+    let mut t = Transcript::<Goldilocks, Poseidon12, 12>::new();
+    let seed_absorb: Vec<Goldilocks> = (0..4).map(|_| rand_fe(&mut state)).collect();
+    t.put(&seed_absorb);
+
+    let mut challenge = [Goldilocks::ZERO; 3];
+    let mut roots: Vec<Vec<Goldilocks>> = Vec::new();
+    let mut layer_rows: Vec<Vec<Vec<Goldilocks>>> = Vec::new();
+    let mut layer_levels: Vec<Vec<Vec<Goldilocks>>> = Vec::new();
+    let mut layer_leaf_bits: Vec<u64> = Vec::new();
+
+    for step in 0..n_steps {
+        let current_bits = steps[step];
+        if step > 0 {
+            // step 0's fold is a no-op (prevBits == currentBits == nBitsExt).
+            pol = fri_fold_step(&pol, challenge, n_bits_ext, steps[step - 1], current_bits);
+        }
+        if step < n_steps - 1 {
+            let next_bits = steps[step + 1];
+            let rows = fri_transpose(&pol, current_bits, next_bits);
+            let levels = build_levels::<W, C>(&rows, arity);
+            let root = levels.last().unwrap()[..4].to_vec();
+            let height = rows.len() as u64;
+            let ref_root = partial_merkle_tree::<Goldilocks, C, W>(
+                &levels[0][..(height * 4) as usize],
+                height,
+                arity,
+            );
+            assert_eq!(root, ref_root, "FRI layer {step} root diverged from partial_merkle_tree");
+            t.put(&root); // addTranscript(root, HASH_SIZE)
+            roots.push(root);
+            layer_rows.push(rows);
+            layer_levels.push(levels);
+            layer_leaf_bits.push(next_bits);
+        } else {
+            t.put(&pol); // addTranscriptGL(final pol)
+        }
+        t.get_field(&mut challenge);
+    }
+    let final_pol = pol;
+
+    let mut query_json = Vec::new();
+    for &q in queries {
+        let mut layers = Vec::new();
+        for s in 0..(n_steps - 1) {
+            let li = q % (1u64 << layer_leaf_bits[s]);
+            let mp = build_mp(&layer_levels[s], li, arity);
+            assert!(
+                verify_mt::<Goldilocks, C, W>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
+                "FRI layer {s} opening rejected (query {q}, index {li})"
+            );
+            let proof = group_proof(&layer_rows[s][li as usize], &mp);
+            layers.push(json!({"index": li, "proof": ser(&proof)}));
+        }
+        query_json.push(json!({"query": q, "layers": layers}));
+    }
+
+    json!({
+        "n_bits_ext": n_bits_ext,
+        "steps": steps,
+        "arity": arity,
+        "seed": ser(&seed_absorb),
+        "init_pol": ser(&init_pol),
+        "roots": roots.iter().map(|r| ser(r)).collect::<Vec<_>>(),
+        "final_pol": ser(&final_pol),
+        "queries": query_json,
+    })
+}
+
+/// Dispatch the FRI prover golden on the merkle tree arity (2/3/4 -> width 8/12/16).
+fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: u64) -> Value {
+    match arity {
+        2 => fri_prove_case::<8, Poseidon8>(n_bits_ext, steps, arity, queries, seed),
+        3 => fri_prove_case::<12, Poseidon12>(n_bits_ext, steps, arity, queries, seed),
+        4 => fri_prove_case::<16, Poseidon16>(n_bits_ext, steps, arity, queries, seed),
+        _ => unreachable!(),
+    }
 }
 
 fn write(path: &str, value: Value) {
@@ -490,6 +646,22 @@ fn main() {
                 // A two-step chain at a larger domain: 6 -> 4 -> 2, nX = 4 each.
                 fri_fold_case(6, 6, 4, 0x105),
                 fri_fold_case(6, 4, 2, 0x106),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/fri/testdata/golden/fri_prove.json",
+        json!({
+            "cases": [
+                // Two FRI trees, arity 4: heights 8 (irregular arity-4 padding)
+                // and 2; each fold nX = 4; final pol of 2 cubic elements.
+                fri_prove(5, &[5, 3, 1], 4, &[0, 3, 17, 31], 0x201),
+                // Single FRI tree, arity 2 (historical single-sibling path):
+                // one fold 2^4 -> 2^2, leaf row 4 cubic = 3 linear-hash blocks.
+                fri_prove(4, &[4, 2], 2, &[0, 1, 9, 15], 0x202),
+                // Three-layer chain, arity 3: 6 -> 4 -> 2 -> 0, two trees plus a
+                // length-1 final pol; query indices probe group boundaries.
+                fri_prove(6, &[6, 4, 2, 0], 3, &[0, 5, 40, 63], 0x203),
             ]
         }),
     );
