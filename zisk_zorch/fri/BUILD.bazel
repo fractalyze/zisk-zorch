@@ -28,3 +28,33 @@ py_test(
         requirement("absl_py"),
     ],
 )
+
+# The full FRI prover: fold the layer chain, commit each layer, open queries.
+py_library(
+    name = "prover",
+    srcs = ["prover.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fold",
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/transcript",
+        "@zorch//zorch/commit:merkle",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "prover_test",
+    size = "medium",
+    srcs = ["prover_test.py"],
+    data = glob(["testdata/golden/fri_prove.json"]),
+    deps = [
+        ":prover",
+        "//zisk_zorch:golden",
+        "//zisk_zorch/transcript",
+        requirement("absl_py"),
+    ],
+)
