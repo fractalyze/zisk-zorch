@@ -25,10 +25,10 @@ bazel_dep(name = "zorch", version = "0.0.0")
 git_override(
     module_name = "zorch",
     remote = "https://github.com/fractalyze/zorch.git",
-    # main @ k-ary MerkleTree (fractalyze/zorch#207) — the trace-commit slice
-    # commits with pil2-stark's merkleTreeArity 2/3/4, so the tree's arity
-    # follows the compressor.
-    commit = "e0fcd76729c226c36d60e66ae22c88b22d544494",
+    # main @ jax dev20260612 + zk_dtypes 0.0.6 (fractalyze/zorch#247) — the FRI
+    # fold reuses zorch.poly.univariate over the goldilocksx3 (x³−x−1) cubic
+    # extension, which needs the swapped zk_dtypes wheel and matching jax.
+    commit = "d604652dacef2d28128f1e38ded638fecac47e53",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
