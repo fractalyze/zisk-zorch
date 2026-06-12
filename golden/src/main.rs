@@ -569,6 +569,61 @@ fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: 
     }
 }
 
+/// pil2-stark `computeLEv`: the Lagrange-evaluation vector for opening the
+/// committed polynomials at `xiChallenge` and its row shifts. For each opening
+/// offset `p`, the per-index value is the geometric series `g^k` (k in [0, N))
+/// of `g = xiChallenge * w(nBits)^p * shift^{-1}` (negative `p` inverts the
+/// root power), then an INTT over the base domain N gives the coefficient row.
+/// The output is row-major `LEv[(k*nOpen + i)]` cubic, matching the C++
+/// `LEv[(k*openingPoints.size() + i)*FIELD_EXTENSION]` layout fed to
+/// `NTT_Goldilocks::INTT(LEv, LEv, N, FIELD_EXTENSION * nOpen)`.
+///
+/// Truth is the reference `intt_tiny` itself (the same inverse NTT the C++
+/// `computeLEv` runs); the consumer reproduces it without an NTT via the
+/// geometric-series closed form, byte-identical by IDFT uniqueness.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/starks.hpp#L243-L279
+fn compute_lev_case(n_bits: usize, opening_points: &[i64], seed: u64) -> Value {
+    let n = 1usize << n_bits;
+    let n_open = opening_points.len();
+
+    let mut state = seed;
+    let xi = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
+    let xi_c = CubicExtensionField { value: xi };
+
+    let w = Goldilocks::new(Goldilocks::W[n_bits]);
+    let shift_inv = Goldilocks::new(Goldilocks::SHIFT).inverse();
+
+    // xisShifted[i] = xiChallenge * w^|p| (inverted for p < 0) * shift^{-1}.
+    let xis_shifted: Vec<CubicExtensionField<Goldilocks>> = opening_points
+        .iter()
+        .map(|&p| {
+            let mut wp = pow(w, p.unsigned_abs());
+            if p < 0 {
+                wp = wp.inverse();
+            }
+            (xi_c * wp) * shift_inv
+        })
+        .collect();
+
+    // LEv[k][i] = xisShifted[i]^k, row-major (k, i, limb), then INTT over N.
+    let mut lev = vec![Goldilocks::ZERO; n * n_open * 3];
+    for k in 0..n {
+        for (i, g) in xis_shifted.iter().enumerate() {
+            let v = g.pow(k as u64);
+            let base = (k * n_open + i) * 3;
+            lev[base..base + 3].copy_from_slice(&v.value);
+        }
+    }
+    intt_tiny(&mut lev, n_bits, 3 * n_open);
+
+    json!({
+        "n_bits": n_bits,
+        "opening_points": opening_points,
+        "xi": ser(&xi),
+        "lev": ser(&lev),
+    })
+}
+
 fn write(path: &str, value: Value) {
     let path = Path::new("..").join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -662,6 +717,19 @@ fn main() {
                 // Three-layer chain, arity 3: 6 -> 4 -> 2 -> 0, two trees plus a
                 // length-1 final pol; query indices probe group boundaries.
                 fri_prove(6, &[6, 4, 2, 0], 3, &[0, 5, 40, 63], 0x203),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/evals/testdata/golden/compute_lev.json",
+        json!({
+            "cases": [
+                // Single opening point at the row itself (p = 0).
+                compute_lev_case(3, &[0], 0x301),
+                // Current + next row (p = 0, 1) — the common STARK opening set.
+                compute_lev_case(4, &[0, 1], 0x302),
+                // Includes a negative offset (previous row), nBits = 5.
+                compute_lev_case(5, &[-1, 0, 1], 0x303),
             ]
         }),
     );
