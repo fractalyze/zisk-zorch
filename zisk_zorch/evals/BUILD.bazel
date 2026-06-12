@@ -1,0 +1,30 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# pil2's computeLEv: the opening-phase Lagrange-evaluation vector, built from
+# the geometric-series IDFT closed form (no NTT root-order convention).
+py_library(
+    name = "lev",
+    srcs = [
+        "__init__.py",
+        "lev.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "lev_test",
+    size = "medium",
+    srcs = ["lev_test.py"],
+    data = glob(["testdata/golden/compute_lev.json"]),
+    deps = [
+        ":lev",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+    ],
+)
