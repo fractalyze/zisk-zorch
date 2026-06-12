@@ -6,11 +6,13 @@
 #
 # zisk-zorch is the ZisK-specific consumer of zorch's agnostic blocks; zorch
 # itself arrives as a Bazel module (see MODULE.bazel), not a pip dep.
-# zk_dtypes (native finite-field dtypes) arrives transitively via jax and is
-# used directly on the pil2 byte-match path.
+# zk_dtypes (native finite-field dtypes) arrives via jax but is pinned here
+# directly: the byte-match path uses it, and the FRI fold needs >= 0.0.6, the
+# first wheel where `goldilocksx3` is pil2's cubic extension x^3 - x - 1.
 absl-py
 numpy
-jax==0.0.5.dev20260606003451
-jaxlib==0.0.5.dev20260606003451
-jax-cuda12-plugin==0.0.5.dev20260524000415
-zkx-cuda-pjrt==0.0.5.dev20260606003451
+jax==0.0.5.dev20260612072029
+zk-dtypes==0.0.6
+jaxlib==0.0.5.dev20260612072029
+jax-cuda12-plugin==0.0.5.dev20260612072029
+zkx-cuda-pjrt==0.0.5.dev20260612072029

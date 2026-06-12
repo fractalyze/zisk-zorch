@@ -9,8 +9,9 @@
 //! numbers cannot carry 64-bit values exactly.
 
 use fields::{
-    intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon2_hash, verify_mt, Field, Goldilocks,
-    PrimeField64, Poseidon12, Poseidon16, Poseidon2Constants, Poseidon4, Poseidon8, Transcript,
+    intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon2_hash, verify_fold, verify_mt,
+    CubicExtensionField, Field, Goldilocks, PrimeField64, Poseidon12, Poseidon16,
+    Poseidon2Constants, Poseidon4, Poseidon8, Transcript,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -364,6 +365,54 @@ fn stage1_case(n_bits: usize, blowup_bits: usize, n_cols: usize, arity: u64, see
     })
 }
 
+/// One FRI fold step: collapse a cubic-valued codeword over the previous
+/// coset domain (size 2^prevBits) to the next layer (size 2^currentBits) at a
+/// cubic challenge. Each output group `g` interpolates the nX = 2^(prevBits -
+/// currentBits) codeword entries strided by pol2N = 2^currentBits — its coset
+/// `shift_eff * w(prevBits)^(g + j*pol2N)` — and evaluates that line at the
+/// challenge. Truth is the reference `verify_fold` itself (the same INTT + coset
+/// rescale + Horner the C++ `FRI::fold` runs per group), called once per output.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L36-L113
+fn fri_fold_case(n_bits_ext: u64, prev_bits: u64, current_bits: u64, seed: u64) -> Value {
+    let prev_n = 1usize << prev_bits;
+    let cur_n = 1usize << current_bits;
+    let n_x = 1usize << (prev_bits - current_bits);
+    let pol2n = cur_n;
+
+    let mut state = seed;
+    // The codeword is one cubic column: prev_n elements, 3 Goldilocks limbs each.
+    let pol: Vec<Goldilocks> = (0..prev_n * 3).map(|_| rand_fe(&mut state)).collect();
+    let challenge = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
+
+    let mut folded = Vec::with_capacity(cur_n * 3);
+    for g in 0..cur_n {
+        // ppar[j] = pol[j * pol2N + g] — the nX entries the fold reads for group g.
+        let mut vals = Vec::with_capacity(n_x * 3);
+        for j in 0..n_x {
+            let idx = j * pol2n + g;
+            vals.extend_from_slice(&pol[idx * 3..idx * 3 + 3]);
+        }
+        let out = verify_fold(
+            n_bits_ext,
+            current_bits,
+            prev_bits,
+            CubicExtensionField { value: challenge },
+            g as u64,
+            &vals,
+        );
+        folded.extend_from_slice(&out);
+    }
+
+    json!({
+        "n_bits_ext": n_bits_ext,
+        "prev_bits": prev_bits,
+        "current_bits": current_bits,
+        "pol": ser(&pol),
+        "challenge": ser(&challenge),
+        "folded": ser(&folded),
+    })
+}
+
 fn write(path: &str, value: Value) {
     let path = Path::new("..").join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -423,6 +472,24 @@ fn main() {
                 stage1_case(3, 2, 5, 3, 0xF2),
                 stage1_case(3, 2, 5, 4, 0xF3),
                 stage1_case(5, 1, 9, 4, 0xF4),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/fri/testdata/golden/fri_fold.json",
+        json!({
+            "cases": [
+                // First step (prevBits == nBitsExt, no shift squaring), nX = 4.
+                fri_fold_case(5, 5, 3, 0x101),
+                // Later step (prevBits < nBitsExt, shift squared twice), nX = 4.
+                fri_fold_case(5, 3, 1, 0x102),
+                // Smallest fold, nX = 2.
+                fri_fold_case(4, 4, 3, 0x103),
+                // Wide single fold, nX = 32.
+                fri_fold_case(7, 7, 2, 0x104),
+                // A two-step chain at a larger domain: 6 -> 4 -> 2, nX = 4 each.
+                fri_fold_case(6, 6, 4, 0x105),
+                fri_fold_case(6, 4, 2, 0x106),
             ]
         }),
     );
