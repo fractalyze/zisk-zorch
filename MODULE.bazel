@@ -25,10 +25,12 @@ bazel_dep(name = "zorch", version = "0.0.0")
 git_override(
     module_name = "zorch",
     remote = "https://github.com/fractalyze/zorch.git",
-    # main @ fractalyze/zorch#253 — the FRI fold delegates to zorch's k-ary
-    # `fri_fold_k_values` kernel (over the goldilocksx3 x³−x−1 cubic extension);
-    # carries the zk_dtypes 0.0.6 + matching jax of #247.
-    commit = "68e270735a70f4e2cc6fde137ed6e12aed068330",
+    # main @ fractalyze/zorch#255 — the k-ary fold *orchestration* seam
+    # (`PreFoldKGroupCommitRound` / `verify_group_fold_chain` / `KFoldableCode`)
+    # the FRI host loop drives over, atop the #253 `fri_fold_k_values` kernel
+    # (goldilocksx3 x³−x−1 cubic extension). Supersedes the #253 pin; carries the
+    # zk_dtypes 0.0.6 + matching jax of #247. zisk-zorch#9.
+    commit = "20aec04af95127693ad159af740fedf86fd0a2fd",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
