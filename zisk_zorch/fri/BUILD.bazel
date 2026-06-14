@@ -10,7 +10,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@zorch//zorch/poly",
+        "@zorch//zorch/coding:reed_solomon",
         requirement("jax"),
         requirement("numpy"),
         requirement("zk_dtypes"),
@@ -29,20 +29,36 @@ py_test(
     ],
 )
 
+# Adapters binding pil2's FRI to zorch's k-ary fold seam: the KFoldableCode
+# (grouping + coset fold) and the pil2 transcript as a zorch Transcript.
+py_library(
+    name = "seam",
+    srcs = ["seam.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fold",
+        "//zisk_zorch/transcript",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 # The full FRI prover: fold the layer chain, commit each layer, open queries.
 py_library(
     name = "prover",
     srcs = ["prover.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":fold",
+        ":seam",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",
         "@zorch//zorch/commit:merkle",
+        "@zorch//zorch/pcs:fold",
+        "@zorch//zorch:prove",
         requirement("jax"),
         requirement("numpy"),
-        requirement("zk_dtypes"),
     ],
 )
 
@@ -65,13 +81,14 @@ py_library(
     srcs = ["verifier.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":fold",
+        ":seam",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",
+        "@zorch//zorch/commit:merkle",
+        "@zorch//zorch/pcs:fold",
         requirement("jax"),
         requirement("numpy"),
-        requirement("zk_dtypes"),
     ],
 )
 

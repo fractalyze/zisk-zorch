@@ -25,10 +25,12 @@ bazel_dep(name = "zorch", version = "0.0.0")
 git_override(
     module_name = "zorch",
     remote = "https://github.com/fractalyze/zorch.git",
-    # main @ jax dev20260612 + zk_dtypes 0.0.6 (fractalyze/zorch#247) — the FRI
-    # fold reuses zorch.poly.univariate over the goldilocksx3 (x³−x−1) cubic
-    # extension, which needs the swapped zk_dtypes wheel and matching jax.
-    commit = "d604652dacef2d28128f1e38ded638fecac47e53",
+    # main @ fractalyze/zorch#255 — the k-ary fold *orchestration* seam
+    # (`PreFoldKGroupCommitRound` / `verify_group_fold_chain` / `KFoldableCode`)
+    # the FRI host loop drives over, atop the #253 `fri_fold_k_values` kernel
+    # (goldilocksx3 x³−x−1 cubic extension). Supersedes the #253 pin; carries the
+    # zk_dtypes 0.0.6 + matching jax of #247. zisk-zorch#9.
+    commit = "20aec04af95127693ad159af740fedf86fd0a2fd",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
