@@ -13,7 +13,8 @@ queried index — same arithmetic).
 The interpolant through `n_x` distinct coset points is unique, so its value at
 the challenge is one field element however it is computed: here it is a plain
 Lagrange interpolation over the explicit coset evaluated at the challenge
-(`zorch.poly.univariate`), byte-identical to pil2's INTT-then-rescale by
+(zorch's `fri_fold_k_values` k-ary fold kernel), byte-identical to pil2's
+INTT-then-rescale by
 construction and free of any NTT root-order convention. The coset points are
 fixed by the static `(n_bits_ext, prev_bits, current_bits)`, so they are built
 once on the host as a base-field constant.
@@ -29,7 +30,7 @@ import numpy as np
 from jax import Array
 from zk_dtypes import goldilocks_mont as F
 
-from zorch.poly.univariate import compute_lagrange_basis
+from zorch.coding.reed_solomon import fri_fold_k_values
 
 # Goldilocks field modulus and the LDE coset generator (`Goldilocks::SHIFT`).
 _GOLDILOCKS_P = 0xFFFFFFFF00000001
@@ -86,6 +87,8 @@ def fold(
         )
     if pol.shape != (1 << prev_bits,):
         raise ValueError(f"pol must have shape {(1 << prev_bits,)}, got {pol.shape}")
+    if challenge.shape != ():
+        raise ValueError(f"challenge must be a scalar, got shape {challenge.shape}")
 
     cur_n = 1 << current_bits
     n_x = 1 << (prev_bits - current_bits)
@@ -95,7 +98,7 @@ def fold(
     group = pol.reshape(n_x, cur_n).T
 
     def fold_group(values: Array, points: Array) -> Array:
-        return jnp.dot(values, compute_lagrange_basis(challenge, points))
+        return fri_fold_k_values(values, challenge, points)
 
     return jax.vmap(fold_group)(group, domain)
 
@@ -121,6 +124,8 @@ def verify_fold(
     n_x = 1 << (prev_bits - current_bits)
     if values.shape != (n_x,):
         raise ValueError(f"values must have shape {(n_x,)}, got {values.shape}")
+    if challenge.shape != ():
+        raise ValueError(f"challenge must be a scalar, got shape {challenge.shape}")
 
     points = _coset_domain(n_bits_ext, prev_bits, current_bits)[idx]
-    return jnp.dot(values, compute_lagrange_basis(challenge, points))
+    return fri_fold_k_values(values, challenge, points)

@@ -25,10 +25,10 @@ bazel_dep(name = "zorch", version = "0.0.0")
 git_override(
     module_name = "zorch",
     remote = "https://github.com/fractalyze/zorch.git",
-    # main @ jax dev20260612 + zk_dtypes 0.0.6 (fractalyze/zorch#247) — the FRI
-    # fold reuses zorch.poly.univariate over the goldilocksx3 (x³−x−1) cubic
-    # extension, which needs the swapped zk_dtypes wheel and matching jax.
-    commit = "d604652dacef2d28128f1e38ded638fecac47e53",
+    # main @ fractalyze/zorch#253 — the FRI fold delegates to zorch's k-ary
+    # `fri_fold_k_values` kernel (over the goldilocksx3 x³−x−1 cubic extension);
+    # carries the zk_dtypes 0.0.6 + matching jax of #247.
+    commit = "68e270735a70f4e2cc6fde137ed6e12aed068330",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
