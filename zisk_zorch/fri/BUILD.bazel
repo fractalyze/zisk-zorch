@@ -58,3 +58,34 @@ py_test(
         requirement("absl_py"),
     ],
 )
+
+# The FRI verifier: replay challenges, verify Merkle openings + fold consistency.
+py_library(
+    name = "verifier",
+    srcs = ["verifier.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fold",
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/transcript",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "verifier_test",
+    size = "medium",
+    srcs = ["verifier_test.py"],
+    data = glob(["testdata/golden/fri_prove.json"]),
+    deps = [
+        ":prover",
+        ":verifier",
+        "//zisk_zorch:golden",
+        "//zisk_zorch/transcript",
+        requirement("absl_py"),
+        requirement("zk_dtypes"),
+    ],
+)

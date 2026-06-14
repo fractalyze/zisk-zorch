@@ -98,3 +98,29 @@ def fold(
         return jnp.dot(values, compute_lagrange_basis(challenge, points))
 
     return jax.vmap(fold_group)(group, domain)
+
+
+def verify_fold(
+    values: Array,
+    challenge: Array,
+    n_bits_ext: int,
+    prev_bits: int,
+    current_bits: int,
+    idx: int,
+) -> Array:
+    """pil2's `FRI::verify_fold` — fold one queried group's `n_x` cubic `values`
+    to a single cubic value at `challenge`. The verifier's per-query counterpart
+    to `fold`: the same coset Lagrange interpolation, for output group `idx`
+    (so `verify_fold(pol's group idx, ...) == fold(pol, ...)[idx]`)."""
+    if not 0 <= current_bits < prev_bits <= n_bits_ext <= 32:
+        raise ValueError(
+            "need 0 <= current_bits < prev_bits <= n_bits_ext <= 32, got "
+            f"current_bits={current_bits}, prev_bits={prev_bits}, "
+            f"n_bits_ext={n_bits_ext}"
+        )
+    n_x = 1 << (prev_bits - current_bits)
+    if values.shape != (n_x,):
+        raise ValueError(f"values must have shape {(n_x,)}, got {values.shape}")
+
+    points = _coset_domain(n_bits_ext, prev_bits, current_bits)[idx]
+    return jnp.dot(values, compute_lagrange_basis(challenge, points))
