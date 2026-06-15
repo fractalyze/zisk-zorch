@@ -569,6 +569,59 @@ fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: 
     }
 }
 
+/// pil2's FRI query-position derivation (`gen_proof.hpp` post-fold query phase):
+/// absorb the final polynomial into the running transcript, squeeze the cubic
+/// grinding-seed challenge, then seed a FRESH transcript with `challenge ++ nonce`
+/// and read `nQueries` positions of `nBitsExt` bits via `getPermutations`.
+///
+/// The proof-of-work search that finds `nonce` (`Poseidon2GoldilocksGrinding`) is
+/// not exported by the v0.18.0 `fields` crate, so it has no golden; `nonce` is a
+/// fixed input and the goldenable derivation around it is what this pins. The
+/// `seed_absorb` + discarded squeeze stand in for the fold loop's trailing
+/// observe/sample, so the derivation runs against a realistic mid-transcript state.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L235-L282
+fn query_sample_case<C: Poseidon2Constants<W>, const W: usize>(
+    final_bits: u64,
+    n_queries: u64,
+    n_bits_ext: u64,
+    nonce: u64,
+    seed: u64,
+) -> Value {
+    let mut state = seed;
+    let mut t = Transcript::<Goldilocks, C, W>::new();
+
+    // Stand-in for the fold loop's tail: one root-sized absorb + one squeeze.
+    let seed_absorb: Vec<Goldilocks> = (0..4).map(|_| rand_fe(&mut state)).collect();
+    t.put(&seed_absorb);
+    let mut pre = [Goldilocks::ZERO; 3];
+    t.get_field(&mut pre);
+
+    // addTranscriptGL(transcript, friPol, (1 << finalBits) * FIELD_EXTENSION).
+    let final_pol: Vec<Goldilocks> =
+        (0..(1u64 << final_bits) * 3).map(|_| rand_fe(&mut state)).collect();
+    t.put(&final_pol);
+    let mut challenge = [Goldilocks::ZERO; 3];
+    t.get_field(&mut challenge); // the grinding-seed challenge
+
+    // Fresh transcript seeded with challenge ++ nonce, then getPermutations.
+    let mut tp = Transcript::<Goldilocks, C, W>::new();
+    tp.put(&challenge);
+    tp.put(&[Goldilocks::new(nonce)]); // (Goldilocks::Element *)&nonce, canonical
+    let positions = tp.get_permutations(n_queries, n_bits_ext);
+
+    json!({
+        "width": W,
+        "seed_absorb": ser(&seed_absorb),
+        "pre_challenge": ser(&pre),
+        "final_pol": ser(&final_pol),
+        "nonce": nonce.to_string(),
+        "n_queries": n_queries,
+        "n_bits_ext": n_bits_ext,
+        "challenge": ser(&challenge),
+        "positions": positions.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+    })
+}
+
 /// pil2-stark `computeLEv`: the Lagrange-evaluation vector for opening the
 /// committed polynomials at `xiChallenge` and its row shifts. For each opening
 /// offset `p`, the per-index value is the geometric series `g^k` (k in [0, N))
@@ -717,6 +770,21 @@ fn main() {
                 // Three-layer chain, arity 3: 6 -> 4 -> 2 -> 0, two trees plus a
                 // length-1 final pol; query indices probe group boundaries.
                 fri_prove(6, &[6, 4, 2, 0], 3, &[0, 5, 40, 63], 0x203),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/fri/testdata/golden/query_sample.json",
+        json!({
+            "cases": [
+                // arity 3 (width 12): 2-element final pol, 4 queries over nBitsExt 5.
+                query_sample_case::<Poseidon12, 12>(1, 4, 5, 0x4142, 0x401),
+                // arity 2 (width 8): length-1 final pol, queries straddle the
+                // 63-bit element boundary (8 * 4 bits is small, but exercises width 8).
+                query_sample_case::<Poseidon8, 8>(0, 6, 4, 0x9, 0x402),
+                // arity 4 (width 16): 4-element final pol, wide nBitsExt 6,
+                // 8 queries force a second squeezed element in getPermutations.
+                query_sample_case::<Poseidon16, 16>(2, 8, 6, 0xABCDEF, 0x403),
             ]
         }),
     );

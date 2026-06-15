@@ -18,9 +18,11 @@ the high coefficients vanish) is out of scope here: it needs a genuine low-degre
 FRI polynomial and the base trace size `nBits`, neither of which exists until the
 upstream STARK (stage-2 / Q / evals) produces a real `f`.
 
-Host-driven, mirroring the prover's transcript discipline. pil2's trailing
-put(finalPol)+squeeze is omitted on both sides: the challenge it draws is unused
-(no fold follows the last layer) and query indices are external (zisk#3).
+Host-driven, mirroring the prover's transcript discipline. The query positions
+are NOT trusted from the prover: the verifier re-derives them from the transcript
+(`sample_query_positions` — finalPol absorb + grinding-seed squeeze + reseed with
+challenge++nonce), so pil2's trailing finalPol absorb IS replayed here. The
+grinding/PoW check that binds `nonce` is deferred with the search (see queries.py).
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L564-L670
 """
@@ -33,6 +35,7 @@ from jax import Array
 
 from zisk_zorch.commit.openings import verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript, _base_to_cubic
 from zisk_zorch.transcript.transcript import Transcript
 from zorch.commit.merkle import Opening
@@ -43,36 +46,44 @@ def verify(
     roots: list[Array],
     final_pol: Array,
     query_openings: list[list[Array]],
-    query_indices: np.ndarray | list[int],
     *,
     steps: list[int],
     arity: int,
     transcript: Transcript,
+    nonce: int,
 ) -> bool:
     """Check the FRI fold consistency and Merkle openings for every query.
 
     `query_openings[q][layer]` is the flat `getGroupProof` array for layer
-    `layer` at query `q` (as produced by `prover.prove_queries`). Returns whether
-    every Merkle opening verifies and every fold lands on the next layer's
-    opening (or the final polynomial). `transcript` must be seeded exactly as the
-    prover's was."""
+    `layer` at query `q` (as produced by `prover.prove_queries`). The query
+    positions are re-derived from the transcript (not trusted from the prover):
+    `nonce` is the PoW witness the prover used. Returns whether every Merkle
+    opening verifies and every fold lands on the next layer's opening (or the
+    final polynomial). `transcript` must be seeded exactly as the prover's was."""
     code = Pil2FriCode(tuple(steps))
     tree = merkle_tree(arity)
     num_rounds = len(steps) - 1
 
     # Replay the fold challenges: observe each layer root, squeeze a cubic — the
-    # prover's per-round discipline. (The trailing finalPol observe draws only the
-    # unused last challenge, so it is skipped.)
+    # prover's per-round discipline.
     t = Pil2SeamTranscript(transcript)
     betas = []
     for layer in range(num_rounds):
         t, beta = t.observe(roots[layer]).sample()
         betas.append(beta)
 
+    # Re-derive the query positions from the transcript exactly as the prover did
+    # (finalPol absorb + grinding-seed squeeze + reseed with challenge++nonce) —
+    # the verifier trusts the transcript, not the prover-supplied indices. One
+    # position per opened group.
+    query_indices = sample_query_positions(
+        transcript, final_pol, nonce, n_queries=len(query_openings), n_bits_ext=steps[0]
+    )
+
     # Query indices stay on the host for the Merkle loop — indexing a JAX array
     # per (query, layer) would force a device→host sync each time. They cross to
     # JAX only for the fold-chain check below.
-    positions = np.asarray([int(q) for q in query_indices], dtype=np.int64)  # (Q,)
+    positions = query_indices.astype(np.int64)  # (Q,)
     leaf_indices = code.group_layer_positions(positions, num_rounds)  # per layer (Q,)
 
     # Merkle: each query opens layer `layer` at `query mod 2^steps[layer+1]`; the
