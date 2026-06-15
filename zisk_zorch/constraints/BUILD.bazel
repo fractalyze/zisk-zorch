@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# Stage-2 constraint/interaction ingestion: load riscv-witness's ZisK export
+# (constraints/zisk/v1) via rw_constraints with the Goldilocks field bound.
+py_library(
+    name = "chip_loader",
+    srcs = [
+        "__init__.py",
+        "chip_loader.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("rw_constraints"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "chip_loader_test",
+    size = "medium",
+    srcs = ["chip_loader_test.py"],
+    deps = [
+        ":chip_loader",
+        requirement("absl_py"),
+        requirement("numpy"),
+    ],
+)
