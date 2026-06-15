@@ -20,9 +20,11 @@ upstream STARK (stage-2 / Q / evals) produces a real `f`.
 
 Host-driven, mirroring the prover's transcript discipline. The query positions
 are NOT trusted from the prover: the verifier re-derives them from the transcript
-(`sample_query_positions` — finalPol absorb + grinding-seed squeeze + reseed with
-challenge++nonce), so pil2's trailing finalPol absorb IS replayed here. The
-grinding/PoW check that binds `nonce` is deferred with the search (see queries.py).
+(finalPol absorb + grinding-seed squeeze + reseed with challenge++nonce), so
+pil2's trailing finalPol absorb IS replayed here. The grinding/PoW witness the
+prover transmits is bound by an O(1) grind check — `hash(challenge ++ nonce)`
+must have `powBits` leading zeros — before the positions are read off it, so a
+tampered nonce is rejected (pil2 `stark_verify.hpp` L195-L211).
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L564-L670
 """
@@ -35,7 +37,11 @@ from jax import Array
 
 from zisk_zorch.commit.openings import verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
-from zisk_zorch.fri.queries import sample_query_positions
+from zisk_zorch.fri.queries import (
+    grind_is_valid,
+    grinding_seed_challenge,
+    query_positions_for,
+)
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript, _base_to_cubic
 from zisk_zorch.transcript.transcript import Transcript
 from zorch.commit.merkle import Opening
@@ -50,16 +56,20 @@ def verify(
     steps: list[int],
     arity: int,
     transcript: Transcript,
+    pow_bits: int,
     nonce: int,
 ) -> bool:
     """Check the FRI fold consistency and Merkle openings for every query.
 
     `query_openings[q][layer]` is the flat `getGroupProof` array for layer
-    `layer` at query `q` (as produced by `prover.prove_queries`). The query
-    positions are re-derived from the transcript (not trusted from the prover):
-    `nonce` is the PoW witness the prover used. Returns whether every Merkle
-    opening verifies and every fold lands on the next layer's opening (or the
-    final polynomial). `transcript` must be seeded exactly as the prover's was."""
+    `layer` at query `q` (as produced by `prover.prove_queries`). `nonce` is the
+    prover's grinding witness, transmitted in the proof: the verifier re-checks
+    the grind (O(1) — that `hash(challenge ++ nonce)` has `pow_bits` leading
+    zeros) and rejects a tampered nonce, then re-derives the query positions from
+    the transcript (not trusted from the prover). Returns whether the grind holds,
+    every Merkle opening verifies, and every fold lands on the next layer's
+    opening (or the final polynomial). `transcript` must be seeded exactly as the
+    prover's was."""
     code = Pil2FriCode(tuple(steps))
     tree = merkle_tree(arity)
     num_rounds = len(steps) - 1
@@ -74,10 +84,19 @@ def verify(
 
     # Re-derive the query positions from the transcript exactly as the prover did
     # (finalPol absorb + grinding-seed squeeze + reseed with challenge++nonce) —
-    # the verifier trusts the transcript, not the prover-supplied indices. One
-    # position per opened group.
-    query_indices = sample_query_positions(
-        transcript, final_pol, nonce, n_queries=len(query_openings), n_bits_ext=steps[0]
+    # the verifier trusts the transcript, not the prover-supplied indices. The
+    # grind check binds the prover's nonce: recompute the challenge, reject a
+    # nonce that does not hash to `pow_bits` leading zeros (pil2 stark_verify.hpp
+    # L195-L200), then read one position per opened group off challenge++nonce.
+    challenge = grinding_seed_challenge(transcript, final_pol)
+    if not grind_is_valid(challenge, nonce, pow_bits):
+        return False
+    query_indices = query_positions_for(
+        challenge,
+        transcript.width,
+        nonce,
+        n_queries=len(query_openings),
+        n_bits_ext=steps[0],
     )
 
     # Query indices stay on the host for the Merkle loop — indexing a JAX array

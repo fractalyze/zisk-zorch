@@ -44,14 +44,15 @@ py_library(
     ],
 )
 
-# pil2's FRI query-position derivation: finalPol absorb -> challenge -> reseed
-# with challenge++nonce -> getPermutations (grinding/PoW deferred, nonce input).
+# pil2's FRI query-position derivation: finalPol absorb -> challenge -> grinding
+# (self-derived PoW nonce) -> reseed with challenge++nonce -> getPermutations.
 py_library(
     name = "queries",
     srcs = ["queries.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":seam",
+        "//zisk_zorch/poseidon2:goldilocks",
         "//zisk_zorch/transcript",
         requirement("jax"),
         requirement("numpy"),
@@ -63,7 +64,10 @@ py_test(
     name = "queries_test",
     size = "small",
     srcs = ["queries_test.py"],
-    data = glob(["testdata/golden/query_sample.json"]),
+    data = glob([
+        "testdata/golden/query_sample.json",
+        "testdata/golden/grinding.json",
+    ]),
     deps = [
         ":queries",
         "//zisk_zorch:golden",
