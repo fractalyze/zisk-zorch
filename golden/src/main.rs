@@ -361,13 +361,26 @@ fn lde_case(n_bits: usize, blowup_bits: usize, n_cols: usize, seed: u64) -> Valu
     })
 }
 
+/// The extended-domain points `x[i] = SHIFT · W[nBitsExt]^i` (pil2 `computeX`,
+/// natural order) — the abscissae the boundary zerofiers below are built over.
+fn coset_x(n_bits: usize, blowup_bits: usize) -> Vec<Goldilocks> {
+    let n_ext = 1usize << (n_bits + blowup_bits);
+    let w_ext = Goldilocks::new(Goldilocks::W[n_bits + blowup_bits]);
+    let mut x = vec![Goldilocks::ZERO; n_ext];
+    let mut cur = Goldilocks::new(Goldilocks::SHIFT);
+    for xi in x.iter_mut() {
+        *xi = cur;
+        cur = cur * w_ext;
+    }
+    x
+}
+
 /// pil2-stark `buildZHInv` (setup_ctx.hpp): the inverse zerofier 1/(x^N − 1) on
 /// the blown-up coset, the divisor stage-2's quotient `Q = C / Z_H` multiplies
 /// by. On the coset SHIFT·<W[nBitsExt]>, `x^N = SHIFT^N · W[blowupBits]^j` takes
 /// only `2^blowupBits` distinct values, so the inverse is that period tiled
-/// across the extended domain (natural order). Byte-match target for
-/// zisk_zorch.quotient.zerofier.inv_zerofier.
-fn zerofier_inv_case(n_bits: usize, blowup_bits: usize) -> Value {
+/// across the extended domain (natural order).
+fn every_row_zi(n_bits: usize, blowup_bits: usize) -> Vec<Goldilocks> {
     let n_ext = 1usize << (n_bits + blowup_bits);
     let extend = 1usize << blowup_bits;
     let sn = pow(Goldilocks::new(Goldilocks::SHIFT), 1u64 << n_bits);
@@ -383,7 +396,67 @@ fn zerofier_inv_case(n_bits: usize, blowup_bits: usize) -> Value {
     for i in extend..n_ext {
         zi[i] = zi[i % extend];
     }
-    json!({"n_bits": n_bits, "blowup_bits": blowup_bits, "zi": ser(&zi)})
+    zi
+}
+
+/// Byte-match target for zisk_zorch.quotient.zerofier.inv_zerofier (everyRow).
+fn zerofier_inv_case(n_bits: usize, blowup_bits: usize) -> Value {
+    json!({
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "zi": ser(&every_row_zi(n_bits, blowup_bits)),
+    })
+}
+
+/// pil2-stark `buildOneRowZerofierInv`: the firstRow (rowIndex 0) / lastRow
+/// (rowIndex N) boundary divisor `1/((x − W[nBits]^rowIndex) · ZiEveryRow)`.
+/// Byte-match target for inv_one_row_zerofier.
+fn one_row_zerofier_case(n_bits: usize, blowup_bits: usize, row_index: u64) -> Value {
+    let x = coset_x(n_bits, blowup_bits);
+    let zi_h = every_row_zi(n_bits, blowup_bits);
+    let root = pow(Goldilocks::new(Goldilocks::W[n_bits]), row_index);
+    let zi: Vec<Goldilocks> =
+        (0..x.len()).map(|i| ((x[i] - root) * zi_h[i]).inverse()).collect();
+    json!({
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "row_index": row_index,
+        "zi": ser(&zi),
+    })
+}
+
+/// pil2-stark `buildFrameZerofierInv`: the everyFrame divisor — the product
+/// `∏ (x − root_j)` over the first `offsetMin` and last `offsetMax` row roots.
+/// (Despite the pil2 name it stores the product, not its inverse.) Byte-match
+/// target for inv_frame_zerofier.
+fn frame_zerofier_case(
+    n_bits: usize,
+    blowup_bits: usize,
+    offset_min: u64,
+    offset_max: u64,
+) -> Value {
+    let n = 1u64 << n_bits;
+    let w_n = Goldilocks::new(Goldilocks::W[n_bits]);
+    let x = coset_x(n_bits, blowup_bits);
+
+    let mut roots = Vec::new();
+    for i in 0..offset_min {
+        roots.push(pow(w_n, i));
+    }
+    for i in 0..offset_max {
+        roots.push(pow(w_n, n - i - 1));
+    }
+    let zi: Vec<Goldilocks> = x
+        .iter()
+        .map(|xi| roots.iter().fold(Goldilocks::new(1), |acc, r| acc * (*xi - *r)))
+        .collect();
+    json!({
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "offset_min": offset_min,
+        "offset_max": offset_max,
+        "zi": ser(&zi),
+    })
 }
 
 /// The full stage-1 pipeline on one small matrix: extendPol then leaf-hash
@@ -872,11 +945,21 @@ fn main() {
     write(
         "zisk_zorch/quotient/testdata/golden/zerofier_inv.json",
         json!({
-            "cases": [
+            "every_row": [
                 zerofier_inv_case(3, 1),
                 zerofier_inv_case(3, 2),
                 zerofier_inv_case(4, 2),
-            ]
+            ],
+            "one_row": [
+                one_row_zerofier_case(3, 2, 0),
+                one_row_zerofier_case(3, 2, 1),
+                one_row_zerofier_case(3, 2, 8),
+                one_row_zerofier_case(4, 1, 5),
+            ],
+            "frame": [
+                frame_zerofier_case(3, 2, 1, 1),
+                frame_zerofier_case(4, 1, 2, 1),
+            ],
         }),
     );
     write(

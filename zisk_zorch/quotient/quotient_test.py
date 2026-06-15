@@ -18,7 +18,11 @@ from zk_dtypes import goldilocksx3_mont as F3
 
 from zisk_zorch.golden import load, u64
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
-from zisk_zorch.quotient.zerofier import inv_zerofier
+from zisk_zorch.quotient.zerofier import (
+    inv_frame_zerofier,
+    inv_one_row_zerofier,
+    inv_zerofier,
+)
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
 _MODULUS = 0xFFFFFFFF00000001
@@ -47,12 +51,32 @@ def _zh_evals(n_bits: int, blowup_bits: int) -> jnp.ndarray:
 
 
 class ZerofierTest(absltest.TestCase):
-    def test_inv_zerofier_matches_pil2_build_zh_inv(self) -> None:
-        for case in load(_TESTDATA / "zerofier_inv.json")["cases"]:
+    def setUp(self) -> None:
+        super().setUp()
+        self.golden = load(_TESTDATA / "zerofier_inv.json")
+
+    def test_every_row_matches_pil2_build_zh_inv(self) -> None:
+        for case in self.golden["every_row"]:
             with self.subTest(n_bits=case["n_bits"], blowup_bits=case["blowup_bits"]):
                 got = inv_zerofier(case["n_bits"], case["blowup_bits"])
-                want = u64(case["zi"])
-                self.assertTrue(bool(jnp.array_equal(got, want)))
+                self.assertTrue(bool(jnp.array_equal(got, u64(case["zi"]))))
+
+    def test_one_row_matches_pil2_build_one_row_zerofier_inv(self) -> None:
+        for case in self.golden["one_row"]:
+            with self.subTest(blowup_bits=case["blowup_bits"], row_index=case["row_index"]):
+                got = inv_one_row_zerofier(
+                    case["n_bits"], case["blowup_bits"], case["row_index"]
+                )
+                self.assertTrue(bool(jnp.array_equal(got, u64(case["zi"]))))
+
+    def test_frame_matches_pil2_build_frame_zerofier_inv(self) -> None:
+        for case in self.golden["frame"]:
+            with self.subTest(offset_min=case["offset_min"], offset_max=case["offset_max"]):
+                got = inv_frame_zerofier(
+                    case["n_bits"], case["blowup_bits"],
+                    case["offset_min"], case["offset_max"],
+                )
+                self.assertTrue(bool(jnp.array_equal(got, u64(case["zi"]))))
 
 
 class QuotientTest(absltest.TestCase):
