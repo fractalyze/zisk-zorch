@@ -6,6 +6,7 @@ this file is just the map plus the rules every change must respect.
 - **Project overview & quick start:** [`README.md`](README.md)
 - **Coding conventions:** [`docs/conventions.md`](docs/conventions.md)
 - **Stage-1 commit pipeline:** [`docs/stage1-commit.md`](docs/stage1-commit.md)
+- **Stage-2 constraint ingestion:** [`docs/stage2-constraint-ingest.md`](docs/stage2-constraint-ingest.md)
 
 ## Non-negotiables
 
