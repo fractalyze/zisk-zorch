@@ -770,6 +770,15 @@ fn main() {
                 // Three-layer chain, arity 3: 6 -> 4 -> 2 -> 0, two trees plus a
                 // length-1 final pol; query indices probe group boundaries.
                 fri_prove(6, &[6, 4, 2, 0], 3, &[0, 5, 40, 63], 0x203),
+                // Production fold factor 8 (uniform drop 3), arity 4: 6 -> 3 -> 0.
+                // The real ZisK FRI schedules fold by 8 (recursive2 [20,17,14,
+                // 11,8,5], vadcop_final_compressed [19,16,13,10]); the cases above
+                // only fold by 4 (drop 2), a factor no ZisK config uses.
+                fri_prove(6, &[6, 3, 0], 4, &[0, 7, 33, 63], 0x204),
+                // Production fold factor 16 (uniform drop 4), arity 2: 8 -> 4 -> 0.
+                // Matches vadcop_final [21,17,13,9,5]; nX = 16 cubic per group is
+                // the widest fold-group regroup the chain commits.
+                fri_prove(8, &[8, 4, 0], 2, &[0, 15, 100, 255], 0x205),
             ]
         }),
     );
