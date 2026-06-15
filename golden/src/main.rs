@@ -361,6 +361,31 @@ fn lde_case(n_bits: usize, blowup_bits: usize, n_cols: usize, seed: u64) -> Valu
     })
 }
 
+/// pil2-stark `buildZHInv` (setup_ctx.hpp): the inverse zerofier 1/(x^N − 1) on
+/// the blown-up coset, the divisor stage-2's quotient `Q = C / Z_H` multiplies
+/// by. On the coset SHIFT·<W[nBitsExt]>, `x^N = SHIFT^N · W[blowupBits]^j` takes
+/// only `2^blowupBits` distinct values, so the inverse is that period tiled
+/// across the extended domain (natural order). Byte-match target for
+/// zisk_zorch.quotient.zerofier.inv_zerofier.
+fn zerofier_inv_case(n_bits: usize, blowup_bits: usize) -> Value {
+    let n_ext = 1usize << (n_bits + blowup_bits);
+    let extend = 1usize << blowup_bits;
+    let sn = pow(Goldilocks::new(Goldilocks::SHIFT), 1u64 << n_bits);
+    let w_ext = Goldilocks::new(Goldilocks::W[blowup_bits]);
+    let one = Goldilocks::new(1);
+
+    let mut zi = vec![Goldilocks::ZERO; n_ext];
+    let mut w = one;
+    for i in 0..extend {
+        zi[i] = (sn * w - one).inverse();
+        w = w * w_ext;
+    }
+    for i in extend..n_ext {
+        zi[i] = zi[i % extend];
+    }
+    json!({"n_bits": n_bits, "blowup_bits": blowup_bits, "zi": ser(&zi)})
+}
+
 /// The full stage-1 pipeline on one small matrix: extendPol then leaf-hash
 /// every extended row and fold the k-ary tree — the byte-match target for
 /// zisk_zorch.commit.trace_commit.
@@ -841,6 +866,16 @@ fn main() {
                 lde_case(3, 2, 3, 0xE1),
                 lde_case(4, 1, 1, 0xE2),
                 lde_case(5, 3, 2, 0xE3),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/quotient/testdata/golden/zerofier_inv.json",
+        json!({
+            "cases": [
+                zerofier_inv_case(3, 1),
+                zerofier_inv_case(3, 2),
+                zerofier_inv_case(4, 2),
             ]
         }),
     );
