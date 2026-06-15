@@ -7,12 +7,14 @@ py_library(
     name = "quotient",
     srcs = [
         "__init__.py",
+        "cexp_ref.py",
         "gsum.py",
         "quotient.py",
         "zerofier.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//zisk_zorch:golden",
         "@zorch//zorch:constraint_eval",
         requirement("jax"),
         requirement("numpy"),
@@ -29,6 +31,21 @@ py_test(
         ":quotient",
         "//zisk_zorch:golden",
         "@zorch//zorch:constraint_eval",
+        requirement("absl_py"),
+    ],
+)
+
+py_test(
+    name = "cexp_ref_test",
+    size = "medium",
+    srcs = ["cexp_ref_test.py"],
+    data = [
+        "testdata/golden/cexp_eval.json",
+        "testdata/memalign_readbyte_cexp.json",
+    ],
+    deps = [
+        ":quotient",
+        "//zisk_zorch:golden",
         requirement("absl_py"),
     ],
 )
