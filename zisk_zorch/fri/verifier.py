@@ -10,13 +10,16 @@ polynomial, and one Merkle group-proof per query per layer), the verifier:
      (`verify_group_proof`, pil2's `getGroupProof` deserialization), and
   3. checks the fold chain — each layer's opened cubic group folds to the next
      layer's opening (or the final polynomial) — via
-     `zorch.pcs.fold.verify_group_fold_chain` over the `Pil2FriCode` seam.
+     `zorch.pcs.fold.verify_group_fold_chain` over the `Pil2FriCode` seam, and
+  4. runs the terminal low-degree test on the in-clear final polynomial
+     (`Pil2FriCode.check_final` — INTT, then assert the coefficients above the
+     degree bound vanish), the soundness check fold-consistency alone cannot
+     make: a fold chain is internally consistent for any codeword, low-degree or
+     not, so without this a prover could send a high-degree final pol undetected.
 
-The fold consistency + Merkle checks are exactly the part a randomly-built
-codeword can exercise. The final-polynomial low-degree test (`INTT` then assert
-the high coefficients vanish) is out of scope here: it needs a genuine low-degree
-FRI polynomial and the base trace size `nBits`, neither of which exists until the
-upstream STARK (stage-2 / Q / evals) produces a real `f`.
+The fold consistency + Merkle checks are the part a randomly-built codeword can
+exercise; the low-degree test needs the base trace size `nBits` to set the degree
+bound (the FRI polynomial's true degree before the LDE blowup).
 
 Host-driven, mirroring the prover's transcript discipline. The query positions
 are NOT trusted from the prover: the verifier re-derives them from the transcript
@@ -58,18 +61,20 @@ def verify(
     transcript: Transcript,
     pow_bits: int,
     nonce: int,
+    n_bits: int,
 ) -> bool:
-    """Check the FRI fold consistency and Merkle openings for every query.
+    """Check the FRI fold consistency, Merkle openings, and final low-degree test.
 
     `query_openings[q][layer]` is the flat `getGroupProof` array for layer
     `layer` at query `q` (as produced by `prover.prove_queries`). `nonce` is the
     prover's grinding witness, transmitted in the proof: the verifier re-checks
     the grind (O(1) — that `hash(challenge ++ nonce)` has `pow_bits` leading
     zeros) and rejects a tampered nonce, then re-derives the query positions from
-    the transcript (not trusted from the prover). Returns whether the grind holds,
-    every Merkle opening verifies, and every fold lands on the next layer's
-    opening (or the final polynomial). `transcript` must be seeded exactly as the
-    prover's was."""
+    the transcript (not trusted from the prover). `n_bits` is the base trace log
+    size, fixing the final polynomial's degree bound. Returns whether the grind
+    holds, every Merkle opening verifies, every fold lands on the next layer's
+    opening (or the final polynomial), and the final polynomial is low-degree.
+    `transcript` must be seeded exactly as the prover's was."""
     code = Pil2FriCode(tuple(steps))
     tree = merkle_tree(arity)
     num_rounds = len(steps) - 1
@@ -127,4 +132,9 @@ def verify(
     # indices cross to JAX only here, for the device-side fold arithmetic.
     leaf_indices_jax = [jnp.asarray(idx) for idx in leaf_indices]
     ok = verify_group_fold_chain(code, openings_seam, betas, leaf_indices_jax, final_pol)
+
+    # The terminal low-degree test on the in-clear final polynomial: the fold
+    # chain only proves internal consistency, so a high-degree final pol would
+    # pass everything above — `check_final` is what binds it to a real degree.
+    ok = ok & code.check_final(final_pol, n_bits)
     return bool(ok)

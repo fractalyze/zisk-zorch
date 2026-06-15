@@ -32,7 +32,7 @@ from jax import Array
 from zk_dtypes import goldilocks_mont as F
 from zk_dtypes import goldilocksx3_mont as F3
 
-from zisk_zorch.fri.fold import fold, verify_fold
+from zisk_zorch.fri.fold import fold, intt, verify_fold
 from zisk_zorch.transcript.transcript import Transcript
 
 
@@ -139,13 +139,35 @@ class Pil2FriCode:
         opening index, one per committed layer)."""
         return [positions % (1 << self.steps[i + 1]) for i in range(num_rounds)]
 
-    def check_final(self, final: Array, claim: Array) -> Array:
-        """The terminal low-degree test — out of scope until a real low-degree FRI
-        polynomial exists (verifier.py docstring): it needs the base trace size
-        `nBits`, absent until the upstream STARK produces `f`."""
-        raise NotImplementedError(
-            "pil2 final-polynomial low-degree test is out of scope (see verifier.py)"
-        )
+    def check_final(self, final: Array, n_bits: int) -> Array:
+        """pil2's terminal low-degree test (`stark_verify.hpp` L672-L691): INTT the
+        in-clear final polynomial and assert every coefficient at or above the
+        degree bound vanishes.
+
+        `final` is the last layer's `2^steps[-1]` cubic evaluations the prover
+        sends uncompressed; `n_bits` is the base trace log size. The full fold
+        chain reduces `f`'s degree by the blowup factor, so a genuine FRI
+        polynomial leaves at most `2^(steps[-1] - (steps[0] - n_bits))`
+        coefficients — pil2's `init`. A prover that sends a higher-degree final
+        pol leaves a nonzero coefficient above the bound and is rejected, closing
+        the soundness gap a fold-consistency check alone leaves open.
+
+        https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L672-L691"""
+        last_bits = self.steps[-1]
+        n = 1 << last_bits
+        if final.shape != (n,):
+            raise ValueError(f"final must have shape {(n,)}, got {final.shape}")
+        blowup_bits = self.steps[0] - n_bits
+        if blowup_bits < 0:
+            raise ValueError(
+                f"n_bits {n_bits} exceeds the extended-domain size {self.steps[0]}"
+            )
+        # init: the count of coefficients a degree-bounded final pol may keep
+        # (pil2 stark_verify.hpp L684). A blowup wider than the final layer
+        # collapses the bound to the zero polynomial.
+        init = 0 if blowup_bits > last_bits else 1 << (last_bits - blowup_bits)
+        coeffs = intt(_cubic_to_base(final).reshape(n, 3), last_bits)  # (n, 3) base
+        return jnp.all(coeffs[init:] == jnp.zeros((), F))
 
 
 @dataclass(frozen=True)
