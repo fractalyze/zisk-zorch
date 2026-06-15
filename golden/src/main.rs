@@ -569,6 +569,86 @@ fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: 
     }
 }
 
+/// pil2-stark's terminal FRI low-degree test (`stark_verify.hpp` L672-L691): INTT
+/// the in-clear final polynomial and assert every coefficient at or above the
+/// degree bound `init = 2^(lastBits - blowupBits)` vanishes (`blowupBits =
+/// nBitsExt - nBits`). The case plants a random polynomial of degree `< init`,
+/// evaluates it on the order-`2^lastBits` subgroup by schoolbook Horner at
+/// `W[lastBits]` (the ground truth, as in `lde_case`) for a genuine low-degree
+/// `final_low`, and a `final_high` with one extra coefficient at index `init`
+/// (degree exactly `init`) — so the port's `check_final` must accept the first
+/// and reject the second. `intt_tiny` cross-checks that the constructed evals
+/// invert to exactly the planted coefficients, pinning the INTT convention the
+/// port mirrors. Only `steps[0]` (nBitsExt) and `steps[-1]` (lastBits) drive the
+/// test; the interior steps just exercise the schedule validation.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L672-L691
+fn fri_final_case(steps: &[u64], n_bits: u64, seed: u64) -> Value {
+    let n_bits_ext = steps[0];
+    let last_bits = steps[steps.len() - 1] as usize;
+    let n = 1usize << last_bits;
+    let blowup_bits = n_bits_ext - n_bits;
+    let init = if blowup_bits > last_bits as u64 {
+        0
+    } else {
+        1usize << (last_bits as u64 - blowup_bits)
+    };
+    assert!(init >= 1 && init < n, "pick params with 1 <= init < n for a meaningful test");
+
+    let mut state = seed;
+    // Schoolbook eval of the `n` coefficients (cubic, row-major) at w^j.
+    let w = Goldilocks::new(Goldilocks::W[last_bits]);
+    let eval = |coeffs: &[Goldilocks]| -> Vec<Goldilocks> {
+        let mut out = vec![Goldilocks::ZERO; n * 3];
+        for j in 0..n {
+            let x = pow(w, j as u64);
+            for c in 0..3 {
+                let mut acc = Goldilocks::ZERO;
+                for k in (0..n).rev() {
+                    acc = acc * x + coeffs[k * 3 + c];
+                }
+                out[j * 3 + c] = acc;
+            }
+        }
+        out
+    };
+
+    // A genuine low-degree final pol: coefficients < init, zero above.
+    let mut low = vec![Goldilocks::ZERO; n * 3];
+    for k in 0..init {
+        for c in 0..3 {
+            low[k * 3 + c] = rand_fe(&mut state);
+        }
+    }
+    let final_low = eval(&low);
+
+    // Convention guard: intt_tiny must invert the evals back to the plant.
+    let mut recovered = final_low.clone();
+    intt_tiny(&mut recovered, last_bits, 3);
+    assert_eq!(recovered, low, "intt_tiny convention mismatch");
+
+    // A high-degree final pol: one nonzero coefficient exactly at the bound.
+    let mut high = low.clone();
+    for c in 0..3 {
+        // Re-roll until nonzero so the degree is genuinely `init`, not below it.
+        loop {
+            let v = rand_fe(&mut state);
+            if v != Goldilocks::ZERO {
+                high[init * 3 + c] = v;
+                break;
+            }
+        }
+    }
+    let final_high = eval(&high);
+
+    json!({
+        "steps": steps,
+        "n_bits": n_bits,
+        "init": init,
+        "final_low": ser(&final_low),
+        "final_high": ser(&final_high),
+    })
+}
+
 /// pil2's FRI query-position derivation (`gen_proof.hpp` post-fold query phase):
 /// absorb the final polynomial into the running transcript, squeeze the cubic
 /// grinding-seed challenge, then seed a FRESH transcript with `challenge ++ nonce`
@@ -815,6 +895,20 @@ fn main() {
                 // Matches vadcop_final [21,17,13,9,5]; nX = 16 cubic per group is
                 // the widest fold-group regroup the chain commits.
                 fri_prove(8, &[8, 4, 0], 2, &[0, 15, 100, 255], 0x205),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/fri/testdata/golden/fri_final.json",
+        json!({
+            "cases": [
+                // nBitsExt 5, nBits 3 -> blowup 2; last layer 2^3, bound init = 2.
+                fri_final_case(&[5, 3], 3, 0x601),
+                // Constant final pol: last layer == blowup (2), so init = 1 — the
+                // production shape where the final pol collapses to one coeff.
+                fri_final_case(&[6, 4, 2], 4, 0x602),
+                // Wider final layer (2^4) with bound init = 4; multi-step schedule.
+                fri_final_case(&[7, 4], 5, 0x603),
             ]
         }),
     );
