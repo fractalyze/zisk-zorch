@@ -622,6 +622,42 @@ fn query_sample_case<C: Poseidon2Constants<W>, const W: usize>(
     })
 }
 
+/// pil2-stark's FRI grinding / proof-of-work (`Poseidon2GoldilocksGrinding::grinding`):
+/// the smallest `nonce` whose width-4 Poseidon2 permutation of `challenge ++ nonce`
+/// has `pow_bits` leading zero bits — its first output lane's canonical u64 is
+/// `< 1 << (64 - pow_bits)`. The C++ search parallelizes the scan over OMP chunks;
+/// any valid nonce passes the verifier, so the smallest (ascending) nonce is the
+/// deterministic one the prover commits and the verifier re-checks.
+///
+/// Grinding is not in the `fields` crate (it ships only the verify-side predicate),
+/// so this standalone case is the golden the Python port byte-matches. The
+/// permutation is `poseidon2_hash::<_, Poseidon4, 4>` — the same width-4 permutation
+/// `permutation.json` already pins. `image` is the predicate value (output lane 0),
+/// cross-checked so a wrong permutation can't pass on the nonce alone.
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/goldilocks/src/poseidon2_goldilocks.cpp#L172-L222
+fn grinding_case(pow_bits: u32, seed: u64) -> Value {
+    let mut state = seed;
+    let challenge = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
+    let level = 1u64 << (64 - pow_bits);
+
+    let mut nonce = 0u64;
+    let image = loop {
+        let input = [challenge[0], challenge[1], challenge[2], Goldilocks::new(nonce)];
+        let img = poseidon2_hash::<Goldilocks, Poseidon4, 4>(&input)[0].as_canonical_u64();
+        if img < level {
+            break img;
+        }
+        nonce += 1;
+    };
+
+    json!({
+        "pow_bits": pow_bits,
+        "challenge": ser(&challenge),
+        "nonce": nonce.to_string(),
+        "image": image.to_string(),
+    })
+}
+
 /// pil2-stark `computeLEv`: the Lagrange-evaluation vector for opening the
 /// committed polynomials at `xiChallenge` and its row shifts. For each opening
 /// offset `p`, the per-index value is the geometric series `g^k` (k in [0, N))
@@ -794,6 +830,19 @@ fn main() {
                 // arity 4 (width 16): 4-element final pol, wide nBitsExt 6,
                 // 8 queries force a second squeezed element in getPermutations.
                 query_sample_case::<Poseidon16, 16>(2, 8, 6, 0xABCDEF, 0x403),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/fri/testdata/golden/grinding.json",
+        json!({
+            "cases": [
+                // Ascending pow_bits widen the required zero prefix; small values
+                // keep the search short (~2^pow_bits tries) while still crossing a
+                // squeezed-element worth of leading zeros.
+                grinding_case(4, 0x501),
+                grinding_case(8, 0x502),
+                grinding_case(12, 0x503),
             ]
         }),
     );
