@@ -44,6 +44,36 @@ py_library(
     ],
 )
 
+# pil2's FRI query-position derivation: finalPol absorb -> challenge -> reseed
+# with challenge++nonce -> getPermutations (grinding/PoW deferred, nonce input).
+py_library(
+    name = "queries",
+    srcs = ["queries.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seam",
+        "//zisk_zorch/transcript",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "queries_test",
+    size = "small",
+    srcs = ["queries_test.py"],
+    data = glob(["testdata/golden/query_sample.json"]),
+    deps = [
+        ":queries",
+        "//zisk_zorch:golden",
+        "//zisk_zorch/transcript",
+        requirement("absl_py"),
+        requirement("jax"),
+        requirement("numpy"),
+    ],
+)
+
 # The full FRI prover: fold the layer chain, commit each layer, open queries.
 py_library(
     name = "prover",
