@@ -12,10 +12,11 @@ this module is the thin driver: seed → fold rounds → final polynomial → qu
 The codeword that enters the chain (pil2's FRI polynomial `f`) is the round-0
 carry; step 0's no-op fold is implicit (the seam folds *after* committing, so the
 first committed layer is `f` itself). The last round folds to the final
-polynomial, which pil2 sends uncompressed — observed outside the rounds. pil2's
-trailing put(finalPol)+squeeze is omitted: no challenge is consumed after the
-last fold and the query indices are drawn externally (zisk#3), so it cannot
-affect any proof output.
+polynomial, which pil2 sends uncompressed — observed outside the rounds. `prove`
+itself stops at the fold loop: pil2's trailing finalPol absorb + grinding-seed
+squeeze and the query-index derivation live in `queries.sample_query_positions`,
+which the caller runs on the post-fold transcript to obtain the indices it then
+feeds to `prove_queries`.
 
 prove_queries mirrors `FRI::proveFRIQueries`: layer `s` opens at
 `query_index mod 2^(steps[s+1])`, reusing the `getGroupProof` serialization.

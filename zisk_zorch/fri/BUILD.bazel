@@ -111,6 +111,7 @@ py_library(
     srcs = ["verifier.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":queries",
         ":seam",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
@@ -129,6 +130,7 @@ py_test(
     data = glob(["testdata/golden/fri_prove.json"]),
     deps = [
         ":prover",
+        ":queries",
         ":verifier",
         "//zisk_zorch:golden",
         "//zisk_zorch/transcript",
