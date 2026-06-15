@@ -459,6 +459,82 @@ fn frame_zerofier_case(
     })
 }
 
+type Ef = CubicExtensionField<Goldilocks>;
+
+fn ef_zero() -> Ef {
+    CubicExtensionField { value: [Goldilocks::ZERO; 3] }
+}
+
+fn rand_ef(state: &mut u64) -> Ef {
+    CubicExtensionField { value: [rand_fe(state), rand_fe(state), rand_fe(state)] }
+}
+
+fn ser_ef(vals: &[Ef]) -> Vec<String> {
+    let flat: Vec<Goldilocks> = vals.iter().flat_map(|e| e.value).collect();
+    ser(&flat)
+}
+
+/// pil2 std_sum LogUp denominator: Horner in `std_alpha` over the bus tuple,
+/// then `+ std_gamma` as the final additive bus separator (tuple[0] carries the
+/// highest alpha power). The byte-match target for zisk_zorch ... bus_denominator.
+fn bus_denominator_ref(tuple: &[Ef], alpha: Ef, gamma: Ef) -> Ef {
+    let mut den = tuple[0];
+    for t in &tuple[1..] {
+        den = den * alpha + *t;
+    }
+    den + gamma
+}
+
+/// pil2 `gsum_col` (additive grand-sum): the running prefix sum of each row's
+/// LogUp local term `Σ_i numerator_i · denominator_i^{-1}`. Row 0 is the raw
+/// local term (the loop accumulates from zero). Byte-match target for grand_sum.
+fn grand_sum_ref(numerators: &[Vec<Ef>], denominators: &[Vec<Ef>]) -> Vec<Ef> {
+    let mut gsum = Vec::with_capacity(numerators.len());
+    let mut acc = ef_zero();
+    for r in 0..numerators.len() {
+        let mut local = ef_zero();
+        for i in 0..numerators[r].len() {
+            local = local + numerators[r][i] * denominators[r][i].inverse();
+        }
+        acc = acc + local;
+        gsum.push(acc);
+    }
+    gsum
+}
+
+fn bus_denominator_case(tuple_width: usize, seed: u64) -> Value {
+    let mut state = seed;
+    let tuple: Vec<Ef> = (0..tuple_width).map(|_| rand_ef(&mut state)).collect();
+    let alpha = rand_ef(&mut state);
+    let gamma = rand_ef(&mut state);
+    let den = bus_denominator_ref(&tuple, alpha, gamma);
+    json!({
+        "tuple_width": tuple_width,
+        "tuple": ser_ef(&tuple),
+        "alpha": ser_ef(&[alpha]),
+        "gamma": ser_ef(&[gamma]),
+        "den": ser_ef(&[den]),
+    })
+}
+
+fn grand_sum_case(n: usize, n_interactions: usize, seed: u64) -> Value {
+    let mut state = seed;
+    let numerators: Vec<Vec<Ef>> =
+        (0..n).map(|_| (0..n_interactions).map(|_| rand_ef(&mut state)).collect()).collect();
+    let denominators: Vec<Vec<Ef>> =
+        (0..n).map(|_| (0..n_interactions).map(|_| rand_ef(&mut state)).collect()).collect();
+    let gsum = grand_sum_ref(&numerators, &denominators);
+    let flat_num: Vec<Ef> = numerators.into_iter().flatten().collect();
+    let flat_den: Vec<Ef> = denominators.into_iter().flatten().collect();
+    json!({
+        "n": n,
+        "n_interactions": n_interactions,
+        "numerators": ser_ef(&flat_num),
+        "denominators": ser_ef(&flat_den),
+        "gsum": ser_ef(&gsum),
+    })
+}
+
 /// The full stage-1 pipeline on one small matrix: extendPol then leaf-hash
 /// every extended row and fold the k-ary tree — the byte-match target for
 /// zisk_zorch.commit.trace_commit.
@@ -959,6 +1035,21 @@ fn main() {
             "frame": [
                 frame_zerofier_case(3, 2, 1, 1),
                 frame_zerofier_case(4, 1, 2, 1),
+            ],
+        }),
+    );
+    write(
+        "zisk_zorch/quotient/testdata/golden/gsum.json",
+        json!({
+            "denominator": [
+                bus_denominator_case(2, 0x5A01),
+                bus_denominator_case(3, 0x5A02),
+                bus_denominator_case(5, 0x5A03),
+            ],
+            "grand_sum": [
+                grand_sum_case(8, 1, 0x5B01),
+                grand_sum_case(8, 3, 0x5B02),
+                grand_sum_case(16, 2, 0x5B03),
             ],
         }),
     );
