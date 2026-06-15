@@ -3,9 +3,9 @@
 ZisK proves its lookup/permutation buses with a log-derivative (LogUp) argument:
 each row contributes `sum_i mult_i / den_i`, where `den_i` is the bus tuple
 combined into a single cubic value, and the committed `gsum` column is the
-running prefix sum of those local terms (`calculateWitnessSTD(prod=false)` →
-hint `gsum_col`, gen_proof.hpp / hints.cpp). The boundary closes via the
-`__L1__'` constraint tying the airgroup grand-sum result to the last row.
+running prefix sum of those local terms (pil2's `calculateWitnessSTD(prod=false)`
+→ hint `gsum_col`). The boundary closes via the `__L1__'` constraint tying the
+airgroup grand-sum result to the last row.
 
 This module builds the two primitives the witness needs: the per-tuple
 denominator (Horner in `std_alpha`, `+ std_gamma`) and the prefix-sum grand-sum.
@@ -13,12 +13,14 @@ The committed `gsum` column then feeds both the stage-2 commitment and the
 quotient composite's bus / running-sum constraints (see
 docs/stage2-constraint-ingest.md, quotient.py). Host-driven and un-jitted like
 the rest of the proof orchestration.
+
+std_sum driver: https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L23-L64
+gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/hints.cpp
 """
 
 from __future__ import annotations
 
 import jax.numpy as jnp
-import numpy as np
 from jax import Array
 from zk_dtypes import goldilocksx3_mont as F3
 
@@ -65,7 +67,7 @@ def _prefix_sum(x: Array) -> Array:
     acc = x
     shift = 1
     while shift < n:
-        zeros = jnp.array(np.zeros((shift, 3), dtype=np.uint64).view(F3).reshape(shift))
-        acc = acc + jnp.concatenate([zeros, acc[:-shift]])
+        pad = jnp.zeros(shift, dtype=F3)
+        acc = acc + jnp.concatenate([pad, acc[:-shift]])
         shift *= 2
     return acc

@@ -31,7 +31,13 @@ def compute_quotient(composite_evals: Array, n_bits: int, blowup_bits: int) -> A
     """`Q = C * Zi` on the extended domain: the composite constraint column
     `composite_evals` (cubic, length `2^(n_bits+blowup_bits)`, natural order)
     times the inverse zerofier. Pointwise, since `Zi` is precomputed per row."""
-    return composite_evals * inv_zerofier(n_bits, blowup_bits)
+    zi = inv_zerofier(n_bits, blowup_bits)  # validates n_bits/blowup_bits, length n_ext
+    if composite_evals.shape[0] != zi.shape[0]:
+        raise ValueError(
+            f"composite_evals length {composite_evals.shape[0]} != extended domain "
+            f"{zi.shape[0]} for n_bits={n_bits}, blowup_bits={blowup_bits}"
+        )
+    return composite_evals * zi
 
 
 def quotient_from_constraints(
