@@ -1,0 +1,46 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# Stage-2 quotient: the composite constraint polynomial folded by powers of the
+# quotient challenge (zorch.constraint_eval) divided by pil2's inverse zerofier.
+py_library(
+    name = "quotient",
+    srcs = [
+        "__init__.py",
+        "gsum.py",
+        "quotient.py",
+        "zerofier.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@zorch//zorch:constraint_eval",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "quotient_test",
+    size = "medium",
+    srcs = ["quotient_test.py"],
+    data = glob(["testdata/golden/zerofier_inv.json"]),
+    deps = [
+        ":quotient",
+        "//zisk_zorch:golden",
+        "@zorch//zorch:constraint_eval",
+        requirement("absl_py"),
+    ],
+)
+
+py_test(
+    name = "gsum_test",
+    size = "medium",
+    srcs = ["gsum_test.py"],
+    data = glob(["testdata/golden/gsum.json"]),
+    deps = [
+        ":quotient",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+    ],
+)

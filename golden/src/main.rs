@@ -361,6 +361,180 @@ fn lde_case(n_bits: usize, blowup_bits: usize, n_cols: usize, seed: u64) -> Valu
     })
 }
 
+/// The extended-domain points `x[i] = SHIFT · W[nBitsExt]^i` (pil2 `computeX`,
+/// natural order) — the abscissae the boundary zerofiers below are built over.
+fn coset_x(n_bits: usize, blowup_bits: usize) -> Vec<Goldilocks> {
+    let n_ext = 1usize << (n_bits + blowup_bits);
+    let w_ext = Goldilocks::new(Goldilocks::W[n_bits + blowup_bits]);
+    let mut x = vec![Goldilocks::ZERO; n_ext];
+    let mut cur = Goldilocks::new(Goldilocks::SHIFT);
+    for xi in x.iter_mut() {
+        *xi = cur;
+        cur = cur * w_ext;
+    }
+    x
+}
+
+/// pil2-stark `buildZHInv` (setup_ctx.hpp): the inverse zerofier 1/(x^N − 1) on
+/// the blown-up coset, the divisor stage-2's quotient `Q = C / Z_H` multiplies
+/// by. On the coset SHIFT·<W[nBitsExt]>, `x^N = SHIFT^N · W[blowupBits]^j` takes
+/// only `2^blowupBits` distinct values, so the inverse is that period tiled
+/// across the extended domain (natural order).
+fn every_row_zi(n_bits: usize, blowup_bits: usize) -> Vec<Goldilocks> {
+    let n_ext = 1usize << (n_bits + blowup_bits);
+    let extend = 1usize << blowup_bits;
+    let sn = pow(Goldilocks::new(Goldilocks::SHIFT), 1u64 << n_bits);
+    let w_ext = Goldilocks::new(Goldilocks::W[blowup_bits]);
+    let one = Goldilocks::new(1);
+
+    let mut zi = vec![Goldilocks::ZERO; n_ext];
+    let mut w = one;
+    for i in 0..extend {
+        zi[i] = (sn * w - one).inverse();
+        w = w * w_ext;
+    }
+    for i in extend..n_ext {
+        zi[i] = zi[i % extend];
+    }
+    zi
+}
+
+/// Byte-match target for zisk_zorch.quotient.zerofier.inv_zerofier (everyRow).
+fn zerofier_inv_case(n_bits: usize, blowup_bits: usize) -> Value {
+    json!({
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "zi": ser(&every_row_zi(n_bits, blowup_bits)),
+    })
+}
+
+/// pil2-stark `buildOneRowZerofierInv`: the firstRow (rowIndex 0) / lastRow
+/// (rowIndex N) boundary divisor `1/((x − W[nBits]^rowIndex) · ZiEveryRow)`.
+/// Byte-match target for inv_one_row_zerofier.
+fn one_row_zerofier_case(n_bits: usize, blowup_bits: usize, row_index: u64) -> Value {
+    let x = coset_x(n_bits, blowup_bits);
+    let zi_h = every_row_zi(n_bits, blowup_bits);
+    let root = pow(Goldilocks::new(Goldilocks::W[n_bits]), row_index);
+    let zi: Vec<Goldilocks> =
+        (0..x.len()).map(|i| ((x[i] - root) * zi_h[i]).inverse()).collect();
+    json!({
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "row_index": row_index,
+        "zi": ser(&zi),
+    })
+}
+
+/// pil2-stark `buildFrameZerofierInv`: the everyFrame divisor — the product
+/// `∏ (x − root_j)` over the first `offsetMin` and last `offsetMax` row roots.
+/// (Despite the pil2 name it stores the product, not its inverse.) Byte-match
+/// target for inv_frame_zerofier.
+fn frame_zerofier_case(
+    n_bits: usize,
+    blowup_bits: usize,
+    offset_min: u64,
+    offset_max: u64,
+) -> Value {
+    let n = 1u64 << n_bits;
+    let w_n = Goldilocks::new(Goldilocks::W[n_bits]);
+    let x = coset_x(n_bits, blowup_bits);
+
+    let mut roots = Vec::new();
+    for i in 0..offset_min {
+        roots.push(pow(w_n, i));
+    }
+    for i in 0..offset_max {
+        roots.push(pow(w_n, n - i - 1));
+    }
+    let zi: Vec<Goldilocks> = x
+        .iter()
+        .map(|xi| roots.iter().fold(Goldilocks::new(1), |acc, r| acc * (*xi - *r)))
+        .collect();
+    json!({
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "offset_min": offset_min,
+        "offset_max": offset_max,
+        "zi": ser(&zi),
+    })
+}
+
+type Ef = CubicExtensionField<Goldilocks>;
+
+fn ef_zero() -> Ef {
+    CubicExtensionField { value: [Goldilocks::ZERO; 3] }
+}
+
+fn rand_ef(state: &mut u64) -> Ef {
+    CubicExtensionField { value: [rand_fe(state), rand_fe(state), rand_fe(state)] }
+}
+
+fn ser_ef(vals: &[Ef]) -> Vec<String> {
+    let flat: Vec<Goldilocks> = vals.iter().flat_map(|e| e.value).collect();
+    ser(&flat)
+}
+
+/// pil2 std_sum LogUp denominator: Horner in `std_alpha` over the bus tuple,
+/// then `+ std_gamma` as the final additive bus separator (tuple[0] carries the
+/// highest alpha power). The byte-match target for zisk_zorch ... bus_denominator.
+fn bus_denominator_ref(tuple: &[Ef], alpha: Ef, gamma: Ef) -> Ef {
+    let mut den = tuple[0];
+    for t in &tuple[1..] {
+        den = den * alpha + *t;
+    }
+    den + gamma
+}
+
+/// pil2 `gsum_col` (additive grand-sum): the running prefix sum of each row's
+/// LogUp local term `Σ_i numerator_i · denominator_i^{-1}`. Row 0 is the raw
+/// local term (the loop accumulates from zero). Byte-match target for grand_sum.
+fn grand_sum_ref(numerators: &[Vec<Ef>], denominators: &[Vec<Ef>]) -> Vec<Ef> {
+    let mut gsum = Vec::with_capacity(numerators.len());
+    let mut acc = ef_zero();
+    for r in 0..numerators.len() {
+        let mut local = ef_zero();
+        for i in 0..numerators[r].len() {
+            local = local + numerators[r][i] * denominators[r][i].inverse();
+        }
+        acc = acc + local;
+        gsum.push(acc);
+    }
+    gsum
+}
+
+fn bus_denominator_case(tuple_width: usize, seed: u64) -> Value {
+    let mut state = seed;
+    let tuple: Vec<Ef> = (0..tuple_width).map(|_| rand_ef(&mut state)).collect();
+    let alpha = rand_ef(&mut state);
+    let gamma = rand_ef(&mut state);
+    let den = bus_denominator_ref(&tuple, alpha, gamma);
+    json!({
+        "tuple_width": tuple_width,
+        "tuple": ser_ef(&tuple),
+        "alpha": ser_ef(&[alpha]),
+        "gamma": ser_ef(&[gamma]),
+        "den": ser_ef(&[den]),
+    })
+}
+
+fn grand_sum_case(n: usize, n_interactions: usize, seed: u64) -> Value {
+    let mut state = seed;
+    let numerators: Vec<Vec<Ef>> =
+        (0..n).map(|_| (0..n_interactions).map(|_| rand_ef(&mut state)).collect()).collect();
+    let denominators: Vec<Vec<Ef>> =
+        (0..n).map(|_| (0..n_interactions).map(|_| rand_ef(&mut state)).collect()).collect();
+    let gsum = grand_sum_ref(&numerators, &denominators);
+    let flat_num: Vec<Ef> = numerators.into_iter().flatten().collect();
+    let flat_den: Vec<Ef> = denominators.into_iter().flatten().collect();
+    json!({
+        "n": n,
+        "n_interactions": n_interactions,
+        "numerators": ser_ef(&flat_num),
+        "denominators": ser_ef(&flat_den),
+        "gsum": ser_ef(&gsum),
+    })
+}
+
 /// The full stage-1 pipeline on one small matrix: extendPol then leaf-hash
 /// every extended row and fold the k-ary tree — the byte-match target for
 /// zisk_zorch.commit.trace_commit.
@@ -842,6 +1016,41 @@ fn main() {
                 lde_case(4, 1, 1, 0xE2),
                 lde_case(5, 3, 2, 0xE3),
             ]
+        }),
+    );
+    write(
+        "zisk_zorch/quotient/testdata/golden/zerofier_inv.json",
+        json!({
+            "every_row": [
+                zerofier_inv_case(3, 1),
+                zerofier_inv_case(3, 2),
+                zerofier_inv_case(4, 2),
+            ],
+            "one_row": [
+                one_row_zerofier_case(3, 2, 0),
+                one_row_zerofier_case(3, 2, 1),
+                one_row_zerofier_case(3, 2, 8),
+                one_row_zerofier_case(4, 1, 5),
+            ],
+            "frame": [
+                frame_zerofier_case(3, 2, 1, 1),
+                frame_zerofier_case(4, 1, 2, 1),
+            ],
+        }),
+    );
+    write(
+        "zisk_zorch/quotient/testdata/golden/gsum.json",
+        json!({
+            "denominator": [
+                bus_denominator_case(2, 0x5A01),
+                bus_denominator_case(3, 0x5A02),
+                bus_denominator_case(5, 0x5A03),
+            ],
+            "grand_sum": [
+                grand_sum_case(8, 1, 0x5B01),
+                grand_sum_case(8, 3, 0x5B02),
+                grand_sum_case(16, 2, 0x5B03),
+            ],
         }),
     );
     write(
