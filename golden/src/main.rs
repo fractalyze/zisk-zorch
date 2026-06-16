@@ -1335,6 +1335,10 @@ fn main() {
         "../../zisk_zorch/quotient/testdata/binary_cexp.json"
     ))
     .unwrap();
+    let arith_cexp: Value = serde_json::from_str(include_str!(
+        "../../zisk_zorch/quotient/testdata/arith_cexp.json"
+    ))
+    .unwrap();
     write(
         "zisk_zorch/quotient/testdata/golden/cexp_eval.json",
         json!({
@@ -1348,6 +1352,11 @@ fn main() {
                 // interactions are exported by rw (the mem family's are not).
                 cexp_eval_case(&binary_cexp, 3, 1, 0x7003),
                 cexp_eval_case(&binary_cexp, 4, 1, 0x7004),
+                // Arith: the largest exported AIR (65 constraints, 799 ops) and
+                // the meaningful rw re-author target — its bus interactions are
+                // authored on the rw side (24 sends / 1 recv).
+                cexp_eval_case(&arith_cexp, 3, 1, 0x7005),
+                cexp_eval_case(&arith_cexp, 4, 1, 0x7006),
             ]
         }),
     );
