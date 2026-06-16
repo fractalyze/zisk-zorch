@@ -10,6 +10,7 @@ py_library(
         "cexp_ref.py",
         "gsum.py",
         "quotient.py",
+        "reauthor.py",
         "zerofier.py",
     ],
     visibility = ["//visibility:public"],
@@ -40,12 +41,26 @@ py_test(
     size = "medium",
     srcs = ["cexp_ref_test.py"],
     data = [
+        "testdata/binary_cexp.json",
         "testdata/golden/cexp_eval.json",
         "testdata/memalign_readbyte_cexp.json",
     ],
     deps = [
         ":quotient",
         "//zisk_zorch:golden",
+        requirement("absl_py"),
+    ],
+)
+
+py_test(
+    name = "reauthor_test",
+    size = "medium",
+    srcs = ["reauthor_test.py"],
+    data = ["testdata/golden/cexp_eval.json"],
+    deps = [
+        ":quotient",
+        "//zisk_zorch:golden",
+        "//zisk_zorch/constraints:chip_loader",
         requirement("absl_py"),
     ],
 )

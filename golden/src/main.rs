@@ -1331,6 +1331,10 @@ fn main() {
         "../../zisk_zorch/quotient/testdata/memalign_readbyte_cexp.json"
     ))
     .unwrap();
+    let binary_cexp: Value = serde_json::from_str(include_str!(
+        "../../zisk_zorch/quotient/testdata/binary_cexp.json"
+    ))
+    .unwrap();
     write(
         "zisk_zorch/quotient/testdata/golden/cexp_eval.json",
         json!({
@@ -1339,6 +1343,11 @@ fn main() {
                 // (blowup_bits 1 matches the AIR's nBitsExt - nBits).
                 cexp_eval_case(&memalign_cexp, 3, 1, 0x7001),
                 cexp_eval_case(&memalign_cexp, 4, 1, 0x7002),
+                // Binary: a larger AIR (14 constraints incl. 4 std_sum im_cluster
+                // pairs, 307 ops) — the re-author byte-match target, since its bus
+                // interactions are exported by rw (the mem family's are not).
+                cexp_eval_case(&binary_cexp, 3, 1, 0x7003),
+                cexp_eval_case(&binary_cexp, 4, 1, 0x7004),
             ]
         }),
     );

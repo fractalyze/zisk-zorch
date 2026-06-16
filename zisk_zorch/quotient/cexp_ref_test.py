@@ -28,17 +28,23 @@ from zisk_zorch.quotient.cexp_ref import evaluate  # noqa: E402
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata"
 
+# Each golden case names its AIR; load the matching vendored cExp fragment.
+_FRAGMENTS = {
+    "MemAlignReadByte": "memalign_readbyte_cexp.json",
+    "Binary": "binary_cexp.json",
+}
+
 
 class CExpRefTest(absltest.TestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.fragment = load(_TESTDATA / "memalign_readbyte_cexp.json")
+        self.fragments = {air: load(_TESTDATA / f) for air, f in _FRAGMENTS.items()}
         self.golden = load(_TESTDATA / "golden" / "cexp_eval.json")
 
     def test_reference_matches_golden_q(self) -> None:
         for case in self.golden["cases"]:
-            with self.subTest(n_bits=case["n_bits"], blowup_bits=case["blowup_bits"]):
-                got = evaluate(self.fragment, case)
+            with self.subTest(air=case["air"], n_bits=case["n_bits"]):
+                got = evaluate(self.fragments[case["air"]], case)
                 self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
 
 
