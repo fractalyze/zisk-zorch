@@ -14,6 +14,7 @@ use fields::{
     Poseidon2Constants, Poseidon4, Poseidon8, Transcript,
 };
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -967,6 +968,183 @@ fn compute_lev_case(n_bits: usize, opening_points: &[i64], seed: u64) -> Value {
     })
 }
 
+/// Embed a base field element into the cubic extension as `(b, 0, 0)`. The cExp
+/// VM evaluates every operand in `Ef`; a true base operand is the embedding with
+/// zero high limbs, so base×cubic stays exact scalar multiplication.
+fn embed(b: Goldilocks) -> Ef {
+    CubicExtensionField { value: [b, Goldilocks::ZERO, Goldilocks::ZERO] }
+}
+
+/// Parse a cExp `number` literal (canonical decimal, may exceed i64 e.g. `p-1`).
+fn cexp_number(v: &str) -> Ef {
+    embed(Goldilocks::new((v.parse::<u128>().unwrap() % GOLDILOCKS_P) as u64))
+}
+
+/// Random base or cubic scalar by declared dim (base embedded into `Ef`).
+fn gen_scalar(dim: usize, state: &mut u64) -> Ef {
+    if dim == 3 { rand_ef(state) } else { embed(rand_fe(state)) }
+}
+
+/// First-occurrence dim per operand id for a scalar `type` in the SSA — a single
+/// airValue / airgroupValue / challenge has one fixed dim across the program.
+/// Ordered (`BTreeMap`) so the synthetic generation below consumes the random
+/// stream in a deterministic id order — the golden must regenerate identically.
+fn scalar_dims(code: &[Value], typ: &str) -> BTreeMap<u64, usize> {
+    let mut m = BTreeMap::new();
+    for op in code {
+        for s in op["src"].as_array().unwrap() {
+            if s["type"] == typ {
+                let id = s["id"].as_u64().unwrap();
+                let dim = s["dim"].as_u64().unwrap() as usize;
+                m.entry(id).or_insert(dim);
+            }
+        }
+    }
+    m
+}
+
+/// The synthetic-trace tables + domain shape the cExp SSA reads from, bundled so
+/// operand resolution takes one borrow instead of eight positional arguments.
+struct CexpEnv<'a> {
+    cm: &'a [Vec<Ef>],
+    const_cols: &'a [Vec<Ef>],
+    challenges: &'a [Ef],
+    airvalues: &'a HashMap<u64, Ef>,
+    airgroupvalues: &'a HashMap<u64, Ef>,
+    zi: &'a [Goldilocks],
+    extend: i64,
+    n_ext: i64,
+}
+
+/// Resolve one cExp operand to its `Ef` value at extended-domain row `i`. `cm` /
+/// `const` carry a `prime` rotation of ±`extend` rows (cyclic mod `n_ext`), the
+/// extended-domain image of the ±1 next/previous-row opening.
+fn cexp_operand(s: &Value, tmp: &HashMap<u64, Ef>, env: &CexpEnv, i: usize) -> Ef {
+    let id = || s["id"].as_u64().unwrap();
+    let rot = |prime: i64| ((i as i64 + prime * env.extend).rem_euclid(env.n_ext)) as usize;
+    match s["type"].as_str().unwrap() {
+        "number" => cexp_number(s["value"].as_str().unwrap()),
+        "cm" => env.cm[id() as usize][rot(s["prime"].as_i64().unwrap())],
+        "const" => env.const_cols[id() as usize][rot(s["prime"].as_i64().unwrap())],
+        "challenge" => env.challenges[id() as usize],
+        "airvalue" => env.airvalues[&id()],
+        "airgroupvalue" => env.airgroupvalues[&id()],
+        "tmp" => tmp[&id()],
+        "Zi" => embed(env.zi[i]),
+        other => panic!("unhandled cExp operand type {other}"),
+    }
+}
+
+/// Reference `q = cExp / Z_H` for a real ZisK AIR, evaluated by interpreting the
+/// proving key's composite-constraint SSA (`expressionsCode[cExpId]`) over the
+/// `fields` crate — the authoritative byte-match target for the stage-2 quotient
+/// (no pil2 prover run, no real witness).
+///
+/// The op list is N-independent, so it runs on a small synthetic extended domain
+/// with random inputs for the committed columns (cm), the `__L1__` boundary
+/// const, the std challenges (alpha/gamma/vc) and the air(group)Values. The
+/// re-author path (rw `eval_constraints` + the generated `std_sum` constraints,
+/// folded in proving-key order) must reproduce `q` from the same inputs.
+fn cexp_eval_case(fragment: &Value, n_bits: usize, blowup_bits: usize, seed: u64) -> Value {
+    let code = fragment["code"].as_array().unwrap();
+    let n_ext = 1usize << (n_bits + blowup_bits);
+    let extend = 1i64 << blowup_bits;
+    let zi = every_row_zi(n_bits, blowup_bits);
+    let mut state = seed;
+
+    // Synthetic input columns, sized by the proving-key dims (cm id == index).
+    let gen_col = |dim: usize, st: &mut u64| -> Vec<Ef> {
+        (0..n_ext).map(|_| gen_scalar(dim, st)).collect()
+    };
+    let dims = |key: &str| -> Vec<usize> {
+        fragment[key].as_array().unwrap().iter().map(|c| c["dim"].as_u64().unwrap() as usize).collect()
+    };
+    let cm: Vec<Vec<Ef>> = dims("cmPolsMap").iter().map(|&d| gen_col(d, &mut state)).collect();
+    let const_cols: Vec<Vec<Ef>> =
+        dims("constPolsMap").iter().map(|&d| gen_col(d, &mut state)).collect();
+
+    // Global scalars (one value per program), base or cubic by their SSA dim.
+    let challenges: Vec<Ef> = fragment["challengesMap"]
+        .as_array().unwrap().iter().map(|_| rand_ef(&mut state)).collect();
+    let mut airvalues = HashMap::new();
+    for (id, dim) in scalar_dims(code, "airvalue") {
+        airvalues.insert(id, gen_scalar(dim, &mut state));
+    }
+    let mut airgroupvalues = HashMap::new();
+    for (id, dim) in scalar_dims(code, "airgroupvalue") {
+        airgroupvalues.insert(id, gen_scalar(dim, &mut state));
+    }
+
+    // Interpret the SSA per extended row -> q[i].
+    let env = CexpEnv {
+        cm: &cm,
+        const_cols: &const_cols,
+        challenges: &challenges,
+        airvalues: &airvalues,
+        airgroupvalues: &airgroupvalues,
+        zi: &zi,
+        extend,
+        n_ext: n_ext as i64,
+    };
+    let mut q = vec![ef_zero(); n_ext];
+    for i in 0..n_ext {
+        let mut tmp: HashMap<u64, Ef> = HashMap::new();
+        for op in code {
+            let src = op["src"].as_array().unwrap();
+            let a = cexp_operand(&src[0], &tmp, &env, i);
+            let b = cexp_operand(&src[1], &tmp, &env, i);
+            let r = match op["op"].as_str().unwrap() {
+                "add" => a + b,
+                "sub" => a - b,
+                "mul" => a * b,
+                other => panic!("unhandled cExp op {other}"),
+            };
+            let dest = &op["dest"];
+            match dest["type"].as_str().unwrap() {
+                "tmp" => { tmp.insert(dest["id"].as_u64().unwrap(), r); }
+                "q" => q[i] = r,
+                other => panic!("unhandled cExp dest {other}"),
+            }
+        }
+    }
+
+    let ser_col = |dim: usize, col: &[Ef]| -> Vec<String> {
+        if dim == 1 {
+            ser(&col.iter().map(|e| e.value[0]).collect::<Vec<_>>())
+        } else {
+            ser_ef(col)
+        }
+    };
+    let ser_named = |key: &str, cols: &[Vec<Ef>]| -> Vec<Value> {
+        fragment[key].as_array().unwrap().iter().enumerate().map(|(id, c)| {
+            let dim = c["dim"].as_u64().unwrap() as usize;
+            json!({"id": id, "name": c["name"], "dim": dim, "values": ser_col(dim, &cols[id])})
+        }).collect()
+    };
+    let ser_scalars = |m: &HashMap<u64, Ef>| -> Vec<Value> {
+        let mut ids: Vec<u64> = m.keys().copied().collect();
+        ids.sort_unstable();
+        ids.iter().map(|id| json!({"id": id, "value": ser_ef(&[m[id]])})).collect()
+    };
+    json!({
+        "air": fragment["air"],
+        "cExpId": fragment["cExpId"],
+        "n_bits": n_bits,
+        "blowup_bits": blowup_bits,
+        "cm": ser_named("cmPolsMap", &cm),
+        "const": ser_named("constPolsMap", &const_cols),
+        "challenges": challenges.iter().enumerate()
+            .map(|(id, c)| json!({"id": id, "value": ser_ef(&[*c])})).collect::<Vec<_>>(),
+        "airvalues": ser_scalars(&airvalues),
+        "airgroupvalues": ser_scalars(&airgroupvalues),
+        // The everyRow inverse zerofier the SSA reads as the `Zi` operand,
+        // emitted so the Python reference reads identical inputs (its value is
+        // independently pinned by the zerofier_inv golden).
+        "zi": ser(&zi),
+        "q": ser_ef(&q),
+    })
+}
+
 fn write(path: &str, value: Value) {
     let path = Path::new("..").join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1146,6 +1324,21 @@ fn main() {
                 grinding_case(4, 0x501),
                 grinding_case(8, 0x502),
                 grinding_case(12, 0x503),
+            ]
+        }),
+    );
+    let memalign_cexp: Value = serde_json::from_str(include_str!(
+        "../../zisk_zorch/quotient/testdata/memalign_readbyte_cexp.json"
+    ))
+    .unwrap();
+    write(
+        "zisk_zorch/quotient/testdata/golden/cexp_eval.json",
+        json!({
+            "cases": [
+                // MemAlignReadByte's real composite SSA on a small synthetic domain
+                // (blowup_bits 1 matches the AIR's nBitsExt - nBits).
+                cexp_eval_case(&memalign_cexp, 3, 1, 0x7001),
+                cexp_eval_case(&memalign_cexp, 4, 1, 0x7002),
             ]
         }),
     );

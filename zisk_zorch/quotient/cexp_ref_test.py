@@ -1,0 +1,46 @@
+"""Byte-match the cExp reference evaluator against the golden Rust VM.
+
+The golden's `cexp_eval_case` interprets MemAlignReadByte's real composite-
+constraint SSA (the proving key's `expressionsCode[cExpId]`) over pil2's `fields`
+crate; `cexp_ref.evaluate` interprets the same vendored op list over the zk_dtypes
+cubic extension. Equality pins the SSA semantics — the operand model (cm/const
+rotations, the std challenges, air(group)Values, `Zi`) and the cubic arithmetic —
+across the two implementations. The stage-2 prover's re-authored quotient (from
+ingested rw constraints + generated std_sum constraints) must in turn match this
+golden `q`.
+"""
+
+from __future__ import annotations
+
+import jax
+
+# rw-exported field constants and the cubic embeds need 64-bit ints; set before
+# any array op (see chip_loader_test).
+jax.config.update("jax_enable_x64", True)
+
+import pathlib  # noqa: E402
+
+import jax.numpy as jnp  # noqa: E402
+from absl.testing import absltest  # noqa: E402
+
+from zisk_zorch.golden import load, u64x3  # noqa: E402
+from zisk_zorch.quotient.cexp_ref import evaluate  # noqa: E402
+
+_TESTDATA = pathlib.Path(__file__).parent / "testdata"
+
+
+class CExpRefTest(absltest.TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.fragment = load(_TESTDATA / "memalign_readbyte_cexp.json")
+        self.golden = load(_TESTDATA / "golden" / "cexp_eval.json")
+
+    def test_reference_matches_golden_q(self) -> None:
+        for case in self.golden["cases"]:
+            with self.subTest(n_bits=case["n_bits"], blowup_bits=case["blowup_bits"]):
+                got = evaluate(self.fragment, case)
+                self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
+
+
+if __name__ == "__main__":
+    absltest.main()
