@@ -21,43 +21,20 @@ the numpy level: the zkx CPU emitter crashes on cubic bitcast/`view`.
 from __future__ import annotations
 
 import jax.numpy as jnp
-import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
 
 from zisk_zorch.golden import u64x3
-
-
-def _embed(values: list[str]) -> Array:
-    """Base canonical-u64 decimals -> `F3` array of `(b, 0, 0)` embeddings.
-
-    The decimals are already canonical (`< p`, the golden's `as_canonical_u64` /
-    pil2's field literals), so `astype(F)` value-converts each straight into the
-    Montgomery field — no explicit reduction needed."""
-    limbs = np.array([[int(v), 0, 0] for v in values], dtype=np.uint64)
-    return jnp.array(limbs.astype(F).view(F3).reshape(limbs.shape[0]))
-
-
-def _rotate(col: Array, shift: int) -> Array:
-    """`out[i] = col[(i + shift) mod n]` — the extended-domain image of a
-    next/previous-row opening. Built from slice+concat (no `jnp.roll` in the
-    zkx jax fork)."""
-    n = col.shape[0]
-    s = shift % n
-    if s == 0:
-        return col
-    return jnp.concatenate([col[s:], col[:s]])
+from zisk_zorch.quotient.field_io import embed, rotate
 
 
 def _load_inputs(case: dict) -> dict:
     """Materialize every cExp operand source from a golden case as `F3`."""
     cm: dict[int, Array] = {}
     for col in case["cm"]:
-        cm[col["id"]] = (_embed if col["dim"] == 1 else u64x3)(col["values"])
+        cm[col["id"]] = (embed if col["dim"] == 1 else u64x3)(col["values"])
     const_cols: dict[int, Array] = {}
     for col in case["const"]:
-        const_cols[col["id"]] = (_embed if col["dim"] == 1 else u64x3)(col["values"])
+        const_cols[col["id"]] = (embed if col["dim"] == 1 else u64x3)(col["values"])
     challenges = {c["id"]: u64x3(c["value"]) for c in case["challenges"]}
     airvalues = {a["id"]: u64x3(a["value"]) for a in case["airvalues"]}
     airgroupvalues = {a["id"]: u64x3(a["value"]) for a in case["airgroupvalues"]}
@@ -67,7 +44,7 @@ def _load_inputs(case: dict) -> dict:
         "challenges": challenges,
         "airvalues": airvalues,
         "airgroupvalues": airgroupvalues,
-        "zi": _embed(case["zi"]),
+        "zi": embed(case["zi"]),
     }
 
 
@@ -85,11 +62,11 @@ def evaluate(fragment: dict, case: dict) -> Array:
     def operand(s: dict) -> Array:
         t = s["type"]
         if t == "number":
-            return _embed([s["value"]])
+            return embed([s["value"]])
         if t == "cm":
-            return _rotate(cm[s["id"]], s["prime"] * extend)
+            return rotate(cm[s["id"]], s["prime"] * extend)
         if t == "const":
-            return _rotate(const_cols[s["id"]], s["prime"] * extend)
+            return rotate(const_cols[s["id"]], s["prime"] * extend)
         if t == "challenge":
             return challenges[s["id"]]
         if t == "airvalue":

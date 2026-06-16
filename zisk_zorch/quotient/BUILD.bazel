@@ -8,6 +8,7 @@ py_library(
     srcs = [
         "__init__.py",
         "cexp_ref.py",
+        "field_io.py",
         "gsum.py",
         "quotient.py",
         "reauthor.py",
