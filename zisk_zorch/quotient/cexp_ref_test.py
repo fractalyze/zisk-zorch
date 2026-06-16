@@ -24,7 +24,7 @@ import jax.numpy as jnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.golden import load, u64x3  # noqa: E402
-from zisk_zorch.quotient.cexp_ref import evaluate  # noqa: E402
+from zisk_zorch.quotient.cexp_ref import evaluate, evaluate_from_constraints  # noqa: E402
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata"
 
@@ -34,17 +34,34 @@ _FRAGMENTS = {
     "Binary": "binary_cexp.json",
 }
 
+# The proving key's individual constraints[] per AIR (the generic-fold input).
+_CONSTRAINTS = {
+    "MemAlignReadByte": "memalign_readbyte_constraints.json",
+    "Binary": "binary_constraints.json",
+}
+
 
 class CExpRefTest(absltest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.fragments = {air: load(_TESTDATA / f) for air, f in _FRAGMENTS.items()}
+        self.constraints = {
+            air: load(_TESTDATA / f)["constraints"] for air, f in _CONSTRAINTS.items()
+        }
         self.golden = load(_TESTDATA / "golden" / "cexp_eval.json")
 
     def test_reference_matches_golden_q(self) -> None:
         for case in self.golden["cases"]:
             with self.subTest(air=case["air"], n_bits=case["n_bits"]):
                 got = evaluate(self.fragments[case["air"]], case)
+                self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
+
+    def test_generic_constraint_fold_matches_golden_q(self) -> None:
+        # The AIR-agnostic constraints[] fold reassembles the same q as pil2's
+        # pre-folded composite — across both Binary and MemAlignReadByte.
+        for case in self.golden["cases"]:
+            with self.subTest(air=case["air"], n_bits=case["n_bits"]):
+                got = evaluate_from_constraints(self.constraints[case["air"]], case)
                 self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
 
 

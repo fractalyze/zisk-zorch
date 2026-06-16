@@ -1,0 +1,6845 @@
+{
+ "air": "Binary",
+ "constraints": [
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 0,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:82 mode32*(1-mode32) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 32,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 32,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 2,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:83 carry[7]*(1-carry[7]) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 4,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:84 result_is_a*(1-result_is_a) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 6,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:85 use_first_byte*(1-use_first_byte) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 8,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:86 c_is_signed*(1-c_is_signed) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 5,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "number",
+       "value": "512",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 6,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 10,
+       "id": 5,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 7,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 11,
+       "id": 6,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 8,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 12,
+       "id": 7,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 9,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 13,
+       "id": 8,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:111 b_op_or_sext-((mode32*((c_is_signed+512)-b_op))+b_op) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 15,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "binary/pil/binary.pil:112 mode32_and_c_is_signed-(mode32*c_is_signed) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 44,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 45,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 26,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 36,
+       "id": 44,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 46,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 47,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 37,
+       "id": 45,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 38,
+       "id": 46,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 48,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 39,
+       "id": 47,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 49,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 40,
+       "id": 48,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 18,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 50,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 41,
+       "id": 49,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 51,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 42,
+       "id": 50,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 25,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 52,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 43,
+       "id": 51,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 53,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 44,
+       "id": 52,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 10,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 54,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 45,
+       "id": 53,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 55,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 46,
+       "id": 54,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 56,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 47,
+       "id": 55,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 57,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 48,
+       "id": 56,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 58,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 49,
+       "id": 57,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 59,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 50,
+       "id": 58,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 60,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 51,
+       "id": 59,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 61,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 52,
+       "id": 60,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 62,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 63,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 27,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 17,
+       "id": 62,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 64,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 65,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 18,
+       "id": 63,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 19,
+       "id": 64,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 66,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 20,
+       "id": 65,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 67,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 21,
+       "id": 66,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 19,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 68,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 22,
+       "id": 67,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 69,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 23,
+       "id": 68,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 26,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 70,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 24,
+       "id": 69,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 71,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 25,
+       "id": 70,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 11,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 72,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 26,
+       "id": 71,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 73,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 27,
+       "id": 72,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 3,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 74,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 28,
+       "id": 73,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 75,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 29,
+       "id": 74,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 76,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 30,
+       "id": 75,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 77,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 31,
+       "id": 76,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 78,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 32,
+       "id": 77,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 79,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 33,
+       "id": 78,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 80,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 59,
+       "id": 61,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 60,
+       "id": 79,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 81,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 40,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 61,
+       "id": 80,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 82,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 33,
+       "id": 78,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 83,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 63,
+       "id": 82,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 84,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 52,
+       "id": 60,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 85,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 65,
+       "id": 84,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 86,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 64,
+       "id": 83,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 66,
+       "id": 85,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 87,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 62,
+       "id": 81,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 67,
+       "id": 86,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:590 (im_cluster*(((Zisk.gsum_e[1])+std_gamma)*((Zisk.gsum_e[2])+std_gamma)))-((-1*((Zisk.gsum_e[2])+std_gamma))+(-1*((Zisk.gsum_e[1])+std_gamma))) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 49,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 50,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 28,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 90,
+       "id": 49,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 51,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 52,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 91,
+       "id": 50,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 92,
+       "id": 51,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 53,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 54,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 93,
+       "id": 52,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 94,
+       "id": 53,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 55,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 95,
+       "id": 54,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 56,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 96,
+       "id": 55,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 20,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 57,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 97,
+       "id": 56,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 58,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 98,
+       "id": 57,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 27,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 59,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 99,
+       "id": 58,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 60,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 100,
+       "id": 59,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 12,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 61,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 101,
+       "id": 60,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 62,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 102,
+       "id": 61,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 4,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 63,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 103,
+       "id": 62,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 64,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 104,
+       "id": 63,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 65,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 105,
+       "id": 64,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 66,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 106,
+       "id": 65,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 67,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 107,
+       "id": 66,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 68,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 108,
+       "id": 67,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 69,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 109,
+       "id": 68,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 70,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 71,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 29,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 69,
+       "id": 70,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 72,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 73,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 70,
+       "id": 71,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 71,
+       "id": 72,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 74,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 75,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 72,
+       "id": 73,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 73,
+       "id": 74,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 76,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 74,
+       "id": 75,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 77,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 75,
+       "id": 76,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 21,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 78,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 76,
+       "id": 77,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 79,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 77,
+       "id": 78,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 28,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 80,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 78,
+       "id": 79,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 81,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 79,
+       "id": 80,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 13,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 82,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 80,
+       "id": 81,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 83,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 81,
+       "id": 82,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 5,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 84,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 82,
+       "id": 83,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 85,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 83,
+       "id": 84,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 86,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 84,
+       "id": 85,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 87,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 85,
+       "id": 86,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 88,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 86,
+       "id": 87,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 89,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 87,
+       "id": 88,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 90,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 116,
+       "id": 69,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 117,
+       "id": 89,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 91,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 41,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 118,
+       "id": 90,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 92,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 87,
+       "id": 88,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 93,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 120,
+       "id": 92,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 94,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 109,
+       "id": 68,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 95,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 122,
+       "id": 94,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 96,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 121,
+       "id": 93,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 123,
+       "id": 95,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 97,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 119,
+       "id": 91,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 124,
+       "id": 96,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:590 (im_cluster*(((Zisk.gsum_e[3])+std_gamma)*((Zisk.gsum_e[4])+std_gamma)))-((-1*((Zisk.gsum_e[4])+std_gamma))+(-1*((Zisk.gsum_e[3])+std_gamma))) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 48,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 49,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 30,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 147,
+       "id": 48,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 50,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 51,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 148,
+       "id": 49,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 149,
+       "id": 50,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 52,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 53,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 150,
+       "id": 51,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 151,
+       "id": 52,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 54,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 152,
+       "id": 53,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 55,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 153,
+       "id": 54,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 22,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 56,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 154,
+       "id": 55,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 57,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 155,
+       "id": 56,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 29,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 58,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 156,
+       "id": 57,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 59,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 157,
+       "id": 58,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 14,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 60,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 158,
+       "id": 59,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 61,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 159,
+       "id": 60,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 6,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 62,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 160,
+       "id": 61,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 63,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 161,
+       "id": 62,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 64,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 162,
+       "id": 63,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 65,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 163,
+       "id": 64,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 66,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 164,
+       "id": 65,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 67,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 165,
+       "id": 66,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 68,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 69,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 31,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 126,
+       "id": 68,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 70,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 71,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 127,
+       "id": 69,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 128,
+       "id": 70,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 72,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 73,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 129,
+       "id": 71,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 130,
+       "id": 72,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 74,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 131,
+       "id": 73,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 75,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 132,
+       "id": 74,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 23,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 76,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 133,
+       "id": 75,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 77,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 134,
+       "id": 76,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 30,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 78,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 135,
+       "id": 77,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 79,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 136,
+       "id": 78,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 15,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 80,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 137,
+       "id": 79,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 81,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 138,
+       "id": 80,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 7,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 82,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 139,
+       "id": 81,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 83,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 140,
+       "id": 82,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 84,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 141,
+       "id": 83,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 85,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 142,
+       "id": 84,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 86,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 143,
+       "id": 85,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 87,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 144,
+       "id": 86,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 88,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 172,
+       "id": 67,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 173,
+       "id": 87,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 89,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 42,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 174,
+       "id": 88,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 90,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 144,
+       "id": 86,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 91,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 176,
+       "id": 90,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 92,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 165,
+       "id": 66,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 93,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 178,
+       "id": 92,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 94,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 177,
+       "id": 91,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 179,
+       "id": 93,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 95,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 175,
+       "id": 89,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 180,
+       "id": 94,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:590 (im_cluster*(((Zisk.gsum_e[5])+std_gamma)*((Zisk.gsum_e[6])+std_gamma)))-((-1*((Zisk.gsum_e[6])+std_gamma))+(-1*((Zisk.gsum_e[5])+std_gamma))) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 85,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 86,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 32,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 239,
+       "id": 85,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 87,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 88,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 240,
+       "id": 86,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 241,
+       "id": 87,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 89,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 90,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 242,
+       "id": 88,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 243,
+       "id": 89,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 91,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 244,
+       "id": 90,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 92,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 245,
+       "id": 91,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 24,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 93,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 246,
+       "id": 92,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 94,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 247,
+       "id": 93,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 31,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 95,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 248,
+       "id": 94,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 96,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 249,
+       "id": 95,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 16,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 97,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 250,
+       "id": 96,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 98,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 251,
+       "id": 97,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 8,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 99,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 252,
+       "id": 98,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 100,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 253,
+       "id": 99,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 101,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 254,
+       "id": 100,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 102,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 103,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 255,
+       "id": 101,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 256,
+       "id": 102,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 104,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 257,
+       "id": 103,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 105,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 258,
+       "id": 104,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 106,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 259,
+       "id": 105,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 107,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 32,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 108,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 22,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 109,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 21,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 183,
+       "id": 108,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 110,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 23,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 111,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 184,
+       "id": 109,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 185,
+       "id": 110,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 112,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 24,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 113,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 186,
+       "id": 111,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 187,
+       "id": 112,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 114,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 182,
+       "id": 107,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 188,
+       "id": 113,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 115,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 189,
+       "id": 114,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 116,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 18,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 117,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 17,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 191,
+       "id": 116,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 118,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 19,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 119,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 192,
+       "id": 117,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 193,
+       "id": 118,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 120,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 20,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 121,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 194,
+       "id": 119,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 195,
+       "id": 120,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 122,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 196,
+       "id": 121,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 32,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 123,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 190,
+       "id": 115,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 197,
+       "id": 122,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 124,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 198,
+       "id": 123,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 125,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 14,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 126,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 13,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 200,
+       "id": 125,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 127,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 15,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 128,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 201,
+       "id": 126,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 202,
+       "id": 127,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 129,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 16,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 130,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 203,
+       "id": 128,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 204,
+       "id": 129,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 131,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 199,
+       "id": 124,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 205,
+       "id": 130,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 132,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 206,
+       "id": 131,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 133,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 10,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 134,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 9,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 208,
+       "id": 133,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 135,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 11,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 136,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 209,
+       "id": 134,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 210,
+       "id": 135,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 137,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 12,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 138,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 211,
+       "id": 136,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 212,
+       "id": 137,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 139,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 207,
+       "id": 132,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 213,
+       "id": 138,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 140,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 214,
+       "id": 139,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 141,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 6,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 142,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 5,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 216,
+       "id": 141,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 143,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 7,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 144,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 217,
+       "id": 142,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 218,
+       "id": 143,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 145,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 8,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 146,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 219,
+       "id": 144,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 220,
+       "id": 145,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 147,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 215,
+       "id": 140,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 221,
+       "id": 146,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 148,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 222,
+       "id": 147,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 149,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 150,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 224,
+       "id": 149,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 151,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 3,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 152,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 225,
+       "id": 150,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 226,
+       "id": 151,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 153,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 4,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 154,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 227,
+       "id": 152,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 228,
+       "id": 153,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 155,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 223,
+       "id": 148,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 229,
+       "id": 154,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 156,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 230,
+       "id": 155,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 157,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 33,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 158,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 232,
+       "id": 157,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 159,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 231,
+       "id": 156,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 233,
+       "id": 158,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 160,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 234,
+       "id": 159,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 161,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 235,
+       "id": 160,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "5000",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 162,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 236,
+       "id": 161,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 163,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 265,
+       "id": 106,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 266,
+       "id": 162,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 164,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 43,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 267,
+       "id": 163,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 165,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 236,
+       "id": 161,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 166,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 269,
+       "id": 165,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 167,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 259,
+       "id": 105,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 168,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 270,
+       "id": 166,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 271,
+       "id": 167,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 169,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 268,
+       "id": 164,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 272,
+       "id": 168,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:590 (im_cluster*(((Zisk.gsum_e[7])+std_gamma)*((Zisk.gsum_e[8])+std_gamma)))-((-1*((Zisk.gsum_e[8])+std_gamma))+((Zisk.gsum_e[7])+std_gamma)) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 28,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "const",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 29,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 39,
+       "prime": -1,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 274,
+       "id": 28,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 30,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 39,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 275,
+       "id": 29,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 31,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 40,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 41,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 32,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 277,
+       "id": 31,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 42,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 33,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 278,
+       "id": 32,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 43,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 34,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 276,
+       "id": 30,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 279,
+       "id": 33,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 35,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 36,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 25,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 281,
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 37,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 38,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 282,
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 283,
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 39,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 284,
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 40,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 285,
+       "id": 39,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 17,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 41,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 286,
+       "id": 40,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 42,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 287,
+       "id": 41,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 43,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 288,
+       "id": 42,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 9,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 44,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 289,
+       "id": 43,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 45,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 290,
+       "id": 44,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 46,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 291,
+       "id": 45,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 47,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 292,
+       "id": 46,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 48,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 293,
+       "id": 47,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 49,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 50,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 294,
+       "id": 48,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 295,
+       "id": 49,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 51,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 296,
+       "id": 50,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 52,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 297,
+       "id": 51,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "125",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 53,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 298,
+       "id": 52,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 54,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 280,
+       "id": 34,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 299,
+       "id": 53,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 55,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 300,
+       "id": 54,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:599 (((gsum-('gsum*(1-__L1__)))-(((im_cluster+im_cluster)+im_cluster)+im_cluster))*((Zisk.gsum_e[0])+std_gamma))+1 == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 6,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "10",
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 7,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 302,
+       "id": 6,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "5000",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 8,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 303,
+       "id": 7,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 9,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "airvalue",
+       "id": 1,
+       "stage": 2,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 305,
+       "id": 8,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 10,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "0",
+       "dim": 1
+      },
+      {
+       "type": "airvalue",
+       "id": 0,
+       "stage": 1,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 11,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 306,
+       "id": 9,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 307,
+       "id": 10,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:656 (Binary.im_direct*((Zisk.direct_gsum_e[0])+std_gamma))-(Zisk.direct_gsum_s[0]) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "airgroupvalue",
+       "id": 0,
+       "stage": 2,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 39,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 4,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 316,
+       "id": 3,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "airvalue",
+       "id": 1,
+       "stage": 2,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 5,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "const",
+       "id": 0,
+       "prime": 1,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 317,
+       "id": 4,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:696 __L1__'*((Zisk.gsum_result-gsum)-Binary.im_direct) == 0"
+  }
+ ]
+}
