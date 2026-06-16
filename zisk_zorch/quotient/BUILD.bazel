@@ -42,6 +42,8 @@ py_test(
     size = "medium",
     srcs = ["cexp_ref_test.py"],
     data = [
+        "testdata/arith_constraints.json",
+        "testdata/arith_cexp.json",
         "testdata/binary_constraints.json",
         "testdata/binary_cexp.json",
         "testdata/golden/cexp_eval.json",

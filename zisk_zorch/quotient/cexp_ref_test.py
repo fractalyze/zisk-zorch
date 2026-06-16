@@ -32,12 +32,14 @@ _TESTDATA = pathlib.Path(__file__).parent / "testdata"
 _FRAGMENTS = {
     "MemAlignReadByte": "memalign_readbyte_cexp.json",
     "Binary": "binary_cexp.json",
+    "Arith": "arith_cexp.json",
 }
 
 # The proving key's individual constraints[] per AIR (the generic-fold input).
 _CONSTRAINTS = {
     "MemAlignReadByte": "memalign_readbyte_constraints.json",
     "Binary": "binary_constraints.json",
+    "Arith": "arith_constraints.json",
 }
 
 
