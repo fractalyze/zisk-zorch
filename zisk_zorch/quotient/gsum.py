@@ -21,7 +21,6 @@ gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pi
 from __future__ import annotations
 
 import jax.numpy as jnp
-import numpy as np
 from jax import Array
 from zk_dtypes import goldilocks_mont as F
 from zk_dtypes import goldilocksx3_mont as F3
@@ -79,14 +78,30 @@ def _prefix_sum(x: Array) -> Array:
     return acc
 
 
+def _scalar(value) -> Array:
+    """A base-field scalar for a `VirtualPairCol` coefficient, to broadcast over a
+    trace column. The coefficient is a canonical field element in [0, p) (rw stores
+    −1 as p−1), so it value-converts straight to `F` with no reduction — like
+    `embed`'s decimals."""
+    return jnp.array(int(value), dtype=F)
+
+
 def eval_pair_col(vpc, trace: Array) -> Array:
-    """Materialize a rw `VirtualPairCol` (affine `const + Σ wᵢ·colᵢ`) on the base
-    `trace` `(N, n_cols)`, embedded to `F3`. ZisK's exported bus tuples are affine
-    (no column products)."""
+    """Materialize a rw `VirtualPairCol` on the base `trace` `(N, n_cols)`, embedded
+    to `F3`: the affine part `const + Σ wᵢ·colᵢ` plus the bilinear part
+    `Σ wₖ·colₐ·col_b` (`column_products`).
+
+    Most exported ZisK bus tuples are affine, but some are not — arith's operation
+    bus (`proves_operation`) carries `div·chunk` products — so the products must be
+    evaluated for those denominators to match pil2's inline `gsum_e`. Tuples are
+    read at the current row (the `is_pre` next-row flag is unused; no exported ZisK
+    tuple sets it)."""
     n = trace.shape[0]
-    acc = jnp.array(np.full(n, int(vpc.constant) % _P, dtype=np.uint64), dtype=F)
+    acc = jnp.broadcast_to(_scalar(vpc.constant), (n,))
     for col, _is_pre, weight in vpc.column_weights:
-        acc = acc + jnp.array(np.full(n, int(weight) % _P, dtype=np.uint64), dtype=F) * trace[:, col]
+        acc = acc + _scalar(weight) * trace[:, col]
+    for col_a, _pre_a, col_b, _pre_b, weight in getattr(vpc, "column_products", ()):
+        acc = acc + _scalar(weight) * trace[:, col_a] * trace[:, col_b]
     return embed_base(acc)
 
 

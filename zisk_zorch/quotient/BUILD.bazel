@@ -74,10 +74,15 @@ py_test(
     name = "gsum_test",
     size = "medium",
     srcs = ["gsum_test.py"],
-    data = glob(["testdata/golden/gsum.json"]),
+    data = [
+        "testdata/arith_constraints.json",
+        "testdata/golden/cexp_eval.json",
+        "testdata/golden/gsum.json",
+    ],
     deps = [
         ":quotient",
         "//zisk_zorch:golden",
+        "//zisk_zorch/constraints:chip_loader",
         requirement("absl_py"),
     ],
 )

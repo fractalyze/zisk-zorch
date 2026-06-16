@@ -18,13 +18,11 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-components/li
 from __future__ import annotations
 
 import jax.numpy as jnp
-import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
 from zk_dtypes import goldilocksx3_mont as F3
 
 from zisk_zorch.golden import u64x3
-from zisk_zorch.quotient.field_io import embed, rotate
+from zisk_zorch.quotient.field_io import base_trace, embed, rotate
 from zisk_zorch.quotient.gsum import _P, gsum_e
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
@@ -55,7 +53,7 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
     gsum_result = u64x3(case["airgroupvalues"][0]["value"])
 
     # Base stage-1 trace for VirtualPairCol evaluation (cm id == column index).
-    trace = jnp.stack([_base_col(case, j) for j in range(_N_STAGE1)], axis=1)
+    trace = base_trace(case, _N_STAGE1)
 
     sends = chip.get_sends()
     recvs = chip.get_receives()
@@ -94,9 +92,3 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
     for i in range(1, 14):
         composite = composite * vc + c[i]
     return composite * inv_zerofier(n_bits, blowup_bits)
-
-
-def _base_col(case: dict, col_id: int) -> Array:
-    """Stage-1 column `col_id` from the golden case as an `F` base array."""
-    entry = next(col for col in case["cm"] if col["id"] == col_id)
-    return jnp.array(np.array([int(v) for v in entry["values"]], dtype=np.uint64), dtype=F)

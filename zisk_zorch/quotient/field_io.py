@@ -33,6 +33,18 @@ def embed_base(base: Array) -> Array:
     return jnp.array(np.stack([u, z, z], axis=1).astype(F).view(F3).reshape(u.shape[0]))
 
 
+def base_trace(case: dict, n_cols: int) -> Array:
+    """The stage-1 base trace `(N, n_cols)` from a golden case's dim-1 `cm` columns
+    (column id == index), as an `F` array — the input rw's `eval_constraints` and
+    the interaction `VirtualPairCol`s index into."""
+    cols = {c["id"]: c["values"] for c in case["cm"] if c["dim"] == 1}
+    trace = np.stack(
+        [np.array([int(v) for v in cols[j]], dtype=np.uint64) for j in range(n_cols)],
+        axis=1,
+    )
+    return jnp.array(trace, dtype=F)
+
+
 def rotate(col: Array, shift: int) -> Array:
     """`out[i] = col[(i + shift) mod n]` — the extended-domain image of a
     next/previous-row opening. Built from slice+concat (no `jnp.roll` in the
