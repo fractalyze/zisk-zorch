@@ -1,0 +1,3113 @@
+{
+ "air": "MemAlignReadByte",
+ "constraints": [
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 0,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "mem/pil/mem_align_byte.pil:35 sel_high_4b*(1-sel_high_4b) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 2,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "mem/pil/mem_align_byte.pil:36 sel_high_2b*(1-sel_high_2b) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 2,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 3,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 4,
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "mem/pil/mem_align_byte.pil:37 sel_high_b*(1-sel_high_b) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 37,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 38,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 6,
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 39,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 40,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 41,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 8,
+       "id": 39,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 9,
+       "id": 40,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 42,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 7,
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 10,
+       "id": 41,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 43,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 44,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 12,
+       "id": 43,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 45,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 13,
+       "id": 44,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 46,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 11,
+       "id": 42,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 14,
+       "id": 45,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 47,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 48,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 49,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 16,
+       "id": 47,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 17,
+       "id": 48,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 50,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 15,
+       "id": 46,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 18,
+       "id": 49,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 51,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 7,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 19,
+       "id": 50,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 52,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "16777216",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 53,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 54,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 21,
+       "id": 52,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 22,
+       "id": 53,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 55,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 56,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 24,
+       "id": 55,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 57,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 23,
+       "id": 54,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 25,
+       "id": 56,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 58,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 59,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "256",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 27,
+       "id": 58,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 60,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 61,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 28,
+       "id": 59,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 29,
+       "id": 60,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 62,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 26,
+       "id": 57,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 30,
+       "id": 61,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 63,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 64,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 32,
+       "id": 63,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 65,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 31,
+       "id": 62,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 33,
+       "id": 64,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 66,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 6,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 34,
+       "id": 65,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 67,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 20,
+       "id": 51,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 35,
+       "id": 66,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 68,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 69,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "65536",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 37,
+       "id": 68,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 70,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 38,
+       "id": 69,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 71,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 5,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 39,
+       "id": 70,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 72,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 36,
+       "id": 67,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 40,
+       "id": 71,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 73,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 4,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 41,
+       "id": 72,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 1,
+   "imPol": 0,
+   "line": "mem/pil/mem_align_byte.pil:59 composed_value-(((byte_value*(byte_value_factor))+(value_8b*(value_8b_factor)))+(value_16b*(value_16b_factor))) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 16,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 5,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 17,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 49,
+       "id": 16,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "103",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 18,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 50,
+       "id": 17,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 19,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 6,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 20,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 43,
+       "id": 19,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 7,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 21,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 44,
+       "id": 20,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 22,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 45,
+       "id": 21,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "88",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 23,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 46,
+       "id": 22,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 24,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 57,
+       "id": 18,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 58,
+       "id": 23,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 25,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 11,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 59,
+       "id": 24,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 26,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 46,
+       "id": 22,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 27,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 61,
+       "id": 26,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 28,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 50,
+       "id": 17,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 29,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "18446744069414584320",
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 63,
+       "id": 28,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 30,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 62,
+       "id": 27,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 64,
+       "id": 29,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 31,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 60,
+       "id": 25,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 65,
+       "id": 30,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:590 (im_cluster*(((Zisk.gsum_e[2])+std_gamma)*((Zisk.gsum_e[3])+std_gamma)))-((-1*((Zisk.gsum_e[3])+std_gamma))+(-1*((Zisk.gsum_e[2])+std_gamma))) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 22,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 4,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 3,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 23,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 67,
+       "id": 22,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 24,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 68,
+       "id": 23,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 3,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 25,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 69,
+       "id": 24,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 26,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 3,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 4,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 27,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 71,
+       "id": 26,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 28,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 72,
+       "id": 27,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 4,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 29,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 70,
+       "id": 25,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 73,
+       "id": 28,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 30,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 74,
+       "id": 29,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 31,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 75,
+       "id": 30,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 32,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 76,
+       "id": 31,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 33,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 77,
+       "id": 32,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 9,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 34,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 78,
+       "id": 33,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 35,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 8,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 36,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 79,
+       "id": 34,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 80,
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 37,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 81,
+       "id": 36,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 38,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 82,
+       "id": 37,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 39,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 83,
+       "id": 38,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 40,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 84,
+       "id": 39,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "10",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 41,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 85,
+       "id": 40,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 42,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 12,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 87,
+       "id": 41,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 43,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 88,
+       "id": 42,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:567 (im_single*((Zisk.gsum_e[0])+std_gamma))+1 == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 24,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      },
+      {
+       "type": "const",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 25,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 10,
+       "prime": -1,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 90,
+       "id": 24,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 26,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 10,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 91,
+       "id": 25,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 27,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 11,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 12,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 28,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 92,
+       "id": 26,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 93,
+       "id": 27,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 29,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 7,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 30,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 95,
+       "id": 29,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 31,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 96,
+       "id": 30,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 32,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 97,
+       "id": 31,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 9,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 33,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 98,
+       "id": 32,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 34,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 8,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 35,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 0,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "number",
+       "value": "4",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 36,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "cm",
+       "id": 1,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "number",
+       "value": "2",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 37,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 101,
+       "id": 35,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 102,
+       "id": 36,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 38,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 103,
+       "id": 37,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "cm",
+       "id": 2,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 39,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 100,
+       "id": 34,
+       "prime": 0,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 104,
+       "id": 38,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 40,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 99,
+       "id": 33,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 105,
+       "id": 39,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 41,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 106,
+       "id": 40,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 42,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 107,
+       "id": 41,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 43,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 108,
+       "id": 42,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 44,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 109,
+       "id": 43,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "10",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 45,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 110,
+       "id": 44,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 46,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 94,
+       "id": 28,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 111,
+       "id": 45,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 47,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 112,
+       "id": 46,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:599 (((gsum-('gsum*(1-__L1__)))-(im_cluster+im_single))*((Zisk.gsum_e[1])+std_gamma))-1 == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 9,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "8",
+       "dim": 1
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 10,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 114,
+       "id": 9,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 11,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 115,
+       "id": 10,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 12,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 116,
+       "id": 11,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 13,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 117,
+       "id": 12,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 14,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 118,
+       "id": 13,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "10",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 15,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 119,
+       "id": 14,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 16,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "airvalue",
+       "id": 1,
+       "stage": 2,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 121,
+       "id": 15,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 17,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 122,
+       "id": 16,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "airvalue",
+       "id": 0,
+       "stage": 1,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:656 (MemAlignReadByte.im_direct[0]*((Zisk.direct_gsum_e[0])+std_gamma))-MemAlignReadByte.padding_size == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 9,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 10,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 124,
+       "id": 9,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 11,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 125,
+       "id": 10,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "1",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 12,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 126,
+       "id": 11,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 0,
+       "stageId": 0,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 13,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 127,
+       "id": 12,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "number",
+       "value": "10",
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 14,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 128,
+       "id": 13,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "challenge",
+       "id": 1,
+       "stageId": 1,
+       "dim": 3,
+       "stage": 2
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 15,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "airvalue",
+       "id": 2,
+       "stage": 2,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 130,
+       "id": 14,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 16,
+      "dim": 1
+     },
+     "src": [
+      {
+       "type": "number",
+       "value": "0",
+       "dim": 1
+      },
+      {
+       "type": "airvalue",
+       "id": 0,
+       "stage": 1,
+       "dim": 1
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 17,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 131,
+       "id": 15,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 132,
+       "id": 16,
+       "prime": 0,
+       "dim": 1
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:656 (MemAlignReadByte.im_direct[1]*((Zisk.direct_gsum_e[1])+std_gamma))-(Zisk.direct_gsum_s[1]) == 0"
+  },
+  {
+   "code": [
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 4,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "airgroupvalue",
+       "id": 0,
+       "stage": 2,
+       "dim": 3
+      },
+      {
+       "type": "cm",
+       "id": 10,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "add",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 5,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "airvalue",
+       "id": 1,
+       "stage": 2,
+       "dim": 3
+      },
+      {
+       "type": "airvalue",
+       "id": 2,
+       "stage": 2,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "sub",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 6,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "tmp",
+       "expId": 140,
+       "id": 4,
+       "prime": 0,
+       "dim": 3
+      },
+      {
+       "type": "tmp",
+       "expId": 141,
+       "id": 5,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    },
+    {
+     "op": "mul",
+     "dest": {
+      "type": "tmp",
+      "prime": 0,
+      "id": 7,
+      "dim": 3
+     },
+     "src": [
+      {
+       "type": "const",
+       "id": 0,
+       "prime": 1,
+       "dim": 1
+      },
+      {
+       "type": "tmp",
+       "expId": 142,
+       "id": 6,
+       "prime": 0,
+       "dim": 3
+      }
+     ]
+    }
+   ],
+   "boundary": "everyRow",
+   "stage": 2,
+   "imPol": 0,
+   "line": "std_sum.pil:696 __L1__'*((Zisk.gsum_result-gsum)-(MemAlignReadByte.im_direct[0]+MemAlignReadByte.im_direct[1])) == 0"
+  }
+ ]
+}
