@@ -21,8 +21,14 @@ gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pi
 from __future__ import annotations
 
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
+from zk_dtypes import goldilocks_mont as F
 from zk_dtypes import goldilocksx3_mont as F3
+
+from zisk_zorch.quotient.field_io import embed, embed_base
+
+_P = 0xFFFFFFFF00000001
 
 
 def bus_denominator(tuple_: Array, alpha: Array, gamma: Array) -> Array:
@@ -71,3 +77,28 @@ def _prefix_sum(x: Array) -> Array:
         acc = acc + jnp.concatenate([pad, acc[:-shift]])
         shift *= 2
     return acc
+
+
+def eval_pair_col(vpc, trace: Array) -> Array:
+    """Materialize a rw `VirtualPairCol` (affine `const + Σ wᵢ·colᵢ`) on the base
+    `trace` `(N, n_cols)`, embedded to `F3`. ZisK's exported bus tuples are affine
+    (no column products)."""
+    n = trace.shape[0]
+    acc = jnp.array(np.full(n, int(vpc.constant) % _P, dtype=np.uint64), dtype=F)
+    for col, _is_pre, weight in vpc.column_weights:
+        acc = acc + jnp.array(np.full(n, int(weight) % _P, dtype=np.uint64), dtype=F) * trace[:, col]
+    return embed_base(acc)
+
+
+def gsum_e(interaction, trace: Array, alpha: Array) -> Array:
+    """The LogUp bus denominator `gsum_e` (before `+ std_gamma`) for one
+    interaction: reverse-α-Horner over its tuple (`Interaction.values` as
+    `VirtualPairCol`s on `trace`, last component at the highest α power), then
+    `· α + kind_int` (the native bus id appended at the low end). This is pil2's
+    `std_sum` order — the REVERSE of `bus_denominator`'s tuple[0]-highest
+    convention, and it omits γ (added in the constraint / witness body)."""
+    vals = [eval_pair_col(v, trace) for v in interaction.values]
+    den = vals[-1]
+    for v in reversed(vals[:-1]):
+        den = den * alpha + v
+    return den * alpha + embed([str(interaction.kind)])

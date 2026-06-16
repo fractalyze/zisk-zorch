@@ -24,10 +24,9 @@ from zk_dtypes import goldilocks_mont as F
 from zk_dtypes import goldilocksx3_mont as F3
 
 from zisk_zorch.golden import u64x3
-from zisk_zorch.quotient.field_io import embed, embed_base, rotate
+from zisk_zorch.quotient.field_io import embed, rotate
+from zisk_zorch.quotient.gsum import _P, gsum_e
 from zisk_zorch.quotient.zerofier import inv_zerofier
-
-_P = 0xFFFFFFFF00000001
 
 # Binary AIR layout (proving-key cmPolsMap): 39 stage-1 base cols, then the
 # stage-2 witness cubic cols gsum / im_cluster×4, then the stage-3 quotient.
@@ -38,31 +37,6 @@ _IM_CLUSTER = (40, 41, 42, 43)
 # combines; the 4th pairs byte-table send 7 with the operation receive.
 _CLUSTERS = ((0, 1, 2), (1, 3, 4), (2, 5, 6), (3, 7, 8))  # (im_cluster_slot, iact_i, iact_j)
 _TRANSITION_IACT = 0  # gsum_e[0] (byte-table send 0) gates the gsum transition
-
-
-def _eval_pair_col(vpc, trace: Array) -> Array:
-    """Materialize a rw `VirtualPairCol` (affine `const + Σ wᵢ·colᵢ`) on the base
-    `trace` `(N, n_cols)`, embedded to `F3`. Binary's bus tuples are affine
-    (no column products)."""
-    n = trace.shape[0]
-    acc = jnp.array(np.full(n, int(vpc.constant) % _P, dtype=np.uint64), dtype=F)
-    for col, _is_pre, weight in vpc.column_weights:
-        acc = acc + jnp.array(np.full(n, int(weight) % _P, dtype=np.uint64), dtype=F) * trace[:, col]
-    return embed_base(acc)
-
-
-def gsum_e(interaction, trace: Array, alpha: Array) -> Array:
-    """The LogUp bus denominator `gsum_e` (before `+ std_gamma`) for one
-    interaction: reverse-α-Horner over its tuple (`Interaction.values` as
-    `VirtualPairCol`s on `trace`, last component at the highest α power), then
-    `· α + kind_int` (the native bus id appended at the low end). This is pil2's
-    `std_sum` order — the REVERSE of `gsum.bus_denominator`'s tuple[0]-highest
-    convention, and it omits γ (added in the constraint body)."""
-    vals = [_eval_pair_col(v, trace) for v in interaction.values]
-    den = vals[-1]
-    for v in reversed(vals[:-1]):
-        den = den * alpha + v
-    return den * alpha + embed([str(interaction.kind)])
 
 
 def reauthor_binary_quotient(chip, case: dict) -> Array:
