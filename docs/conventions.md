@@ -30,6 +30,11 @@ reference's own `fields` crate by [`../golden/`](../golden/). Conventions:
 - Regenerate with `cd golden && cargo run --release`; the harness is
   deterministic (fixed seeds), so a regeneration must be a no-op unless the
   reference pin changed.
+- Never let an unordered container's iteration order feed the RNG stream (or
+  anything serialized) in the generator: Rust's `HashMap` seeds per-process, so
+  drawing randoms while iterating one yields non-reproducible goldens. Use
+  `BTreeMap` / sorted keys. The drift hides from tests (they reload the file
+  they just wrote) — verify with a regen-of-regen diff, not "the test passes".
 
 ## What lives here vs in zorch
 
