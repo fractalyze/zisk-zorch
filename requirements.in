@@ -15,8 +15,8 @@ numpy
 # (constraints/zisk/v1), the stage-2 ingestion source (zisk-zorch#1). Pinned to
 # the dev wheel that first bundles the ZisK export (riscv-witness#1891).
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260615113120/rw_constraints-0.1.0.dev20260615113120-py3-none-any.whl
-jax==0.0.5.dev20260612072029
+jax==0.0.5.dev20260616020033
 zk-dtypes==0.0.6
-jaxlib==0.0.5.dev20260612072029
-jax-cuda12-plugin==0.0.5.dev20260612072029
-zkx-cuda-pjrt==0.0.5.dev20260612072029
+jaxlib==0.0.5.dev20260616020033
+jax-cuda12-plugin==0.0.5.dev20260616020033
+zkx-cuda-pjrt==0.0.5.dev20260616020033

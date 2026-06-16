@@ -41,13 +41,17 @@ class GoldilocksPoseidon2Test(absltest.TestCase):
                 )
         self.assertCountEqual(widths_seen, WIDTHS)
 
-    def test_no_dedicated_fusion(self) -> None:
-        # pil2's M4 is the HorizenLabs reference, not the Plonky3 one zorch's
-        # dedicated zkx emitter hardcodes, so every width must take the generic
-        # fused-region route (correct, unfused) until zkx parameterizes the M4.
+    def test_dedicated_fusion_routing(self) -> None:
+        # zorch#264 carries the HorizenLabs base M4 as an `external_m4` marker
+        # and zkx#676 applies it via multiply-free add-chains, so the
+        # block-structured widths lower to the dedicated zorch.poseidon2 emitter
+        # (the fast commit-compile path). Width 4's plain single-block M4 is not
+        # marker-carried, so it stays on the generic fused region.
         for width in WIDTHS:
-            self.assertFalse(
-                goldilocks_perm(width).has_dedicated_fusion, msg=f"width {width}"
+            self.assertEqual(
+                goldilocks_perm(width).has_dedicated_fusion,
+                width != 4,
+                msg=f"width {width}",
             )
 
 
