@@ -1,0 +1,7756 @@
+{
+ "air": "Binary",
+ "cExpId": 479,
+ "qDim": 3,
+ "qDeg": 2,
+ "boundaries": [
+  {
+   "name": "everyRow"
+  }
+ ],
+ "openingPoints": [
+  -1,
+  0,
+  1
+ ],
+ "cmPolsMap": [
+  {
+   "name": "b_op",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 0
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 1
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 2
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 3
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 4
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 5
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 6
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 7
+  },
+  {
+   "name": "free_in_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 8
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 9
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 10
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 11
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 12
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 13
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 14
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 15
+  },
+  {
+   "name": "free_in_b",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 16
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 17
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 18
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 19
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 20
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 21
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 22
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 23
+  },
+  {
+   "name": "free_in_c",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 24
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 25
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 26
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 27
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 28
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 29
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 30
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 31
+  },
+  {
+   "name": "carry",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 32
+  },
+  {
+   "name": "mode32",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 33
+  },
+  {
+   "name": "result_is_a",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 34
+  },
+  {
+   "name": "use_first_byte",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 35
+  },
+  {
+   "name": "c_is_signed",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 36
+  },
+  {
+   "name": "b_op_or_sext",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 37
+  },
+  {
+   "name": "mode32_and_c_is_signed",
+   "stage": 1,
+   "dim": 1,
+   "stagePos": 38
+  },
+  {
+   "name": "gsum",
+   "stage": 2,
+   "dim": 3,
+   "stagePos": 0
+  },
+  {
+   "name": "im_cluster",
+   "stage": 2,
+   "dim": 3,
+   "stagePos": 3
+  },
+  {
+   "name": "im_cluster",
+   "stage": 2,
+   "dim": 3,
+   "stagePos": 6
+  },
+  {
+   "name": "im_cluster",
+   "stage": 2,
+   "dim": 3,
+   "stagePos": 9
+  },
+  {
+   "name": "im_cluster",
+   "stage": 2,
+   "dim": 3,
+   "stagePos": 12
+  },
+  {
+   "name": "Q0",
+   "stage": 3,
+   "dim": 3,
+   "stagePos": 0
+  },
+  {
+   "name": "Q1",
+   "stage": 3,
+   "dim": 3,
+   "stagePos": 3
+  }
+ ],
+ "constPolsMap": [
+  {
+   "name": "__L1__",
+   "dim": 1
+  }
+ ],
+ "challengesMap": [
+  {
+   "name": "std_alpha",
+   "stage": 2,
+   "dim": 3,
+   "stageId": 0
+  },
+  {
+   "name": "std_gamma",
+   "stage": 2,
+   "dim": 3,
+   "stageId": 1
+  },
+  {
+   "name": "std_vc",
+   "stage": 3,
+   "dim": 3,
+   "stageId": 0
+  },
+  {
+   "name": "std_xi",
+   "stage": 4,
+   "dim": 3,
+   "stageId": 0
+  },
+  {
+   "name": "std_vf1",
+   "stage": 5,
+   "dim": 3,
+   "stageId": 0
+  },
+  {
+   "name": "std_vf2",
+   "stage": 5,
+   "dim": 3,
+   "stageId": 1
+  }
+ ],
+ "airValuesMap": [
+  {
+   "name": "Binary.padding_size",
+   "stage": 1
+  },
+  {
+   "name": "Binary.im_direct",
+   "stage": 2,
+   "lengths": [
+    0
+   ]
+  }
+ ],
+ "airgroupValuesMap": [
+  {
+   "name": "Zisk.gsum_result",
+   "stage": 2
+  }
+ ],
+ "code": [
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 307,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 308,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 0,
+     "id": 307,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 309,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 1,
+     "id": 308,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 310,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 32,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 311,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 32,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 2,
+     "id": 310,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 312,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 453,
+     "id": 309,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 3,
+     "id": 311,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 313,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 454,
+     "id": 312,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 314,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 315,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 4,
+     "id": 314,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 316,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 455,
+     "id": 313,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 5,
+     "id": 315,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 317,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 456,
+     "id": 316,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 318,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 319,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 6,
+     "id": 318,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 320,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 457,
+     "id": 317,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 7,
+     "id": 319,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 321,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 458,
+     "id": 320,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 322,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 36,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 323,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 36,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 8,
+     "id": 322,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 324,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 459,
+     "id": 321,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 9,
+     "id": 323,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 325,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 460,
+     "id": 324,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 326,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 36,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "number",
+     "value": "512",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 327,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 10,
+     "id": 326,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 328,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 11,
+     "id": 327,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 329,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 12,
+     "id": 328,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 330,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 37,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 13,
+     "id": 329,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 331,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 461,
+     "id": 325,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 14,
+     "id": 330,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 332,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 462,
+     "id": 331,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 333,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 36,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 334,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 38,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 15,
+     "id": 333,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 335,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 463,
+     "id": 332,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 16,
+     "id": 334,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 336,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 464,
+     "id": 335,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 337,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 338,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 26,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 36,
+     "id": 337,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 339,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 340,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 37,
+     "id": 338,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 38,
+     "id": 339,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 341,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 39,
+     "id": 340,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 342,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 40,
+     "id": 341,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 18,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 343,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 41,
+     "id": 342,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 344,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 42,
+     "id": 343,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 25,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 345,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 43,
+     "id": 344,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 346,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 44,
+     "id": 345,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 10,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 347,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 45,
+     "id": 346,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 348,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 46,
+     "id": 347,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 2,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 349,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 47,
+     "id": 348,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 350,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 48,
+     "id": 349,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 351,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 49,
+     "id": 350,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 352,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 50,
+     "id": 351,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 353,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 51,
+     "id": 352,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 354,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 52,
+     "id": 353,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 355,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 356,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 27,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 17,
+     "id": 355,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 357,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 358,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 18,
+     "id": 356,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 19,
+     "id": 357,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 359,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 20,
+     "id": 358,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 360,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 21,
+     "id": 359,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 19,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 361,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 22,
+     "id": 360,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 362,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 23,
+     "id": 361,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 26,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 363,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 24,
+     "id": 362,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 364,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 25,
+     "id": 363,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 11,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 365,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 26,
+     "id": 364,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 366,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 27,
+     "id": 365,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 3,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 367,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 28,
+     "id": 366,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 368,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 29,
+     "id": 367,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 369,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 30,
+     "id": 368,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 370,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 31,
+     "id": 369,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 371,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 32,
+     "id": 370,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 372,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 33,
+     "id": 371,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 373,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 59,
+     "id": 354,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 60,
+     "id": 372,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 374,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 40,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 61,
+     "id": 373,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 375,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 33,
+     "id": 371,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 376,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 63,
+     "id": 375,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 377,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 52,
+     "id": 353,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 378,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 65,
+     "id": 377,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 379,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 64,
+     "id": 376,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 66,
+     "id": 378,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 380,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 62,
+     "id": 374,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 67,
+     "id": 379,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 381,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 465,
+     "id": 336,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 68,
+     "id": 380,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 382,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 466,
+     "id": 381,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 383,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 384,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 28,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 90,
+     "id": 383,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 385,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 386,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 91,
+     "id": 384,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 92,
+     "id": 385,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 387,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "8",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 38,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 388,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 93,
+     "id": 386,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 94,
+     "id": 387,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 389,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 95,
+     "id": 388,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 390,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 96,
+     "id": 389,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 20,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 391,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 97,
+     "id": 390,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 392,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 98,
+     "id": 391,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 27,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 393,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 99,
+     "id": 392,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 394,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 100,
+     "id": 393,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 12,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 395,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 101,
+     "id": 394,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 396,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 102,
+     "id": 395,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 4,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 397,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 103,
+     "id": 396,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 398,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 104,
+     "id": 397,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 399,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 105,
+     "id": 398,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 400,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 106,
+     "id": 399,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 401,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 107,
+     "id": 400,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 402,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 108,
+     "id": 401,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 403,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 109,
+     "id": 402,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 404,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 405,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 29,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 69,
+     "id": 404,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 406,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 407,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 70,
+     "id": 405,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 71,
+     "id": 406,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 408,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "8",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 38,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 409,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 72,
+     "id": 407,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 73,
+     "id": 408,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 410,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 74,
+     "id": 409,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 411,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 75,
+     "id": 410,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 21,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 412,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 76,
+     "id": 411,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 413,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 77,
+     "id": 412,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 28,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 414,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 78,
+     "id": 413,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 415,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 79,
+     "id": 414,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 13,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 416,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 80,
+     "id": 415,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 417,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 81,
+     "id": 416,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 5,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 418,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 82,
+     "id": 417,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 419,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 83,
+     "id": 418,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 37,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 420,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 84,
+     "id": 419,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 421,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 85,
+     "id": 420,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 422,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 86,
+     "id": 421,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 423,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 87,
+     "id": 422,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 424,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 116,
+     "id": 403,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 117,
+     "id": 423,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 425,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 41,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 118,
+     "id": 424,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 426,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 87,
+     "id": 422,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 427,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 120,
+     "id": 426,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 428,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 109,
+     "id": 402,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 429,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 122,
+     "id": 428,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 430,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 121,
+     "id": 427,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 123,
+     "id": 429,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 431,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 119,
+     "id": 425,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 124,
+     "id": 430,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 432,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 467,
+     "id": 382,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 125,
+     "id": 431,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 433,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 468,
+     "id": 432,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 434,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 435,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 30,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 147,
+     "id": 434,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 436,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 437,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 148,
+     "id": 435,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 149,
+     "id": 436,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 438,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "8",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 38,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 439,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 150,
+     "id": 437,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 151,
+     "id": 438,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 440,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 152,
+     "id": 439,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 441,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 153,
+     "id": 440,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 22,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 442,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 154,
+     "id": 441,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 443,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 155,
+     "id": 442,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 29,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 444,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 156,
+     "id": 443,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 445,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 157,
+     "id": 444,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 14,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 446,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 158,
+     "id": 445,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 447,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 159,
+     "id": 446,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 6,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 448,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 160,
+     "id": 447,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 449,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 161,
+     "id": 448,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 37,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 450,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 162,
+     "id": 449,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 451,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 163,
+     "id": 450,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 452,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 164,
+     "id": 451,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 453,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 165,
+     "id": 452,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 454,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 455,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 31,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 126,
+     "id": 454,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 456,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 457,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 127,
+     "id": 455,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 128,
+     "id": 456,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 458,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "8",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 38,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 459,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 129,
+     "id": 457,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 130,
+     "id": 458,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 460,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 131,
+     "id": 459,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 461,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 132,
+     "id": 460,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 23,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 462,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 133,
+     "id": 461,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 463,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 134,
+     "id": 462,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 30,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 464,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 135,
+     "id": 463,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 465,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 136,
+     "id": 464,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 15,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 466,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 137,
+     "id": 465,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 467,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 138,
+     "id": 466,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 7,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 468,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 139,
+     "id": 467,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 469,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 140,
+     "id": 468,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 37,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 470,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 141,
+     "id": 469,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 471,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 142,
+     "id": 470,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 472,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 143,
+     "id": 471,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 473,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 144,
+     "id": 472,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 474,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 172,
+     "id": 453,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 173,
+     "id": 473,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 475,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 42,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 174,
+     "id": 474,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 476,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 144,
+     "id": 472,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 477,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 176,
+     "id": 476,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 478,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 165,
+     "id": 452,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 479,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 178,
+     "id": 478,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 480,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 177,
+     "id": 477,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 179,
+     "id": 479,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 481,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 175,
+     "id": 475,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 180,
+     "id": 480,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 482,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 469,
+     "id": 433,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 181,
+     "id": 481,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 483,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 470,
+     "id": 482,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 484,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 485,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 32,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 239,
+     "id": 484,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 486,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 487,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 240,
+     "id": 485,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 241,
+     "id": 486,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 488,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "8",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 36,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 489,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 242,
+     "id": 487,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 243,
+     "id": 488,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 490,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 244,
+     "id": 489,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 491,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 245,
+     "id": 490,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 24,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 492,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 246,
+     "id": 491,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 493,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 247,
+     "id": 492,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 31,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 494,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 248,
+     "id": 493,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 495,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 249,
+     "id": 494,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 16,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 496,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 250,
+     "id": 495,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 497,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 251,
+     "id": 496,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 8,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 498,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 252,
+     "id": 497,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 499,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 253,
+     "id": 498,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 37,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 500,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 254,
+     "id": 499,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 501,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 502,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 255,
+     "id": 500,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 256,
+     "id": 501,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 503,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 257,
+     "id": 502,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 504,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 258,
+     "id": 503,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 505,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 259,
+     "id": 504,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 506,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 32,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 507,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "256",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 22,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 508,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 21,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 183,
+     "id": 507,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 509,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "65536",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 23,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 510,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 184,
+     "id": 508,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 185,
+     "id": 509,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 511,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16777216",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 24,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 512,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 186,
+     "id": 510,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 187,
+     "id": 511,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 513,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 182,
+     "id": 506,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 188,
+     "id": 512,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 514,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 189,
+     "id": 513,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 515,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "256",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 18,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 516,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 17,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 191,
+     "id": 515,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 517,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "65536",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 19,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 518,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 192,
+     "id": 516,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 193,
+     "id": 517,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 519,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16777216",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 20,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 520,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 194,
+     "id": 518,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 195,
+     "id": 519,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 521,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 196,
+     "id": 520,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 32,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 522,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 190,
+     "id": 514,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 197,
+     "id": 521,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 523,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 198,
+     "id": 522,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 524,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "256",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 14,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 525,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 13,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 200,
+     "id": 524,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 526,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "65536",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 15,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 527,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 201,
+     "id": 525,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 202,
+     "id": 526,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 528,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16777216",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 16,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 529,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 203,
+     "id": 527,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 204,
+     "id": 528,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 530,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 199,
+     "id": 523,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 205,
+     "id": 529,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 531,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 206,
+     "id": 530,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 532,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "256",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 10,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 533,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 9,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 208,
+     "id": 532,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 534,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "65536",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 11,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 535,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 209,
+     "id": 533,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 210,
+     "id": 534,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 536,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16777216",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 12,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 537,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 211,
+     "id": 535,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 212,
+     "id": 536,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 538,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 207,
+     "id": 531,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 213,
+     "id": 537,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 539,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 214,
+     "id": 538,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 540,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "256",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 6,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 541,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 5,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 216,
+     "id": 540,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 542,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "65536",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 7,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 543,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 217,
+     "id": 541,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 218,
+     "id": 542,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 544,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16777216",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 8,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 545,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 219,
+     "id": 543,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 220,
+     "id": 544,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 546,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 215,
+     "id": 539,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 221,
+     "id": 545,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 547,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 222,
+     "id": 546,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 548,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "256",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 2,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 549,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 1,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 224,
+     "id": 548,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 550,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "65536",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 3,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 551,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 225,
+     "id": 549,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 226,
+     "id": 550,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 552,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16777216",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 4,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 553,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 227,
+     "id": 551,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 228,
+     "id": 552,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 554,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 223,
+     "id": 547,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 229,
+     "id": 553,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 555,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 230,
+     "id": 554,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 556,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "16",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 33,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 557,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 232,
+     "id": 556,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 558,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 231,
+     "id": 555,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 233,
+     "id": 557,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 559,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 234,
+     "id": 558,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 560,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 235,
+     "id": 559,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "5000",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 561,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 236,
+     "id": 560,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 562,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 265,
+     "id": 505,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 266,
+     "id": 561,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 563,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 43,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 267,
+     "id": 562,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 564,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 236,
+     "id": 560,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 565,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "18446744069414584320",
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 269,
+     "id": 564,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 566,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 259,
+     "id": 504,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 567,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 270,
+     "id": 565,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 271,
+     "id": 566,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 568,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 268,
+     "id": 563,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 272,
+     "id": 567,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 569,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 471,
+     "id": 483,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 273,
+     "id": 568,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 570,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 472,
+     "id": 569,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 571,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    },
+    {
+     "type": "const",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 572,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 39,
+     "prime": -1,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 274,
+     "id": 571,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 573,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 39,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 275,
+     "id": 572,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 574,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 40,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 41,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 575,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 277,
+     "id": 574,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 42,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 576,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 278,
+     "id": 575,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 43,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 577,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 276,
+     "id": 573,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 279,
+     "id": 576,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 578,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 34,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 579,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "cm",
+     "id": 25,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 281,
+     "id": 578,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 580,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "4",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 581,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 282,
+     "id": 579,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 283,
+     "id": 580,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 582,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 284,
+     "id": 581,
+     "prime": 0,
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 583,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 285,
+     "id": 582,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 17,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 584,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 286,
+     "id": 583,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 585,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 287,
+     "id": 584,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 586,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 288,
+     "id": 585,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 9,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 587,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 289,
+     "id": 586,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 588,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 290,
+     "id": 587,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 1,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 589,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 291,
+     "id": 588,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 590,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 292,
+     "id": 589,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 0,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 591,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 293,
+     "id": 590,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 592,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "2",
+     "dim": 1
+    },
+    {
+     "type": "cm",
+     "id": 35,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 593,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 294,
+     "id": 591,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 295,
+     "id": 592,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 594,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 296,
+     "id": 593,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 595,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 297,
+     "id": 594,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "125",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 596,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 298,
+     "id": 595,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 597,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 280,
+     "id": 577,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 299,
+     "id": 596,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 598,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 300,
+     "id": 597,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "1",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 599,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 473,
+     "id": 570,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 301,
+     "id": 598,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 600,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 474,
+     "id": 599,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 601,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "10",
+     "dim": 1
+    },
+    {
+     "type": "challenge",
+     "id": 0,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 602,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 302,
+     "id": 601,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "number",
+     "value": "5000",
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 603,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 303,
+     "id": 602,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "challenge",
+     "id": 1,
+     "stageId": 1,
+     "dim": 3,
+     "stage": 2
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 604,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "airvalue",
+     "id": 1,
+     "stage": 2,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 305,
+     "id": 603,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 605,
+    "dim": 1
+   },
+   "src": [
+    {
+     "type": "number",
+     "value": "0",
+     "dim": 1
+    },
+    {
+     "type": "airvalue",
+     "id": 0,
+     "stage": 1,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 606,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 306,
+     "id": 604,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 307,
+     "id": 605,
+     "prime": 0,
+     "dim": 1
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 607,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 475,
+     "id": 600,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 308,
+     "id": 606,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 608,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "challenge",
+     "id": 2,
+     "stageId": 0,
+     "dim": 3,
+     "stage": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 476,
+     "id": 607,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 609,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "airgroupvalue",
+     "id": 0,
+     "stage": 2,
+     "dim": 3
+    },
+    {
+     "type": "cm",
+     "id": 39,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "sub",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 610,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 316,
+     "id": 609,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "airvalue",
+     "id": 1,
+     "stage": 2,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "tmp",
+    "prime": 0,
+    "id": 611,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "const",
+     "id": 0,
+     "prime": 1,
+     "dim": 1
+    },
+    {
+     "type": "tmp",
+     "expId": 317,
+     "id": 610,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "add",
+   "dest": {
+    "type": "tmp",
+    "id": 305,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "expId": 477,
+     "id": 608,
+     "prime": 0,
+     "dim": 3
+    },
+    {
+     "type": "tmp",
+     "expId": 318,
+     "id": 611,
+     "prime": 0,
+     "dim": 3
+    }
+   ]
+  },
+  {
+   "op": "mul",
+   "dest": {
+    "type": "q",
+    "id": 0,
+    "dim": 3
+   },
+   "src": [
+    {
+     "type": "tmp",
+     "id": 305,
+     "dim": 3
+    },
+    {
+     "type": "Zi",
+     "boundaryId": 0,
+     "dim": 1
+    }
+   ]
+  }
+ ]
+}

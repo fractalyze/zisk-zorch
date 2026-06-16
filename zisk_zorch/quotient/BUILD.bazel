@@ -40,6 +40,7 @@ py_test(
     size = "medium",
     srcs = ["cexp_ref_test.py"],
     data = [
+        "testdata/binary_cexp.json",
         "testdata/golden/cexp_eval.json",
         "testdata/memalign_readbyte_cexp.json",
     ],
