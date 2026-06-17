@@ -20,3 +20,6 @@ zk-dtypes==0.0.6
 jaxlib==0.0.5.dev20260616020033
 jax-cuda12-plugin==0.0.5.dev20260616020033
 zkx-cuda-pjrt==0.0.5.dev20260616020033
+# zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
+# (warm-GPU inner-proof microbench, zisk-zorch#30). Same pin as zorch.
+zkbench==0.4.0
