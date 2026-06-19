@@ -27,6 +27,8 @@ The pil2 conventions these parameters encode on top of zorch's agnostic core:
 
 from __future__ import annotations
 
+import functools
+
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
@@ -300,6 +302,16 @@ def goldilocks_params(width: int) -> Poseidon2Params:
     )
 
 
+@functools.cache
 def goldilocks_perm(width: int) -> Poseidon2:
-    """The pil2-stark permutation for `width` on zorch's Poseidon2 core."""
+    """The pil2-stark permutation for `width` on zorch's Poseidon2 core.
+
+    Cached per width: the permutation is immutable and its construction runs
+    host-side analysis (`Poseidon2Params.__post_init__` validation, M4
+    block-structure detection), so rebuilding it inside a traced region — the
+    transcript and every Merkle tree call this per `prove` — both repeats that
+    host work and plants a `np.asarray`-on-tracer barrier that blocks jitting
+    the FRI fold loop. One concrete instance, reused, keeps the fold loop
+    traceable as a single compiled function.
+    """
     return Poseidon2(goldilocks_params(width))
