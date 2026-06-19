@@ -27,7 +27,6 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax import Array
 from zk_dtypes import goldilocks_mont as F
 from zk_dtypes import goldilocksx3_mont as F3
@@ -39,14 +38,22 @@ from zisk_zorch.transcript.transcript import Transcript
 def _cubic_to_base(values: Array) -> Array:
     """View a cubic array as its Goldilocks limbs, the cubic axis expanded in
     place (`[c0, c1, c2]` -> three contiguous base lanes) — pil2's
-    `FIELD_EXTENSION`-contiguous memory layout the linear hash leaves see."""
-    return jnp.array(np.ascontiguousarray(np.asarray(values)).view(F))
+    `FIELD_EXTENSION`-contiguous memory layout the linear hash leaves see.
+
+    Device-native `bitcast_convert` keeps the reinterpret on-device so the FRI
+    fold loop traces as one jitted function; the prior `np.asarray(...).view`
+    host round-trip forced eager execution (re-compiling per `prove` call).
+    `bitcast_convert` appends the size-3 limb axis, which the reshape folds back
+    into the trailing axis to recover the contiguous limb layout."""
+    base = jax.lax.bitcast_convert_type(values, F)
+    return base.reshape(*values.shape[:-1], values.shape[-1] * 3)
 
 
 def _base_to_cubic(values: Array) -> Array:
     """The inverse view: contiguous base limbs -> cubic elements (the 3 limbs are
     that element's coefficients, cf. golden `u64x3`)."""
-    return jnp.array(np.ascontiguousarray(np.asarray(values)).view(F3))
+    triples = values.reshape(*values.shape[:-1], -1, 3)
+    return jax.lax.bitcast_convert_type(triples, F3)
 
 
 @dataclass(frozen=True)

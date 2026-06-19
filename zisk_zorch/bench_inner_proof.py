@@ -47,6 +47,7 @@ from zkbench import BenchmarkConfig, BenchmarkOp, JaxBenchmark, compute_hash
 
 from zisk_zorch.commit.trace_commit import extend, merkle_tree
 from zisk_zorch.fri.prover import prove
+from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
 from zisk_zorch.transcript.transcript import Transcript
 from zorch.testkit.random_field import rand_field
@@ -208,6 +209,10 @@ class InnerProofBenchmark(JaxBenchmark):
             yield op("divide", dfn, composite)
 
         if "fri" in stages:
+            # Warm the memoized Poseidon2 perms (host-side M4/const analysis)
+            # so the jit trace reuses them instead of rebuilding under trace.
+            goldilocks_perm(8)
+            goldilocks_perm(12)
             n_bits_ext = n_bits + args.blowup_bits
             steps = _fold_steps(n_bits_ext, args.fold_bits, args.final_bits)
             fri_pol = jax.block_until_ready(_rand_cubic(1 << n_bits_ext, 0))
@@ -221,9 +226,11 @@ class InnerProofBenchmark(JaxBenchmark):
                 proof = prove(pol, steps, arity=arity, transcript=t)
                 return (proof.final_pol, *proof.roots)
 
-            # No `lower`: prove is a Python driver, not one jitted fn; warmup
-            # compiles the per-layer islands and the timed iterations are warm.
-            yield op("fri", fri_outputs, fri_pol, lower=False)
+            # Jitted: the perm-memoize + device-bitcast seam make the fold loop
+            # traceable as one function, so warm fri reflects compute, not the
+            # per-call recompile (the fair box-4 number).
+            fri_jit = jax.jit(fri_outputs)
+            yield op("fri", fri_jit, fri_pol, lower=True)
 
 
 if __name__ == "__main__":
