@@ -138,8 +138,19 @@ class InnerProofBenchmark(JaxBenchmark):
         )
         parser.add_argument("--n_constraints", type=int, default=64)
         parser.add_argument("--degree", type=int, default=3)
-        parser.add_argument("--fold_bits", type=int, default=2)
-        parser.add_argument("--final_bits", type=int, default=0)
+        # Defaults match the production FRI schedule: the ZisK v0.18.0 proving-key
+        # starkStructs fold every inner-proof AIR by a uniform drop of 3 (factor 8)
+        # down to nBits 5 (dominant [22,19,16,13,10,7,5] == _fold_steps(22, 3, 5)).
+        # Drop-2-to-0 is a schedule no ZisK config uses — it adds tiny tail rounds
+        # that over-state the per-round fold/commit compile the fri stage measures.
+        parser.add_argument(
+            "--fold_bits", type=int, default=3,
+            help="bits folded per FRI layer (default 3 = production factor-8 drop).",
+        )
+        parser.add_argument(
+            "--final_bits", type=int, default=5,
+            help="log2 size of the final FRI polynomial (default 5, production).",
+        )
         parser.add_argument(
             "--stages", type=str, default=",".join(_STAGES),
             help=f"comma list, subset of {_STAGES}.",
