@@ -21,6 +21,8 @@ py_library(
 py_test(
     name = "transcript_test",
     size = "medium",
+    # GPU-only until fractalyze/zkx#755 (CPU emitter: EF bitcast + Poseidon2 FF).
+    tags = ["gpu"],
     srcs = ["transcript_test.py"],
     data = glob(["testdata/golden/**"]),
     deps = [
