@@ -25,21 +25,7 @@ bazel_dep(name = "zorch", version = "0.0.0")
 git_override(
     module_name = "zorch",
     remote = "https://github.com/fractalyze/zorch.git",
-    # main @ fractalyze/zorch#285 — the Poseidon2-Goldilocks permute carries its
-    # 4×4 base M4 as an `external_m4` marker attribute (zorch#264), which zkx#676
-    # parses and applies via multiply-free add-chains, routing the HorizenLabs M4
-    # through the dedicated `zorch.poseidon2` emitter instead of the generic
-    # register-spilling LoopFusion — collapsing the stage-1 commit compile from
-    # minutes to seconds with byte-match intact. This pin MUST move in lockstep
-    # with the matching `zkx-cuda-pjrt==…dev20260619015425` wheel in
-    # requirements.in: a zorch whose own pip hub ships a different zkx wheel
-    # either mis-applies circ to the HorizenLabs M4 (old wheel) or aborts the FRI
-    # seam's EF bitcast-convert (missing zkx#696/#698) — both break the golden
-    # byte-match. zorch#285 carries that same dev20260619015425 wheel + zk_dtypes
-    # 0.0.7 (jax#214 registers Pasta dtypes → `pallas_sf`). Still carries the #255
-    # k-ary fold *orchestration* seam (`PreFoldKGroupCommitRound` /
-    # `verify_group_fold_chain` / `KFoldableCode`) the FRI host loop drives over.
-    commit = "1918ba355a1d0cd1a9909b0d940825fd7a99d3b6",
+    commit = "f8b48ea6001fd335f8fc1c50e68aae8d9e503bbd",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
