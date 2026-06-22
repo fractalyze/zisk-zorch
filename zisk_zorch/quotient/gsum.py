@@ -14,8 +14,8 @@ quotient composite's bus / running-sum constraints (see
 docs/stage2-constraint-ingest.md, quotient.py). Host-driven and un-jitted like
 the rest of the proof orchestration.
 
-std_sum driver: https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L23-L64
-gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/hints.cpp
+std_sum driver: https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L24-L65
+gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/hints.cpp
 """
 
 from __future__ import annotations

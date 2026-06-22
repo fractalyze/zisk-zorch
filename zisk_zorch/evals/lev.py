@@ -22,7 +22,7 @@ Output is `(N, n_open)` cubic, entry `[k][i]` the k-th coefficient for opening
 point `i` — pil2's row-major `LEv[k*nOpen + i]` layout. Host-driven and
 un-jitted like the rest of the proof orchestration.
 
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/starks.hpp#L243-L279
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp#L243-L279
 """
 
 from __future__ import annotations

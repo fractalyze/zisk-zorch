@@ -12,7 +12,7 @@ Binary-specific for now (the constraint set, the bus-cluster grouping, and the
 row-local formulas are wired for the `binary` AIR); the `gsum_e` reconstruction
 and the fold are generic and will lift to other AIRs later. See
 docs/stage2-constraint-ingest.md and
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-components/lib/std/pil/std_sum.pil
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-components/lib/std/pil/std_sum.pil
 """
 
 from __future__ import annotations

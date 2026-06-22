@@ -159,7 +159,7 @@ class Pil2FriCode:
         pol leaves a nonzero coefficient above the bound and is rejected, closing
         the soundness gap a fold-consistency check alone leaves open.
 
-        https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L672-L691"""
+        https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp#L679-L698"""
         last_bits = self.steps[-1]
         n = 1 << last_bits
         if final.shape != (n,):

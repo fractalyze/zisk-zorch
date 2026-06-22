@@ -29,7 +29,7 @@ prover transmits is bound by an O(1) grind check — `hash(challenge ++ nonce)`
 must have `powBits` leading zeros — before the positions are read off it, so a
 tampered nonce is rejected (pil2 `stark_verify.hpp` L195-L211).
 
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L564-L670
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp#L571-L677
 """
 
 from __future__ import annotations

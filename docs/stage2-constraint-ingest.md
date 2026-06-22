@@ -74,7 +74,7 @@ preprocessed_trace, main_trace)` materializes it at the trace dtype. Native
   composite constraint column on the extended (coset, blowup ≥ max constraint
   degree) domain, divide by the vanishing polynomial `Z_H`, commit the quotient.
   Mirrors pil2's `calculateQuotientPolynomial`
-  ([gen_proof.hpp](https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L157-L178)).
+  ([gen_proof.hpp](https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L158-L179)).
   The α-fold itself is **not** ZisK-specific — reuse zorch's agnostic
   `constraint_eval(eval_fn, trace, alpha)` (the fused `zorch.constraint_eval`
   composite sp1-zorch's zerocheck is built on); zisk-zorch only adds the

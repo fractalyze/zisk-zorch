@@ -17,9 +17,9 @@ All arithmetic stays in the `goldilocks_mont` field — the dtype reduces mod p 
 every op, so there is no manual modulus juggling; `jnp.power` is the field-native
 exponentiation (`lax.pow` needs a float dtype).
 
-buildZHInv:   https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/setup_ctx.hpp#L127-L146
-buildOneRowZerofierInv: https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/setup_ctx.hpp#L148-L161
-buildFrameZerofierInv:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/setup_ctx.hpp#L163-L191
+buildZHInv:   https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/setup_ctx.hpp#L127-L146
+buildOneRowZerofierInv: https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/setup_ctx.hpp#L148-L161
+buildFrameZerofierInv:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/setup_ctx.hpp#L163-L191
 """
 
 from __future__ import annotations
