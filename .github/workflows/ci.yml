@@ -1,0 +1,72 @@
+name: CI
+
+permissions: read-all
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel in-progress runs for PRs (same ref), but never cancel pushes to main so
+# every merge gets a full CI run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Mirrors fractalyze/zorch's CI: a CPU leg always runs; a GPU leg is added only
+# when the `HAS_GPU_RUNNER` repo variable is `true` (a job-level `if` can't read
+# `matrix`, hence the dynamic matrix). Runners are labelled by capability — a
+# CPU-only box is `[self-hosted, cpu]`, a GPU box `[self-hosted, gpu]`.
+#
+# The CPU leg excludes `gpu`-tagged tests: the executing pil2 byte-match tests
+# (poseidon2/transcript/commit/fri) need the GPU emitter — the zkx CPU emitter
+# can't run them yet (EF bitcast + Poseidon2 FF; fractalyze/zkx#755). They still
+# `bazel build` on CPU; they only *run* on the GPU leg.
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          cpu='{"backend":"cpu","runs_on":["self-hosted","cpu"],"jax_platforms":"cpu","tag_filters":"-gpu"}'
+          gpu='{"backend":"gpu","runs_on":["self-hosted","gpu"],"jax_platforms":"cuda","tag_filters":""}'
+          include="${cpu}"
+          if [ "${{ vars.HAS_GPU_RUNNER }}" = "true" ]; then
+            include="${cpu},${gpu}"
+          fi
+          echo "matrix={\"include\":[${include}]}" >> "$GITHUB_OUTPUT"
+
+  build-and-test:
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    runs-on: ${{ matrix.runs_on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # No setup-bazel: it's for ephemeral runners and clobbers the box's
+      # ~/.bazelrc; on self-hosted runners bazel and its caches already persist.
+
+      # Build everything (including the gpu-tagged tests, which the per-leg test
+      # filter may skip) so a build break in any target fails fast on every leg.
+      - name: bazel build
+        run: bazel build -- //...
+
+      - name: bazel test
+        run: |
+          bazel test \
+            --test_env=JAX_PLATFORMS=${{ matrix.jax_platforms }} \
+            --test_tag_filters=${{ matrix.tag_filters }} \
+            -- //...
+
+      # The CI stream only carries the FAIL summary, not the per-test output —
+      # capture the runner-local test.log a failed test leaves behind.
+      - name: Upload bazel test logs
+        if: ${{ failure() }}
+        uses: fractalyze/.github/.github/actions/upload-bazel-testlogs@main
+        with:
+          name: bazel-test-logs-${{ matrix.backend }}

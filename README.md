@@ -67,6 +67,16 @@ Run the tests (CPU is the default for determinism):
 bazel test //...
 ```
 
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on PRs and pushes to
+`main` (self-hosted runners): a CPU leg always runs (`bazel build //...` + the
+CPU-safe tests), and a GPU leg is added when the `HAS_GPU_RUNNER` repo variable
+is `true`. The executing pil2 byte-match tests are tagged `gpu` and run only on
+the GPU leg — the zkx CPU emitter can't run them yet (EF bitcast + Poseidon2 FF;
+[fractalyze/zkx#755](https://github.com/fractalyze/zkx/issues/755)). They still
+build on CPU. Drop the `gpu` tags once that issue lands.
+
 ### Regenerating the golden vectors
 
 The byte-match fixtures under `zisk_zorch/**/testdata/golden/` are produced by

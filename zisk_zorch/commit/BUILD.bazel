@@ -45,6 +45,8 @@ py_library(
 py_test(
     name = "linear_hash_test",
     size = "medium",
+    # GPU-only until fractalyze/zkx#755 (CPU emitter: EF bitcast + Poseidon2 FF).
+    tags = ["gpu"],
     srcs = ["linear_hash_test.py"],
     data = glob(["testdata/golden/linear_hash.json"]),
     deps = [
@@ -58,6 +60,8 @@ py_test(
 py_test(
     name = "openings_test",
     size = "medium",
+    # GPU-only until fractalyze/zkx#755 (CPU emitter: EF bitcast + Poseidon2 FF).
+    tags = ["gpu"],
     srcs = ["openings_test.py"],
     data = glob(["testdata/golden/merkle_proof.json"]),
     deps = [
@@ -72,6 +76,8 @@ py_test(
 py_test(
     name = "trace_commit_test",
     size = "large",
+    # GPU-only until fractalyze/zkx#755 (CPU emitter: EF bitcast + Poseidon2 FF).
+    tags = ["gpu"],
     srcs = ["trace_commit_test.py"],
     data = glob([
         "testdata/golden/lde.json",
