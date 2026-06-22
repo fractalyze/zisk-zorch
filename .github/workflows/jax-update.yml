@@ -1,0 +1,50 @@
+# Copyright 2026 Fractalyze Inc. All rights reserved.
+#
+# Receives a `jax-update` repository_dispatch from the jax repo's
+# notify-downstream workflow and opens a pin-bump PR. zisk-zorch must be listed
+# in that dispatcher's consumer list for events to arrive (added in the same
+# change that introduced this file).
+#
+# Like sp1-zorch/openvm-zorch, zisk-zorch pins jax/jaxlib/jax-cuda12-plugin/
+# zkx-cuda-pjrt in lockstep (see requirements.in), so all four bump together.
+# zk-dtypes is pinned separately at ==0.0.7 and is deliberately NOT in the bump
+# set: the pip-bump action rewrites `pkg==.*` to the jax version, so listing
+# zk-dtypes would clobber 0.0.7 with a nonexistent jax-versioned wheel. The lock
+# regen keeps zk-dtypes at its pin; bump it manually if a future jax build needs
+# a newer one.
+#
+# zisk-zorch-specific coupling (the pure-pip consumers do not have this): the pip
+# `zkx-cuda-pjrt` here must stay in lockstep with the zkx wheel shipped by the
+# `zorch` git_override's own pip hub (MODULE.bazel) — a mismatch breaks the
+# golden byte-match tests. The pip-bump action only touches the pip lock, not
+# Bazel git_override revisions, so an auto-bump PR may need a companion
+# MODULE.bazel zorch-commit bump (to a zorch whose hub ships the same new wheel)
+# before CI goes green. Treat the auto-PR as a notification + lock regen, not a
+# guaranteed-mergeable change.
+
+name: JAX Update
+
+on:
+  repository_dispatch:
+    types: [jax-update]
+
+concurrency:
+  group: jax-update
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: [self-hosted, cpu]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BUMPER_GH_PAT }}
+
+      - name: Bump jax/jaxlib/jax-cuda12-plugin/zkx-cuda-pjrt
+        uses: fractalyze/github-actions/pip-bump@main
+        with:
+          upstream_repo: jax
+          version: ${{ github.event.client_payload.jax_version }}
+          upstream_commit: ${{ github.event.client_payload.commit }}
+          packages: jax jaxlib jax-cuda12-plugin zkx-cuda-pjrt
+          github_token: ${{ secrets.BUMPER_GH_PAT }}
