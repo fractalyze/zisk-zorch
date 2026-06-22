@@ -4,9 +4,9 @@ NOT a zorch Sponge: pil2's `linear_hash_seq` zero-pads a partial block (zorch's
 sponge is padding-free overwrite) and chains by copying the previous output's
 first 4 lanes into the capacity slots `[rate, rate+4)` before each block after
 the first. (v0.15.0 short-circuited rows of <= 4 elements to the zero-padded
-row unhashed; v0.18.0 removed that shortcut — every row is permuted.)
+row unhashed; v1.0.0-alpha removed that shortcut — every row is permuted.)
 Reference:
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/fields/src/poseidon2.rs#L135-L157
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/fields/src/merkle.rs#L14-L39
 
 Duck-types zorch's Merkle leaf-hasher surface (`hash`, `out`,
 `has_dedicated_fusion`), so `MerkleTree(LinearHash(perm), compressor)` builds

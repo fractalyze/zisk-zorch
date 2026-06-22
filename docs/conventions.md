@@ -13,7 +13,7 @@ forced a non-obvious choice.
 
 ## Pin external references
 
-Link pil2-proofman and ZisK sources as GitHub permalinks at tag `v0.18.0`
+Link pil2-proofman and ZisK sources as GitHub permalinks at tag `v1.0.0-alpha`
 (or a short commit SHA) with line ranges — never a branch. A branch link rots
 silently; a permalink stays true to the constant it pins.
 

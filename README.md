@@ -23,20 +23,20 @@ and benchmark against the pil2-stark CUDA reference.
 Early bootstrap. First slice: the **stage-1 trace commit** (≈ pil2-stark's
 `extendAndMerkelize`) — coset-7 NTT LDE onto the extended domain, pil2
 linear-hash row leaves, k-ary Poseidon2 Merkle tree, and the pil2 transcript —
-byte-matched against golden vectors generated from pil2-proofman v0.18.0's
+byte-matched against golden vectors generated from pil2-proofman v1.0.0-alpha's
 `fields` crate (see [`golden/`](golden/)).
 
 ## The scheme (what ZisK actually runs)
 
 ZisK delegates proving to pil2-proofman (eSTARK / pil2-stark). The constants
 that pin this repo's glue, all from
-[pil2-proofman v0.18.0](https://github.com/0xPolygonHermez/pil2-proofman/tree/v0.18.0):
+[pil2-proofman v1.0.0-alpha](https://github.com/0xPolygonHermez/pil2-proofman/tree/v1.0.0-alpha):
 
 - **Field**: Goldilocks (2^64 − 2^32 + 1); FRI challenges in the cubic
   extension x³ − x − 1.
 - **Hash**: Poseidon2 over Goldilocks, widths 4/8/12/16, capacity always 4,
   x⁷ S-box, 4+4 full rounds, 21–22 partial rounds.
-- **Merkle**: configurable arity (2/3/4 → node hash Poseidon8/12/16), rows
+- **Merkle**: configurable arity (2/3/4 → node hash Poseidon2_8/12/16), rows
   leaf-hashed with pil2's chained `linear_hash`, 4-element roots.
 - **LDE**: NTT with coset shift 7, blowup 2^(nBitsExt − nBits).
 - **Transcript**: Poseidon2 sponge with a pending/out buffer discipline
@@ -71,7 +71,7 @@ bazel test //...
 
 The byte-match fixtures under `zisk_zorch/**/testdata/golden/` are produced by
 the Rust harness in [`golden/`](golden/), which links the same `fields` crate
-pil2-proofman v0.18.0 ships:
+pil2-proofman v1.0.0-alpha ships:
 
 ```sh
 cd golden && cargo run --release

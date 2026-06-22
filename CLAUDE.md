@@ -20,4 +20,4 @@ this file is just the map plus the rules every change must respect.
   reference (`golden/`). A change that breaks a golden test is wrong until
   the reference says otherwise.
 - **Pin external references.** Link pil2-proofman / ZisK sources as GitHub
-  permalinks at tag `v0.18.0` (or a short commit SHA), never a branch.
+  permalinks at tag `v1.0.0-alpha` (or a short commit SHA), never a branch.

@@ -19,7 +19,7 @@ construction and free of any NTT root-order convention. The coset points are
 fixed by the static `(n_bits_ext, prev_bits, current_bits)`, so they are built
 once on the host as a base-field constant.
 
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L36-L113
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/fri/fri.hpp#L32-L99
 """
 
 from __future__ import annotations

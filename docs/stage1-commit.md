@@ -2,7 +2,7 @@
 
 The first slice of the ZisK prover: pil2-stark's `extendAndMerkelize`
 (commitStage(1)) — commit the execution-trace columns before any challenge is
-drawn. Everything here is byte-matched against pil2-proofman v0.18.0's
+drawn. Everything here is byte-matched against pil2-proofman v1.0.0-alpha's
 `fields` crate via [`../golden/`](../golden/).
 
 ## Pipeline

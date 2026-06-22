@@ -1,6 +1,6 @@
 //! Golden-vector generator for zisk-zorch's byte-match tests.
 //!
-//! Links pil2-proofman v0.18.0's `fields` crate — the same code the ZisK
+//! Links pil2-proofman v1.0.0-alpha's `fields` crate — the same code the ZisK
 //! prover runs — and emits JSON fixtures under zisk_zorch/**/testdata/golden/.
 //! Deterministic (fixed splitmix64 seeds): regeneration is a no-op unless the
 //! reference pin changes.
@@ -10,8 +10,8 @@
 
 use fields::{
     intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon2_hash, verify_fold, verify_mt,
-    CubicExtensionField, Field, Goldilocks, PrimeField64, Poseidon12, Poseidon16,
-    Poseidon2Constants, Poseidon4, Poseidon8, Transcript,
+    CubicExtensionField, Field, Goldilocks, Hash, PrimeField64, Poseidon2_12, Poseidon2_16,
+    Poseidon2Constants, Poseidon2_4, Poseidon2_8, Transcript,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -68,12 +68,12 @@ fn permutation_cases<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Val
     json!({"width": W, "cases": cases})
 }
 
-fn linear_hash_cases<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Value {
+fn linear_hash_cases<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize>(seed: u64) -> Value {
     // Lengths probe every linear_hash regime: short single-block rows
-    // (v0.15.0's <=4 unhashed shortcut is gone in v0.18.0 — they permute),
+    // (v0.15.0's <=4 unhashed shortcut is gone in v1.0.0-alpha — they permute),
     // exactly one rate block, a partial last block, and multi-block chaining
     // (where the previous capacity feeds back into the state).
-    let rate = C::RATE as u64;
+    let rate = <C as Poseidon2Constants<W>>::RATE as u64;
     let lens = [
         1,
         3,
@@ -90,22 +90,22 @@ fn linear_hash_cases<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Val
     let mut cases = Vec::new();
     for &len in lens.iter() {
         let input: Vec<Goldilocks> = (0..len).map(|_| rand_fe(&mut state)).collect();
-        let out = linear_hash_seq::<Goldilocks, C, W>(&input);
-        cases.push(json!({"input": ser(&input), "output": ser(&out)}));
+        let out = linear_hash_seq::<Goldilocks, C>(&input);
+        cases.push(json!({"input": ser(&input), "output": ser(out.as_ref())}));
     }
-    json!({"width": W, "rate": C::RATE, "cases": cases})
+    json!({"width": W, "rate": <C as Poseidon2Constants<W>>::RATE, "cases": cases})
 }
 
-fn merkle_root<const W: usize, C: Poseidon2Constants<W>>(
+fn merkle_root<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
 ) -> [Goldilocks; 4] {
     let mut digests = Vec::with_capacity(rows.len() * 4);
     for row in rows {
-        let h = linear_hash_seq::<Goldilocks, C, W>(row);
-        digests.extend_from_slice(&h[..4]);
+        let h = linear_hash_seq::<Goldilocks, C>(row);
+        digests.extend_from_slice(&h.as_ref()[..4]);
     }
-    partial_merkle_tree::<Goldilocks, C, W>(&digests, rows.len() as u64, arity)
+    partial_merkle_tree::<Goldilocks, C>(&digests, rows.len() as u64, arity)
 }
 
 fn merkle_cases(seed: u64) -> Value {
@@ -120,9 +120,9 @@ fn merkle_cases(seed: u64) -> Value {
             let rows: Vec<Vec<Goldilocks>> =
                 (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
             let root = match arity {
-                2 => merkle_root::<8, Poseidon8>(&rows, arity),
-                3 => merkle_root::<12, Poseidon12>(&rows, arity),
-                4 => merkle_root::<16, Poseidon16>(&rows, arity),
+                2 => merkle_root::<8, Poseidon2_8>(&rows, arity),
+                3 => merkle_root::<12, Poseidon2_12>(&rows, arity),
+                4 => merkle_root::<16, Poseidon2_16>(&rows, arity),
                 _ => unreachable!(),
             };
             let flat: Vec<String> = rows.iter().flat_map(|r| ser(r)).collect();
@@ -143,7 +143,7 @@ fn merkle_cases(seed: u64) -> Value {
 /// in `MerkleTreeGL::genMerkleProof` order — per level the (arity-1) group
 /// digests with the node's own slot skipped — and emit the flat
 /// `getGroupProof` array [row..., mp levels...].
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
 ///
 /// Self-checked twice against the reference: the rebuilt root must equal
 /// `partial_merkle_tree`, and every extracted path must pass `verify_mt`.
@@ -151,14 +151,14 @@ fn merkle_cases(seed: u64) -> Value {
 /// `levels[0]` is the leaf digests, `levels.last()` the 4-element root. Each
 /// level is padded to a multiple of the arity so boundary openings read their
 /// zero siblings like any node.
-fn build_levels<const W: usize, C: Poseidon2Constants<W>>(
+fn build_levels<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
 ) -> Vec<Vec<Goldilocks>> {
     let mut levels: Vec<Vec<Goldilocks>> = Vec::new();
     let mut level: Vec<Goldilocks> = rows
         .iter()
-        .flat_map(|row| linear_hash_seq::<Goldilocks, C, W>(row)[..4].to_vec())
+        .flat_map(|row| linear_hash_seq::<Goldilocks, C>(row).as_ref()[..4].to_vec())
         .collect();
     while level.len() > 4 {
         while (level.len() / 4) % arity as usize != 0 {
@@ -208,7 +208,7 @@ fn group_proof(row: &[Goldilocks], mp: &[Vec<Goldilocks>]) -> Vec<Goldilocks> {
     proof
 }
 
-fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
+fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
 ) -> Value {
@@ -217,7 +217,7 @@ fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
 
     let levels = build_levels::<W, C>(rows, arity);
     let root = levels.last().unwrap()[..4].to_vec();
-    let ref_root = partial_merkle_tree::<Goldilocks, C, W>(
+    let ref_root = partial_merkle_tree::<Goldilocks, C>(
         &levels[0][..(height * 4) as usize],
         height,
         arity,
@@ -230,7 +230,7 @@ fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W>>(
     for &index in &indices {
         let mp = build_mp(&levels, index, arity);
         assert!(
-            verify_mt::<Goldilocks, C, W>(&root, &[], &mp, index, &rows[index as usize], arity, 0),
+            verify_mt::<Goldilocks, C, C>(&root, &[], &mp, index, &rows[index as usize], arity, 0),
             "verify_mt rejected the extracted path (arity {arity}, height {height}, index {index})"
         );
         let proof = group_proof(&rows[index as usize], &mp);
@@ -260,9 +260,9 @@ fn merkle_proof_cases(seed: u64) -> Value {
             let rows: Vec<Vec<Goldilocks>> =
                 (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
             out.push(match arity {
-                2 => merkle_proof_case::<8, Poseidon8>(&rows, arity),
-                3 => merkle_proof_case::<12, Poseidon12>(&rows, arity),
-                4 => merkle_proof_case::<16, Poseidon16>(&rows, arity),
+                2 => merkle_proof_case::<8, Poseidon2_8>(&rows, arity),
+                3 => merkle_proof_case::<12, Poseidon2_12>(&rows, arity),
+                4 => merkle_proof_case::<16, Poseidon2_16>(&rows, arity),
                 _ => unreachable!(),
             });
         }
@@ -270,9 +270,9 @@ fn merkle_proof_cases(seed: u64) -> Value {
     json!({"cases": out})
 }
 
-fn transcript_case<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Value {
+fn transcript_case<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize>(seed: u64) -> Value {
     let mut state = seed;
-    let mut t = Transcript::<Goldilocks, C, W>::new();
+    let mut t = Transcript::<Goldilocks, C>::new();
     let mut steps = Vec::new();
 
     // The scripted sequence mirrors a stage boundary: absorb a root-sized
@@ -551,9 +551,9 @@ fn stage1_case(n_bits: usize, blowup_bits: usize, n_cols: usize, arity: u64, see
     let rows: Vec<Vec<Goldilocks>> =
         (0..n_ext).map(|r| extended[r * n_cols..(r + 1) * n_cols].to_vec()).collect();
     let root = match arity {
-        2 => merkle_root::<8, Poseidon8>(&rows, arity),
-        3 => merkle_root::<12, Poseidon12>(&rows, arity),
-        4 => merkle_root::<16, Poseidon16>(&rows, arity),
+        2 => merkle_root::<8, Poseidon2_8>(&rows, arity),
+        3 => merkle_root::<12, Poseidon2_12>(&rows, arity),
+        4 => merkle_root::<16, Poseidon2_16>(&rows, arity),
         _ => unreachable!(),
     };
     json!({
@@ -570,7 +570,7 @@ fn stage1_case(n_bits: usize, blowup_bits: usize, n_cols: usize, arity: u64, see
 /// `shift_eff * w(prevBits)^(g + j*pol2N)` — and evaluates that line at the
 /// challenge. Truth is the reference `verify_fold` itself (the same INTT + coset
 /// rescale + Horner the C++ `FRI::fold` runs per group), called once per output.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L36-L113
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/fri/fri.hpp#L32-L99
 /// One fold step over the whole codeword: each output group `g` reads the nX =
 /// 2^(prevBits - currentBits) entries strided by pol2N = 2^currentBits and runs
 /// the reference `verify_fold` (the INTT + coset rescale + Horner the C++
@@ -628,7 +628,7 @@ fn fri_fold_case(n_bits_ext: u64, prev_bits: u64, current_bits: u64, seed: u64) 
 /// pil2's `getTransposed`: regroup a degree-`2^currentBits` cubic codeword into
 /// `2^nextBits` rows of `2^(currentBits - nextBits)` cubic entries, row `i`
 /// holding the strided coset `pol[j*2^nextBits + i]` the next fold will read.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L126-L143
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/fri/fri.hpp#L209-L257
 fn fri_transpose(pol: &[Goldilocks], current_bits: u64, next_bits: u64) -> Vec<Vec<Goldilocks>> {
     let w = 1usize << next_bits;
     let h = 1usize << (current_bits - next_bits);
@@ -649,8 +649,8 @@ fn fri_transpose(pol: &[Goldilocks], current_bits: u64, next_bits: u64) -> Vec<V
 /// send the final polynomial in clear, and open every layer at each query.
 /// Self-checked: each layer root equals `partial_merkle_tree` and every opening
 /// passes `verify_mt`.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L235-L282
-fn fri_prove_case<const W: usize, C: Poseidon2Constants<W>>(
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L236-L283
+fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
     n_bits_ext: u64,
     steps: &[u64],
     arity: u64,
@@ -666,7 +666,7 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W>>(
 
     // The transcript width follows transcriptArity = 3 (width 12); the merkle
     // tree arity is independent. A fixed absorb seeds it deterministically.
-    let mut t = Transcript::<Goldilocks, Poseidon12, 12>::new();
+    let mut t = Transcript::<Goldilocks, Poseidon2_12>::new();
     let seed_absorb: Vec<Goldilocks> = (0..4).map(|_| rand_fe(&mut state)).collect();
     t.put(&seed_absorb);
 
@@ -688,7 +688,7 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W>>(
             let levels = build_levels::<W, C>(&rows, arity);
             let root = levels.last().unwrap()[..4].to_vec();
             let height = rows.len() as u64;
-            let ref_root = partial_merkle_tree::<Goldilocks, C, W>(
+            let ref_root = partial_merkle_tree::<Goldilocks, C>(
                 &levels[0][..(height * 4) as usize],
                 height,
                 arity,
@@ -713,7 +713,7 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W>>(
             let li = q % (1u64 << layer_leaf_bits[s]);
             let mp = build_mp(&layer_levels[s], li, arity);
             assert!(
-                verify_mt::<Goldilocks, C, W>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
+                verify_mt::<Goldilocks, C, C>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
                 "FRI layer {s} opening rejected (query {q}, index {li})"
             );
             let proof = group_proof(&layer_rows[s][li as usize], &mp);
@@ -737,9 +737,9 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W>>(
 /// Dispatch the FRI prover golden on the merkle tree arity (2/3/4 -> width 8/12/16).
 fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: u64) -> Value {
     match arity {
-        2 => fri_prove_case::<8, Poseidon8>(n_bits_ext, steps, arity, queries, seed),
-        3 => fri_prove_case::<12, Poseidon12>(n_bits_ext, steps, arity, queries, seed),
-        4 => fri_prove_case::<16, Poseidon16>(n_bits_ext, steps, arity, queries, seed),
+        2 => fri_prove_case::<8, Poseidon2_8>(n_bits_ext, steps, arity, queries, seed),
+        3 => fri_prove_case::<12, Poseidon2_12>(n_bits_ext, steps, arity, queries, seed),
+        4 => fri_prove_case::<16, Poseidon2_16>(n_bits_ext, steps, arity, queries, seed),
         _ => unreachable!(),
     }
 }
@@ -756,7 +756,7 @@ fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: 
 /// invert to exactly the planted coefficients, pinning the INTT convention the
 /// port mirrors. Only `steps[0]` (nBitsExt) and `steps[-1]` (lastBits) drive the
 /// test; the interior steps just exercise the schedule validation.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/stark_verify.hpp#L672-L691
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp#L679-L698
 fn fri_final_case(steps: &[u64], n_bits: u64, seed: u64) -> Value {
     let n_bits_ext = steps[0];
     let last_bits = steps[steps.len() - 1] as usize;
@@ -830,12 +830,12 @@ fn fri_final_case(steps: &[u64], n_bits: u64, seed: u64) -> Value {
 /// and read `nQueries` positions of `nBitsExt` bits via `getPermutations`.
 ///
 /// The proof-of-work search that finds `nonce` (`Poseidon2GoldilocksGrinding`) is
-/// not exported by the v0.18.0 `fields` crate, so it has no golden; `nonce` is a
+/// not exported by the v1.0.0-alpha `fields` crate, so it has no golden; `nonce` is a
 /// fixed input and the goldenable derivation around it is what this pins. The
 /// `seed_absorb` + discarded squeeze stand in for the fold loop's trailing
 /// observe/sample, so the derivation runs against a realistic mid-transcript state.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L235-L282
-fn query_sample_case<C: Poseidon2Constants<W>, const W: usize>(
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L236-L283
+fn query_sample_case<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize>(
     final_bits: u64,
     n_queries: u64,
     n_bits_ext: u64,
@@ -843,7 +843,7 @@ fn query_sample_case<C: Poseidon2Constants<W>, const W: usize>(
     seed: u64,
 ) -> Value {
     let mut state = seed;
-    let mut t = Transcript::<Goldilocks, C, W>::new();
+    let mut t = Transcript::<Goldilocks, C>::new();
 
     // Stand-in for the fold loop's tail: one root-sized absorb + one squeeze.
     let seed_absorb: Vec<Goldilocks> = (0..4).map(|_| rand_fe(&mut state)).collect();
@@ -859,7 +859,7 @@ fn query_sample_case<C: Poseidon2Constants<W>, const W: usize>(
     t.get_field(&mut challenge); // the grinding-seed challenge
 
     // Fresh transcript seeded with challenge ++ nonce, then getPermutations.
-    let mut tp = Transcript::<Goldilocks, C, W>::new();
+    let mut tp = Transcript::<Goldilocks, C>::new();
     tp.put(&challenge);
     tp.put(&[Goldilocks::new(nonce)]); // (Goldilocks::Element *)&nonce, canonical
     let positions = tp.get_permutations(n_queries, n_bits_ext);
@@ -886,10 +886,10 @@ fn query_sample_case<C: Poseidon2Constants<W>, const W: usize>(
 ///
 /// Grinding is not in the `fields` crate (it ships only the verify-side predicate),
 /// so this standalone case is the golden the Python port byte-matches. The
-/// permutation is `poseidon2_hash::<_, Poseidon4, 4>` — the same width-4 permutation
+/// permutation is `poseidon2_hash::<_, Poseidon2_4, 4>` — the same width-4 permutation
 /// `permutation.json` already pins. `image` is the predicate value (output lane 0),
 /// cross-checked so a wrong permutation can't pass on the nonce alone.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/goldilocks/src/poseidon2_goldilocks.cpp#L172-L222
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/goldilocks/src/poseidon2_goldilocks.cpp#L177-L232
 fn grinding_case(pow_bits: u32, seed: u64) -> Value {
     let mut state = seed;
     let challenge = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
@@ -898,7 +898,7 @@ fn grinding_case(pow_bits: u32, seed: u64) -> Value {
     let mut nonce = 0u64;
     let image = loop {
         let input = [challenge[0], challenge[1], challenge[2], Goldilocks::new(nonce)];
-        let img = poseidon2_hash::<Goldilocks, Poseidon4, 4>(&input)[0].as_canonical_u64();
+        let img = poseidon2_hash::<Goldilocks, Poseidon2_4, 4>(&input)[0].as_canonical_u64();
         if img < level {
             break img;
         }
@@ -925,7 +925,7 @@ fn grinding_case(pow_bits: u32, seed: u64) -> Value {
 /// Truth is the reference `intt_tiny` itself (the same inverse NTT the C++
 /// `computeLEv` runs); the consumer reproduces it without an NTT via the
 /// geometric-series closed form, byte-identical by IDFT uniqueness.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/starks.hpp#L243-L279
+/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp#L243-L279
 fn compute_lev_case(n_bits: usize, opening_points: &[i64], seed: u64) -> Value {
     let n = 1usize << n_bits;
     let n_open = opening_points.len();
@@ -1157,10 +1157,10 @@ fn main() {
         "zisk_zorch/poseidon2/testdata/golden/permutation.json",
         json!({
             "widths": [
-                permutation_cases::<Poseidon4, 4>(0xA0),
-                permutation_cases::<Poseidon8, 8>(0xA1),
-                permutation_cases::<Poseidon12, 12>(0xA2),
-                permutation_cases::<Poseidon16, 16>(0xA3),
+                permutation_cases::<Poseidon2_4, 4>(0xA0),
+                permutation_cases::<Poseidon2_8, 8>(0xA1),
+                permutation_cases::<Poseidon2_12, 12>(0xA2),
+                permutation_cases::<Poseidon2_16, 16>(0xA3),
             ]
         }),
     );
@@ -1168,9 +1168,9 @@ fn main() {
         "zisk_zorch/commit/testdata/golden/linear_hash.json",
         json!({
             "widths": [
-                linear_hash_cases::<Poseidon8, 8>(0xB1),
-                linear_hash_cases::<Poseidon12, 12>(0xB2),
-                linear_hash_cases::<Poseidon16, 16>(0xB3),
+                linear_hash_cases::<Poseidon2_8, 8>(0xB1),
+                linear_hash_cases::<Poseidon2_12, 12>(0xB2),
+                linear_hash_cases::<Poseidon2_16, 16>(0xB3),
             ]
         }),
     );
@@ -1180,9 +1180,9 @@ fn main() {
         "zisk_zorch/transcript/testdata/golden/transcript.json",
         json!({
             "widths": [
-                transcript_case::<Poseidon8, 8>(0xD1),
-                transcript_case::<Poseidon12, 12>(0xD2),
-                transcript_case::<Poseidon16, 16>(0xD3),
+                transcript_case::<Poseidon2_8, 8>(0xD1),
+                transcript_case::<Poseidon2_12, 12>(0xD2),
+                transcript_case::<Poseidon2_16, 16>(0xD3),
             ]
         }),
     );
@@ -1304,13 +1304,13 @@ fn main() {
         json!({
             "cases": [
                 // arity 3 (width 12): 2-element final pol, 4 queries over nBitsExt 5.
-                query_sample_case::<Poseidon12, 12>(1, 4, 5, 0x4142, 0x401),
+                query_sample_case::<Poseidon2_12, 12>(1, 4, 5, 0x4142, 0x401),
                 // arity 2 (width 8): length-1 final pol, queries straddle the
                 // 63-bit element boundary (8 * 4 bits is small, but exercises width 8).
-                query_sample_case::<Poseidon8, 8>(0, 6, 4, 0x9, 0x402),
+                query_sample_case::<Poseidon2_8, 8>(0, 6, 4, 0x9, 0x402),
                 // arity 4 (width 16): 4-element final pol, wide nBitsExt 6,
                 // 8 queries force a second squeezed element in getPermutations.
-                query_sample_case::<Poseidon16, 16>(2, 8, 6, 0xABCDEF, 0x403),
+                query_sample_case::<Poseidon2_16, 16>(2, 8, 6, 0xABCDEF, 0x403),
             ]
         }),
     );

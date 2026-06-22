@@ -9,13 +9,13 @@ transcript with `challenge ++ nonce` and reads the query positions off it via
 `nonce` in the proof so the verifier can re-check the grind.
 
 The grinding search (`Poseidon2GoldilocksGrinding`) is not exported by the
-v0.18.0 `fields` crate, so it is ported here from pil2-stark C++ and goldened
+v1.0.0-alpha `fields` crate, so it is ported here from pil2-stark C++ and goldened
 standalone (`grinding.json`). The search is deterministic — the smallest valid
 nonce — so the prover commits a canonical nonce and the verifier validates it
 with an O(1) grind check rather than re-running the search.
 
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L235-L282
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/goldilocks/src/poseidon2_goldilocks.cpp#L172-L222
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L236-L283
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/goldilocks/src/poseidon2_goldilocks.cpp#L177-L232
 """
 
 from __future__ import annotations

@@ -5,11 +5,11 @@ edition = "2021"
 publish = false
 
 # Golden-vector generator for the zisk-zorch byte-match tests. Links the SAME
-# `fields` crate pil2-proofman v0.18.0 ships (the prover ZisK delegates to),
+# `fields` crate pil2-proofman v1.0.0-alpha ships (the prover ZisK delegates to),
 # so the JSON fixtures under zisk_zorch/**/testdata/golden/ are the reference
 # semantics by construction.
 [dependencies]
 # The `verify` feature selects the pure-Rust field arithmetic; the default
 # x86_64 path links the pil2-stark C++ FFI, which we neither need nor build.
-fields = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v0.18.0", features = ["verify"] }
+fields = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v1.0.0-alpha", features = ["verify"] }
 serde_json = "1"

@@ -21,8 +21,8 @@ feeds to `prove_queries`.
 prove_queries mirrors `FRI::proveFRIQueries`: layer `s` opens at
 `query_index mod 2^(steps[s+1])`, reusing the `getGroupProof` serialization.
 
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/gen_proof.hpp#L235-L282
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v0.18.0/pil2-stark/src/starkpil/fri/fri.hpp#L36-L143
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L236-L283
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/fri/fri.hpp#L32-L99
 """
 
 from __future__ import annotations
