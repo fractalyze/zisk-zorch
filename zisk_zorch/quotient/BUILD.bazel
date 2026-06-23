@@ -61,7 +61,10 @@ py_test(
     name = "reauthor_test",
     size = "medium",
     srcs = ["reauthor_test.py"],
-    data = ["testdata/golden/cexp_eval.json"],
+    data = [
+        "testdata/arith_constraints.json",
+        "testdata/golden/cexp_eval.json",
+    ],
     deps = [
         ":quotient",
         "//zisk_zorch:golden",
