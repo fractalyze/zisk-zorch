@@ -37,9 +37,10 @@ COSET_SHIFT = 7
 # image is pil2's root makes the transform emit directly in pil2's domain order —
 # eliminating the in/out domain-reorder gathers this used to need. That generator
 # is `W[32]^-1` (verified against the W table: `W[32]^-1 ^((p-1)/N) == w_pil2`).
-_GOLDILOCKS_P = 2**64 - 2**32 + 1
 _PIL2_W32 = 7277203076849721926
-_PIL2_GENERATOR = pow(_PIL2_W32, _GOLDILOCKS_P - 2, _GOLDILOCKS_P)
+# W[32]^-1, computed as a field-native inverse (no Python modular pow / raw
+# modulus); `int()` because `generator=` is a host-side subgroup-generator value.
+_PIL2_GENERATOR = int(F(_PIL2_W32) ** -1)
 
 # starkinfo's merkleTreeArity -> the Poseidon2 width hashing that tree
 # (MerkleTreeGL::merkelize switches arity {2,3,4} to Poseidon2Goldilocks
