@@ -15,11 +15,11 @@ numpy
 # (constraints/zisk/v1), the stage-2 ingestion source (zisk-zorch#1). Pinned to
 # the dev wheel that first bundles the ZisK export (riscv-witness#1891).
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260615113120/rw_constraints-0.1.0.dev20260615113120-py3-none-any.whl
-jax==0.0.5.dev20260622122155
+jax==0.0.5.dev20260622233452
 zk-dtypes==0.0.7
-jaxlib==0.0.5.dev20260622122155
-jax-cuda12-plugin==0.0.5.dev20260622122155
-zkx-cuda-pjrt==0.0.5.dev20260622122155
+jaxlib==0.0.5.dev20260622233452
+jax-cuda12-plugin==0.0.5.dev20260622233452
+zkx-cuda-pjrt==0.0.5.dev20260622233452
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
 # (warm-GPU inner-proof microbench, zisk-zorch#30). Same pin as zorch.
 zkbench==0.4.0
