@@ -41,22 +41,13 @@ class LinearHash:
         return self._permutation.has_dedicated_fusion
 
     def hash(self, input: Array) -> Array:
-        """pil2 leaf digest of a row: (n,) over dtype -> (DIGEST_ELEMS,)."""
+        """pil2 leaf digest of a row: (n,) over dtype -> (DIGEST_ELEMS,).
+
+        Emits the fused `poseidon2_sponge_hash` (chained) region — one
+        register-resident kernel over all blocks — instead of a per-block
+        permute+concatenate. zorch's `linear_hash` carries the same pil2
+        semantics (zero-pad partial tail; chain the prior digest through the
+        capacity slots [rate, rate+DIGEST_ELEMS))."""
         if input.ndim != 1:
             raise ValueError(f"input must be 1-D, got ndim={input.ndim}")
-        n = input.shape[0]
-        width = self._permutation.width
-        state = jnp.zeros((width,), input.dtype)
-        for start in range(0, n, self.rate):
-            block = input[start : start + self.rate]
-            tail = jnp.zeros((self.rate - block.shape[0],), input.dtype)
-            if start == 0:
-                capacity = jnp.zeros((DIGEST_ELEMS,), input.dtype)
-            else:
-                # Chain: the previous output's first 4 lanes ride in the
-                # capacity slots [rate, rate+4).
-                capacity = state[:DIGEST_ELEMS]
-            state = self._permutation.permute(
-                jnp.concatenate([block, tail, capacity])
-            )
-        return state[:DIGEST_ELEMS]
+        return self._permutation.linear_hash(input, self.rate, self.out)
