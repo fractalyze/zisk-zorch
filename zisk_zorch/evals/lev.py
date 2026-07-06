@@ -30,8 +30,8 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 
 # The Goldilocks modulus, the LDE coset generator, and pil2's 2^32-order
@@ -43,12 +43,12 @@ _TWO_ADIC_ROOT = 7277203076849721926
 
 
 def _base(value: int) -> Array:
-    """A canonical Goldilocks int -> a montgomery scalar (value-converted)."""
+    """A canonical Goldilocks int -> a plain goldilocks scalar (value-converted)."""
     return jnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
 
 
 def _base_powers(base: int, count: int) -> Array:
-    """`[base^0, ..., base^(count-1)] mod p` as a 1-D montgomery array."""
+    """`[base^0, ..., base^(count-1)] mod p` as a 1-D plain goldilocks array."""
     out = [1] * count
     for k in range(1, count):
         out[k] = out[k - 1] * base % _MODULUS

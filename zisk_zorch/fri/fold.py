@@ -28,7 +28,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 from zorch.coding.reed_solomon import fri_fold_k_values
 

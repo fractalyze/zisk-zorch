@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from rw_constraints import Chip, ConstraintRegistry, bundled_constraints_dir
-from zk_dtypes import goldilocks_mont
+from zk_dtypes import goldilocks
 
 
 @functools.cache
@@ -71,7 +71,7 @@ def load_zisk_chips(
 ) -> dict[str, Chip]:
     """Load the ZisK chip definitions with the Goldilocks field dtype bound.
 
-    Both constraints and interactions get ``goldilocks_mont``. The registry's
+    Both constraints and interactions get ``goldilocks``. The registry's
     ``interaction_field_dtype`` default is ``jnp.uint32`` — right for SP1, whose
     interaction code is bitwise, but wrong here: ZisK's exported ``*_interaction``
     functions are pure field arithmetic over ``FIELD_DTYPE`` (e.g.
@@ -82,8 +82,8 @@ def load_zisk_chips(
     chips = _registry().load(
         "zisk",
         version,
-        constraint_field_dtype=goldilocks_mont,
-        interaction_field_dtype=goldilocks_mont,
+        constraint_field_dtype=goldilocks,
+        interaction_field_dtype=goldilocks,
     )
     if chip_names is not None:
         unknown = set(chip_names) - chips.keys()

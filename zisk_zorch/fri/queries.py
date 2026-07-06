@@ -24,7 +24,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 from zisk_zorch.fri.seam import _cubic_to_base
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
@@ -52,11 +52,11 @@ def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
 
     `nonce` rides the last input slot as `Goldilocks::fromU64(nonce)`; the value
     cast to `F` reduces mod p, so callers must pass canonical nonces."""
-    nonce_fe = jnp.asarray(nonces, dtype=F)  # (C,) canonical -> montgomery
+    nonce_fe = jnp.asarray(nonces, dtype=F)  # (C,) canonical -> plain field
     chal = jnp.broadcast_to(challenge, (nonce_fe.shape[0], _GRIND_WIDTH - 1))
     states = jnp.concatenate([chal, nonce_fe[:, None]], axis=1)  # (C, 4)
     out0 = jax.vmap(_GRIND_PERM.permute)(states)[:, 0]
-    return _canonical(out0)  # Montgomery-decode to canonical u64 (transcript's path)
+    return _canonical(out0)  # decode to canonical u64 (transcript's path)
 
 
 def _grind(challenge: Array, pow_bits: int) -> int:

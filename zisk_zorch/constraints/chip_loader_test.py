@@ -21,7 +21,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
-from zk_dtypes import goldilocks_mont  # noqa: E402
+from zk_dtypes import goldilocks  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
 
@@ -67,7 +67,7 @@ class ChipLoaderTest(absltest.TestCase):
                     # main ingests public inputs; skip the no-PV smoke path.
                     continue
                 trace = jnp.asarray(
-                    np.zeros((2, chip.num_cols), dtype=np.uint64), dtype=goldilocks_mont
+                    np.zeros((2, chip.num_cols), dtype=np.uint64), dtype=goldilocks
                 )
                 violations = chip.eval_constraints(trace)
                 self.assertEqual(violations.shape[0], 2)
@@ -94,14 +94,14 @@ class ChipLoaderTest(absltest.TestCase):
         # must run under the Goldilocks interaction dtype (not SP1's uint32).
         binary = self.chips["binary"]
         trace = jnp.asarray(
-            np.zeros((2, binary.num_cols), dtype=np.uint64), dtype=goldilocks_mont
+            np.zeros((2, binary.num_cols), dtype=np.uint64), dtype=goldilocks
         )
         tuples = binary.eval_interactions(trace)
         self.assertNotEmpty(tuples)
         for name, values in tuples.items():
             with self.subTest(interaction=name):
                 self.assertEqual(values.shape[0], 2)
-                self.assertEqual(values.dtype, goldilocks_mont)
+                self.assertEqual(values.dtype, goldilocks)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import pathlib
 
 import jax.numpy as jnp
 from absl.testing import absltest
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.openings import group_proof, verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree

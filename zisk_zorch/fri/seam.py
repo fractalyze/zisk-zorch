@@ -28,8 +28,8 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.fri.fold import fold, intt, verify_fold
 from zisk_zorch.transcript.transcript import Transcript

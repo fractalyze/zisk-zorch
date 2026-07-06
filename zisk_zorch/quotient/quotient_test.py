@@ -13,8 +13,8 @@ import pathlib
 import jax.numpy as jnp
 import numpy as np
 from absl.testing import absltest
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.golden import load, u64
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints

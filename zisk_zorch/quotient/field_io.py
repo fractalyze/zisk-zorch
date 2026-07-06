@@ -1,7 +1,7 @@
 """Shared field-array helpers for the stage-2 quotient modules.
 
 The base→cubic embed and the cyclic rotation are byte-match-load-bearing (the
-Montgomery-limb-view incantation, the extended-domain opening rotation), so they
+limb-view incantation, the extended-domain opening rotation), so they
 live in one place rather than being copied between `cexp_ref` and `reauthor`.
 Cubic loading from decimal limbs is `zisk_zorch.golden.u64x3`; use that directly.
 """
@@ -11,8 +11,8 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 
 
 def embed(values: list[str]) -> Array:
@@ -20,8 +20,8 @@ def embed(values: list[str]) -> Array:
 
     The decimals are already canonical (`< p`, the golden's `as_canonical_u64` /
     pil2's field literals), so `astype(F)` value-converts each straight into the
-    Montgomery field — no explicit reduction needed. Numpy-level: the zkx CPU
-    emitter crashes on cubic bitcast/`view`."""
+    plain field — no explicit reduction needed (already canonical). Numpy-level:
+    the zkx CPU emitter crashes on cubic bitcast/`view`."""
     limbs = np.array([[int(v), 0, 0] for v in values], dtype=np.uint64)
     return jnp.array(limbs.astype(F).view(F3).reshape(limbs.shape[0]))
 

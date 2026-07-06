@@ -13,7 +13,7 @@ zero, since a nonzero coset shift keeps `x^N != 1`. The firstRow / lastRow
 (`buildOneRowZerofierInv`) and everyFrame (`buildFrameZerofierInv`) boundary
 divisors build on the same coset points.
 
-All arithmetic stays in the `goldilocks_mont` field — the dtype reduces mod p on
+All arithmetic stays in the `goldilocks` field — the dtype reduces mod p on
 every op, so there is no manual modulus juggling; `jnp.power` is the field-native
 exponentiation (`lax.pow` needs a float dtype).
 
@@ -27,7 +27,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 # pil2's coset shift and the 2^32-order generator `Goldilocks::W[32]`, as field
 # scalars (cf. zisk_zorch.evals.lev / zisk_zorch.fri.fold, which share them —
@@ -69,7 +69,7 @@ def _coset_points(n_bits: int, blowup_bits: int) -> Array:
 
 def inv_zerofier(n_bits: int, blowup_bits: int) -> Array:
     """The `(2^(n_bits+blowup_bits),)` inverse zerofier `1/(x^N - 1)` on the
-    blown-up coset, base-field (`goldilocks_mont`), in natural domain order.
+    blown-up coset, base-field (`goldilocks`), in natural domain order.
 
     `n_bits` is the base trace domain `N = 2^n_bits`; `blowup_bits` the LDE
     blow-up (must be >= 1 — the quotient needs an extended domain). This is the

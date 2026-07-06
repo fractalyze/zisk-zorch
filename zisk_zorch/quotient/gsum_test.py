@@ -15,7 +15,7 @@ from types import SimpleNamespace  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
-from zk_dtypes import goldilocks_mont as F  # noqa: E402
+from zk_dtypes import goldilocks as F  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
 from zisk_zorch.golden import load, u64x3  # noqa: E402

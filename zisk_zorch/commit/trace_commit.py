@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import jax.numpy as jnp
 from jax import Array, lax
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm

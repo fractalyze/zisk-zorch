@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 from jax import Array
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.golden import u64x3
 from zisk_zorch.quotient.cexp_ref import _load_inputs, _run_block

@@ -23,7 +23,7 @@ reports warm latency only (no `--phase compile`).
 
 `quotient`'s `eval_fn` is a parametric proxy (`--n_constraints` degree-`--degree`
 column products over `--n_cols`) tunable to a target AIR — absolute is a proxy,
-size scaling is real. Inputs are Montgomery-form `goldilocks_mont` per the
+size scaling is real. Inputs are plain `goldilocks` per the
 benchmark-field-standardization convention.
 
 Run (on a GPU host, ZKX plugin resolved via the venv):
@@ -41,8 +41,8 @@ from collections.abc import Callable, Iterable
 import jax
 import jax.numpy as jnp
 import numpy as np
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 from zkbench import BenchmarkConfig, BenchmarkOp, JaxBenchmark, compute_hash
 
 from zisk_zorch.commit.trace_commit import extend, merkle_tree
@@ -109,7 +109,7 @@ def _first_array(result: object) -> jax.Array:
 def _hash_array(arr: jax.Array) -> str:
     """Hash a field array's raw bytes. zkbench's `compute_array_hash` casts to
     `<u4` (31-bit fields only) and can't represent 64-bit Goldilocks; the raw
-    Montgomery limbs are deterministic, which is all an input/output hash needs."""
+    plain limbs are deterministic, which is all an input/output hash needs."""
     return compute_hash(np.asarray(arr).tobytes())
 
 

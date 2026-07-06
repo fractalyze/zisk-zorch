@@ -20,8 +20,8 @@ import jax.numpy as jnp
 import numpy as np
 from absl.testing import absltest
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
-from zk_dtypes import goldilocksx3_mont as F3
+from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.fri.fold import _COSET_SHIFT, _GOLDILOCKS_P, _TWO_ADIC_ROOT
 from zisk_zorch.fri.prover import prove, prove_queries
@@ -55,7 +55,7 @@ def _low_degree_codeword(n_bits: int, n_bits_ext: int, seed: int) -> Array:
             for k in range(deg - 1, -1, -1):
                 acc = (acc * x + int(coeffs[k, c])) % _GOLDILOCKS_P
             out[i, c] = acc
-    base = out.astype(np.uint64).astype(F)  # (n_ext, 3) base limbs -> montgomery
+    base = out.astype(np.uint64).astype(F)  # (n_ext, 3) base limbs -> plain field
     return jnp.array(base.view(F3).reshape(n_ext))
 
 
