@@ -1,8 +1,8 @@
 """pil2-stark's chained linear hash — the Merkle leaf hasher ZisK commits with.
 
-A thin adapter over zorch's `Sponge.linear_hash` (the chained / Merkle-Damgard
-construction): pil2's `linear_hash_seq` zero-pads a partial block and chains by
-copying the previous output's first 4 lanes into the capacity slots
+A thin adapter over zorch's `Sponge.hash(..., SpongeType.CHAINED)` (the chained /
+Merkle-Damgard construction): pil2's `linear_hash_seq` zero-pads a partial block
+and chains by copying the previous output's first 4 lanes into the capacity slots
 `[rate, rate+4)` before each block after the first. (v0.15.0 short-circuited
 rows of <= 4 elements to the zero-padded row unhashed; v1.0.0-alpha removed that
 shortcut — every row is permuted.) Reference:
