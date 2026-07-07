@@ -1,24 +1,24 @@
 """pil2-stark's chained linear hash — the Merkle leaf hasher ZisK commits with.
 
-NOT a zorch Sponge: pil2's `linear_hash_seq` zero-pads a partial block (zorch's
-sponge is padding-free overwrite) and chains by copying the previous output's
-first 4 lanes into the capacity slots `[rate, rate+4)` before each block after
-the first. (v0.15.0 short-circuited rows of <= 4 elements to the zero-padded
-row unhashed; v1.0.0-alpha removed that shortcut — every row is permuted.)
-Reference:
+A thin adapter over zorch's `Sponge.linear_hash` (the chained / Merkle-Damgard
+construction): pil2's `linear_hash_seq` zero-pads a partial block and chains by
+copying the previous output's first 4 lanes into the capacity slots
+`[rate, rate+4)` before each block after the first. (v0.15.0 short-circuited
+rows of <= 4 elements to the zero-padded row unhashed; v1.0.0-alpha removed that
+shortcut — every row is permuted.) Reference:
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/fields/src/merkle.rs#L14-L39
 
-Duck-types zorch's Merkle leaf-hasher surface (`hash`, `out`,
-`has_dedicated_fusion`), so `MerkleTree(LinearHash(perm), compressor)` builds
-exactly pil2's tree.
+Fixes rate/out to pil2's convention (rate = width - 4, out = 4, so
+rate + out == width) and duck-types zorch's Merkle leaf-hasher surface (`hash`,
+`out`, `has_dedicated_fusion`), so `MerkleTree(LinearHash(perm), compressor)`
+builds exactly pil2's tree.
 """
 
 from __future__ import annotations
 
-import jax.numpy as jnp
 from jax import Array
-
 from zorch.hash.poseidon2.poseidon2 import Poseidon2
+from zorch.hash.sponge import Sponge, SpongeParams, SpongeType
 
 # pil2 digests are always 4 Goldilocks elements (HASH_SIZE == CAPACITY).
 DIGEST_ELEMS = 4
@@ -35,6 +35,9 @@ class LinearHash:
         self._permutation = permutation
         self.rate = permutation.width - DIGEST_ELEMS
         self.out = DIGEST_ELEMS
+        # Cache the Sponge (value-equal for jit-zone keys) — pil2's rate/out
+        # satisfy the chained precondition rate + out == width.
+        self._sponge = Sponge(permutation, SpongeParams(rate=self.rate, out=self.out))
 
     @property
     def has_dedicated_fusion(self) -> bool:
@@ -43,11 +46,11 @@ class LinearHash:
     def hash(self, input: Array) -> Array:
         """pil2 leaf digest of a row: (n,) over dtype -> (DIGEST_ELEMS,).
 
-        Emits the fused `poseidon2_sponge_hash` (chained) region — one
+        Emits the fused `zorch.sponge_hash` (chained) region — one
         register-resident kernel over all blocks — instead of a per-block
-        permute+concatenate. zorch's `linear_hash` carries the same pil2
+        permute+concatenate. `Sponge.hash(..., CHAINED)` carries the same pil2
         semantics (zero-pad partial tail; chain the prior digest through the
         capacity slots [rate, rate+DIGEST_ELEMS))."""
         if input.ndim != 1:
             raise ValueError(f"input must be 1-D, got ndim={input.ndim}")
-        return self._permutation.linear_hash(input, self.rate, self.out)
+        return self._sponge.hash(input, sponge_type=SpongeType.CHAINED)
