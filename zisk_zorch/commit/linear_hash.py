@@ -1,6 +1,6 @@
 """pil2-stark's chained linear hash — the Merkle leaf hasher ZisK commits with.
 
-A thin adapter over zorch's `Sponge.hash(..., SpongeType.CHAINED)` (the chained /
+A thin adapter over zorch's `Sponge.hash(..., SpongeType.MERKLE_DAMGARD)` (the
 Merkle-Damgard construction): pil2's `linear_hash_seq` zero-pads a partial block
 and chains by copying the previous output's first 4 lanes into the capacity slots
 `[rate, rate+4)` before each block after the first. (v0.15.0 short-circuited
@@ -46,11 +46,11 @@ class LinearHash:
     def hash(self, input: Array) -> Array:
         """pil2 leaf digest of a row: (n,) over dtype -> (DIGEST_ELEMS,).
 
-        Emits the fused `zorch.sponge_hash` (chained) region — one
+        Emits the fused `zorch.sponge_hash` (merkle_damgard) region — one
         register-resident kernel over all blocks — instead of a per-block
-        permute+concatenate. `Sponge.hash(..., CHAINED)` carries the same pil2
-        semantics (zero-pad partial tail; chain the prior digest through the
+        permute+concatenate. `Sponge.hash(..., MERKLE_DAMGARD)` carries the same
+        pil2 semantics (zero-pad partial tail; chain the prior digest through the
         capacity slots [rate, rate+DIGEST_ELEMS))."""
         if input.ndim != 1:
             raise ValueError(f"input must be 1-D, got ndim={input.ndim}")
-        return self._sponge.hash(input, sponge_type=SpongeType.CHAINED)
+        return self._sponge.hash(input, sponge_type=SpongeType.MERKLE_DAMGARD)
