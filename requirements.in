@@ -5,7 +5,8 @@
 #     --extra-index-url https://fractalyze.github.io/pypi/simple/
 #
 # zisk-zorch is the ZisK-specific consumer of zorch's agnostic blocks; zorch
-# itself arrives as a Bazel module (see MODULE.bazel), not a pip dep.
+# arrives as a dev-release wheel from the Fractalyze index (below), so jax and
+# zk_dtypes resolve once here rather than from a separate zorch pip hub.
 # zk_dtypes (native finite-field dtypes) arrives via jax but is pinned here
 # directly: the byte-match path uses it, and the FRI fold needs >= 0.0.6, the
 # first wheel where `goldilocksx3` is pil2's cubic extension x^3 - x - 1.
@@ -19,11 +20,12 @@ numpy
 # mem_align to next-row constraints whose eval_constraints driver calls jnp.roll,
 # which the zkx jax fork lacks (a separate compat issue, not this slice's).
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260618065925/rw_constraints-0.1.0.dev20260618065925-py3-none-any.whl
-jax==0.10.0.dev20260705214208
-zk-dtypes==0.0.8
-jaxlib==0.10.0.dev20260705214208
-jax-cuda12-plugin==0.10.0.dev20260705214208
-jax-cuda12-pjrt==0.10.0.dev20260705214208
+zorch==0.1.0.dev20260709090609
+jax==0.10.0.dev20260709073514
+zk-dtypes==0.0.9
+jaxlib==0.10.0.dev20260709073514
+jax-cuda12-plugin==0.10.0.dev20260709073514
+jax-cuda12-pjrt==0.10.0.dev20260709073514
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
 # (warm-GPU inner-proof microbench, zisk-zorch#30). Same pin as zorch.
 zkbench==0.4.0

@@ -17,10 +17,10 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//zisk_zorch:golden",
-        "@zorch//zorch:constraint_eval",
         requirement("jax"),
         requirement("numpy"),
         requirement("zk_dtypes"),
+        requirement("zorch"),
     ],
 )
 
@@ -32,8 +32,8 @@ py_test(
     deps = [
         ":quotient",
         "//zisk_zorch:golden",
-        "@zorch//zorch:constraint_eval",
         requirement("absl_py"),
+        requirement("zorch"),
     ],
 )
 

@@ -20,7 +20,7 @@ import jax.numpy as jnp
 import numpy as np
 import zk_dtypes
 from jax import Array, lax
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zorch.hash.poseidon2.poseidon2 import Poseidon2
@@ -33,11 +33,11 @@ _BITS_PER_ELEMENT = 63
 
 
 def _canonical(values: Array) -> np.ndarray:
-    """Field elements -> canonical u64 on host (Montgomery form decoded).
+    """Field elements -> canonical u64 on host (plain-storage read).
 
-    Default JAX has no u64 (x64 disabled truncates the conversion), so decode
-    Montgomery via the plain-storage dtype, bitcast to u32 halves, and
-    recombine on host."""
+    Default JAX has no u64 (x64 disabled truncates the conversion), so read the
+    plain goldilocks storage (limb0 is the canonical value), bitcast to u32
+    halves, and recombine on host."""
     std = values.astype(zk_dtypes.goldilocks)
     halves = np.asarray(lax.bitcast_convert_type(std, jnp.uint32)).astype(np.uint64)
     return halves[..., 0] | (halves[..., 1] << np.uint64(32))

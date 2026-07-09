@@ -32,7 +32,7 @@ import functools
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zk_dtypes import goldilocks_mont as F
+from zk_dtypes import goldilocks as F
 
 from zorch.hash.poseidon2.params import Poseidon2Params
 from zorch.hash.poseidon2.poseidon2 import Poseidon2
