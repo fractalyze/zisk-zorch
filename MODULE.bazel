@@ -17,16 +17,9 @@ module(
 
 bazel_dep(name = "rules_python", version = "1.7.0")
 
-# zorch is not published on a Bazel registry; pin it from GitHub so CI builds
-# are reproducible. For local dev against a working copy, add to .bazelrc.user
-# (gitignored):
-#   common --override_module=zorch=/abs/path/to/your/zorch/checkout
-bazel_dep(name = "zorch", version = "0.0.0")
-git_override(
-    module_name = "zorch",
-    remote = "https://github.com/fractalyze/zorch.git",
-    commit = "8519a366bccb89d8f712f96c957c284de737ad53",
-)
+# zorch arrives as a dev-release wheel via the pip hub (see requirements.in),
+# not a Bazel module — so jax/zk_dtypes resolve once here. Targets depend on it
+# with requirement("zorch").
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(

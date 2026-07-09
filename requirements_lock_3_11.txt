@@ -9,7 +9,9 @@
 absl-py==2.5.0 \
     --hash=sha256:0c996f25c0490700fadabe6351630f6111534fa0ae252cc6d2014ea3b141135f \
     --hash=sha256:0f17b89f2a4eaaedc4f28c622998aa690564b3012a396a4ffad0821007fe03ba
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   zorch
 jax==0.10.0.dev20260709073514 \
     --hash=sha256:5f6428f2a5c05246214f1b26e704eb736483cb5dcb248ca4232f3d4df56d8f66
     # via
@@ -154,6 +156,7 @@ numpy==2.4.6 \
     #   scipy
     #   zk-dtypes
     #   zkbench
+    #   zorch
 opt-einsum==3.4.0 \
     --hash=sha256:69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd \
     --hash=sha256:96ca72f1b886d148241348783498194c577fa30a8faac108586b14f1ba4473ac
@@ -235,4 +238,7 @@ zk-dtypes==0.0.9 \
     #   jax
 zkbench==0.4.0 \
     --hash=sha256:60d6d265fbe87dc8c0fd18e16af01d6f1484ba08c4a5c5c1082fd0ac02acb5d3
+    # via -r requirements.in
+zorch==0.1.0.dev20260709090609 \
+    --hash=sha256:c2692ed15c27cacafc72dc9393b840027c5070393ce520f4a56c37c58a6f40a1
     # via -r requirements.in

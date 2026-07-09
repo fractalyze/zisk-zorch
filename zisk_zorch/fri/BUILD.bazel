@@ -10,10 +10,10 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@zorch//zorch/coding:reed_solomon",
         requirement("jax"),
         requirement("numpy"),
         requirement("zk_dtypes"),
+        requirement("zorch"),
     ],
 )
 
@@ -101,11 +101,9 @@ py_library(
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",
-        "@zorch//zorch/commit:merkle",
-        "@zorch//zorch/pcs:fold",
-        "@zorch//zorch:prove",
         requirement("jax"),
         requirement("numpy"),
+        requirement("zorch"),
     ],
 )
 
@@ -133,10 +131,9 @@ py_library(
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",
-        "@zorch//zorch/commit:merkle",
-        "@zorch//zorch/pcs:fold",
         requirement("jax"),
         requirement("numpy"),
+        requirement("zorch"),
     ],
 )
 
