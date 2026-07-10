@@ -71,6 +71,13 @@ def extend(trace: Array, blowup: int) -> Array:
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
     n = trace.shape[0]
+    # Both the NTT and the bit-reversal index identities (`bitrev_{N·blowup}(i) =
+    # bitrev_N(i)·blowup`) require power-of-two sizes; reject bad inputs here
+    # rather than fail cryptically inside `lax.ntt`.
+    if n < 1 or (n & (n - 1)):
+        raise ValueError(f"trace length must be a power of 2, got {n}")
+    if blowup < 1 or (blowup & (blowup - 1)):
+        raise ValueError(f"blowup must be a positive power of 2, got {blowup}")
     n_ext = n * blowup
     cols = trace.T  # (n_cols, N): the NTTs transform the last (domain) axis.
 
