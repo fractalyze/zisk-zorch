@@ -11,7 +11,7 @@ stage existed only as an isolated primitive, exercised on random inputs by
 commit_trace(trace)          -> root₁      transcript.put(root₁)
                                             alpha  = transcript.get_field()   (powers → constraint fold)
 quotient_from_constraints(…)  -> Q          commit Q → rootQ, transcript.put(rootQ)
-fri_polynomial_fn(ctx)        -> fri_pol    ← DEEP seam (see below)
+deep_fri_polynomial(ctx)      -> fri_pol    ← DEEP stage (zisk_zorch/deep/, see below)
 fri.prove(fri_pol, …)         -> layers     fold betas squeezed off the same transcript
 sample_query_positions(…)     -> positions  finalPol absorb → grind → getPermutations
 prove_queries + group_proof   -> openings   every committed tree opened per query
@@ -20,25 +20,33 @@ prove_queries + group_proof   -> openings   every committed tree opened per quer
 The single shared `Transcript` is what makes the challenges depend on the
 committed roots — the property the isolated benchmarks cannot exercise.
 
-## The one seam: DEEP / FRI-polynomial construction
+## The DEEP / FRI-polynomial stage (`zisk_zorch/deep/`)
 
-pil2's `calculateFRIPolynomial` squeezes an out-of-domain point, evaluates the
-committed polynomials there, and batches the openings into the codeword FRI
-folds. **That stage has no primitive in this repo** (the bench feeds FRI a random
-codeword). Fabricating its byte stream would violate the repo's byte-match
-contract, so it is injected as `fri_polynomial_fn` rather than hand-rolled.
+pil2's `calculateFRIPolynomial` squeezes the out-of-domain point `z`, evaluates
+the committed polynomials there, absorbs the openings, squeezes a batching
+challenge, and builds the FRI codeword. It is the default `fri_polynomial_fn`.
 
-- `quotient_as_fri_polynomial` — a runnable placeholder: the quotient is itself a
-  cubic codeword of length `2^n_bits_ext`, so it drives the whole spine. It does
-  **not** byte-match pil2 (no trace openings), so it is for wiring/shape tests
-  only, not conformance.
-- A future golden-backed DEEP combiner drops in at the same seam; it reads the
-  committed evaluations off `FriPolynomialContext` and squeezes its out-of-domain
-  challenge from the live transcript.
+- `deep/opening.py` — pil2 `computeLEv` + `evmap`: the OOD-evaluation primitive.
+  `LEv[k] = INTT((z·g^p·shift⁻¹)^k)` are the Lagrange weights with
+  `Σ_k LEv[k]·p(shift·g^k) = p(z·g^p)`; `open_columns` subsamples each extended
+  column to the base coset and dots. Pinned by the round-trip identity
+  (`opening_test.py`), no pil2 dump needed.
+- `deep/fri_polynomial.py` — pil2 `calculateFRIPolynomial`: the DEEP-ALI batched
+  quotient `f(x) = Σ_m vf^m·(p_m(x) − p_m(ξ))/(x − ξ)`. Verified by the FRI
+  low-degree property (`fri_polynomial_test.py`): a correct opening folds low,
+  a wrong one does not.
+
+**Byte-match boundary.** `deep_composition` implements the *generic* DEEP-ALI
+formula. pil2's `friExp` in a real proving key bakes in which columns are
+batched, their order, and each one's challenge power (`expressions.bin`) —
+matching a specific AIR byte-for-byte needs that compiled op list (the machinery
+`cexp_ref` already interprets for the quotient) plus a pil2 golden. That is the
+next slice. `quotient_as_fri_polynomial` remains as a trivial FRI-over-quotient
+fallback.
 
 ## Status
 
-`prover_test.py` is a shape/determinism smoke test (green on the zkx GPU
-backend), not a golden byte-match — the golden that would pin an inner proof
-needs the DEEP stage first. When that stage lands, add a golden inner-proof
-vector and assert `prove_inner` reproduces it.
+Tests are shape/determinism/property checks, green on the zkx GPU backend, not
+golden byte-matches — a golden inner proof needs the AIR-specific `friExp` op
+list. When that lands, add a golden vector and assert `prove_inner` reproduces
+it end to end.

@@ -11,15 +11,14 @@ drives (`gen_proof.hpp`).
 
 Two honest boundaries, both load-bearing given this repo's byte-match contract:
 
-- **The DEEP / FRI-polynomial construction is not a primitive in this repo.**
-  pil2's `calculateFRIPolynomial` squeezes an out-of-domain point, evaluates the
-  committed polynomials there, and batches the openings into the codeword FRI
-  folds. That stage does not exist here (the bench feeds FRI a random codeword),
-  so it rides in as the injectable `fri_polynomial_fn` seam rather than being
-  fabricated — a faked byte stream would violate "byte-match is the contract."
-  `quotient_as_fri_polynomial` is a runnable placeholder (the quotient is itself
-  a low-degree cubic codeword of the right length) that exercises the whole spine
-  without claiming pil2 parity.
+- **The DEEP / FRI-polynomial construction** (pil2's `calculateFRIPolynomial`)
+  now lives in `zisk_zorch/deep/`: squeeze the out-of-domain point, open the
+  committed polynomials there (`deep.opening`), absorb the openings, squeeze the
+  batching challenge, and build the codeword (`deep.fri_polynomial`). It is the
+  default `fri_polynomial_fn`. Its generic DEEP-ALI formula is not yet pinned to
+  a specific AIR's compiled `friExp` (that needs a proving-key op list + golden,
+  a later slice) — `quotient_as_fri_polynomial` remains as a trivial fallback
+  that folds FRI over the quotient itself.
 
 - **The quotient-commit leaf layout** mirrors the FRI seam's cubic convention
   (each cubic row -> its 3 contiguous Goldilocks limbs, cf. `seam._cubic_to_base`),
@@ -40,6 +39,7 @@ from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import TraceCommitment, commit_trace, merkle_tree
+from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
 from zisk_zorch.fri.prover import FriProof, prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
@@ -136,20 +136,14 @@ def prove_inner(
     `trace` is the `(2^n_bits, n_cols)` base-field evaluation matrix; `eval_fn`
     produces the `n_constraints` constraints in its trailing axis (pil2's cExp
     order). `fri_polynomial_fn` supplies the FRI codeword from the committed
-    stages (the DEEP seam); it is required because this repo has no byte-match
-    DEEP primitive — pass `quotient_as_fri_polynomial` for a runnable spine."""
+    stages (the DEEP stage); it defaults to the real `deep_fri_polynomial`
+    combiner — pass `quotient_as_fri_polynomial` for the trivial fallback."""
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D (rows, cols), got ndim={trace.ndim}")
     n = trace.shape[0]
     if n & (n - 1):
         raise ValueError(f"trace height must be a power of two, got {n}")
-    if fri_polynomial_fn is None:
-        raise NotImplementedError(
-            "prove_inner needs a FRI-polynomial builder: this repo has no "
-            "byte-match DEEP stage (pil2's calculateFRIPolynomial). Pass "
-            "quotient_as_fri_polynomial for a runnable non-conformance spine, or "
-            "a golden-backed DEEP combiner once one exists."
-        )
+    fri_polynomial_fn = fri_polynomial_fn or deep_fri_polynomial
     n_bits = n.bit_length() - 1
     n_bits_ext = n_bits + blowup_bits
     blowup = 1 << blowup_bits

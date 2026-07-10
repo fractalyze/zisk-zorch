@@ -61,6 +61,7 @@ py_library(
     deps = [
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/deep:fri_polynomial",
         "//zisk_zorch/fri:prover",
         "//zisk_zorch/fri:queries",
         "//zisk_zorch/fri:seam",
