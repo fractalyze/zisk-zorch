@@ -22,9 +22,9 @@ from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
-from zorch.coding.reed_solomon import ReedSolomon
 from zorch.commit.merkle import MerkleTree
 from zorch.hash.compression import Compression, CompressionParams
+from zorch.poly.univariate import powers
 
 # Goldilocks::SHIFT — the LDE coset generator pil2-stark evaluates on.
 COSET_SHIFT = 7
@@ -52,19 +52,51 @@ def extend(trace: Array, blowup: int) -> Array:
     """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
     rows in pil2's domain order (`extendPol` semantics).
 
-    Both the INTT and the coset NTT run under `_PIL2_GENERATOR`, so the native
-    transform indexes the domain in pil2's order directly — no domain-reorder
-    gathers (see the generator note above)."""
+    Bit-reversed-intermediate schedule, matching pil2/sppark's `extendPol`: the
+    INTT runs as Gentleman-Sande DIF (natural in → bit-reversed-order coeffs,
+    written `bit_reverse(ntt(INTT))` so the NTT-fusion rewriter's consumer fold
+    emits the DIF and elides the permute), and the coset NTT runs as Cooley-Tukey
+    DIT on that bit-reversed input (`ntt(bit_reverse(·))`, elided by the rewriter's
+    producer fold). Keeping the intermediate bit-reversed cancels both standalone
+    bit-reverse kernels — each ~40% of its transform on the ZKX GPU path — while
+    the final evaluations stay natural order (so the merkelize byte-match holds).
+
+    Two index identities make it exact. Coefficient `i` (natural) evaluates on the
+    coset with weight `SHIFT**i`, so on the bit-reversed coeffs the coset powers
+    ride in bit-reversed order. And `bitrev_{N·blowup}(i) = bitrev_N(i)·blowup`
+    for `i < N`, so zero-extending the coefficients to the blown-up domain is a
+    stride-`blowup` upsample (each coeff followed by `blowup-1` zeros) rather than
+    a trailing zero-pad. Both `_PIL2_GENERATOR` NTTs keep pil2's domain order.
+    """
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
     n = trace.shape[0]
-    rs = ReedSolomon(
-        n, blowup, F, coset_shift=jnp.array(COSET_SHIFT, F), generator=_PIL2_GENERATOR
+    n_ext = n * blowup
+    cols = trace.T  # (n_cols, N): the NTTs transform the last (domain) axis.
+
+    # DIF INTT: natural evals → bit-reversed-order coefficients (1/N included).
+    coeffs = lax.bit_reverse(
+        lax.ntt(cols, ntt_type="INTT", ntt_length=n, generator=_PIL2_GENERATOR),
+        dimensions=(cols.ndim - 1,),
     )
-    coeffs = lax.ntt(
-        trace.T, ntt_type="INTT", ntt_length=n, generator=_PIL2_GENERATOR
-    )  # per-col INTT (1/N incl.)
-    return rs.encode(coeffs).T
+    # Coset scale (bit-reversed order): coeff at natural index i by SHIFT**i.
+    coset = lax.bit_reverse(powers(jnp.asarray(COSET_SHIFT, F), n), dimensions=(0,))
+    coeffs = coeffs * coset
+    # Zero-extend N → N·blowup as a stride-blowup upsample (see docstring).
+    padded = (
+        jnp.zeros(coeffs.shape[:-1] + (n, blowup), F)
+        .at[..., 0]
+        .set(coeffs)
+        .reshape(coeffs.shape[:-1] + (n_ext,))
+    )
+    # DIT coset NTT on the bit-reversed input → natural-order evaluations.
+    extended = lax.ntt(
+        lax.bit_reverse(padded, dimensions=(padded.ndim - 1,)),
+        ntt_type="NTT",
+        ntt_length=n_ext,
+        generator=_PIL2_GENERATOR,
+    )
+    return extended.T
 
 
 def merkle_tree(arity: int) -> MerkleTree:
