@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Loaders for the golden/ JSON fixtures every byte-match test consumes.
@@ -10,6 +10,40 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# End-to-end inner proof: one Transcript threading commit -> quotient -> FRI ->
+# queries. The DEEP FRI-polynomial stage is an injected seam (no byte-match
+# primitive exists), so this wires the spine, not a pil2-conformant proof.
+py_library(
+    name = "prover",
+    srcs = ["prover.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/fri:prover",
+        "//zisk_zorch/fri:queries",
+        "//zisk_zorch/fri:seam",
+        "//zisk_zorch/quotient:quotient",
+        "//zisk_zorch/transcript",
+        requirement("jax"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "prover_test",
+    size = "medium",
+    srcs = ["prover_test.py"],
+    deps = [
+        ":prover",
+        requirement("absl_py"),
         requirement("jax"),
         requirement("numpy"),
         requirement("zk_dtypes"),
