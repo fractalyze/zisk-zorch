@@ -189,11 +189,12 @@ class InnerProofBenchmark(JaxBenchmark):
             )
 
         # Stage-1 inputs: a random trace, its LDE made device-resident so the
-        # commit zone's wall time excludes the extend it depends on.
+        # commit zone's wall time excludes the extend it depends on. The trace is
+        # column-major `(n_cols, N)` — the transpose-free `extend`/`commit` layout.
         if {"extend", "commit", "full"} & set(stages):
-            trace = jax.block_until_ready(rand_field(0, (n, args.n_cols), F))
+            trace = jax.block_until_ready(rand_field(0, (args.n_cols, n), F))
             extend_jit = jax.jit(lambda t: extend(t, blowup))
-            mt = merkle_tree(args.arity)
+            mt = merkle_tree(args.arity, column_major=True)
             if "extend" in stages:
                 yield op("extend", extend_jit, trace)
             if "commit" in stages:

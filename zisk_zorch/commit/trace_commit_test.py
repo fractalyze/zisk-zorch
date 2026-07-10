@@ -40,9 +40,11 @@ class LdeTest(absltest.TestCase):
     def test_matches_pil2_extend_pol(self) -> None:
         for case in load(_TESTDATA / "lde.json")["cases"]:
             n, n_cols = 1 << case["n_bits"], case["n_cols"]
-            evals = u64(case["evals"]).reshape(n, n_cols)
+            # extend is column-major (n_cols, N) -> (n_cols, N_ext); the golden
+            # is row-major, so feed and compare transposed.
+            evals = u64(case["evals"]).reshape(n, n_cols).T
             extended = extend(evals, blowup=1 << case["blowup_bits"])
-            expected = u64(case["extended"]).reshape(-1, n_cols)
+            expected = u64(case["extended"]).reshape(-1, n_cols).T
             self.assertTrue(
                 bool(jnp.array_equal(extended, expected)),
                 msg=f"n_bits {case['n_bits']}, blowup_bits {case['blowup_bits']}",
@@ -54,7 +56,10 @@ class Stage1CommitTest(absltest.TestCase):
         for case in load(_TESTDATA / "stage1_commit.json")["cases"]:
             lde = case["lde"]
             n, n_cols = 1 << lde["n_bits"], lde["n_cols"]
-            trace = u64(lde["evals"]).reshape(n, n_cols)
+            # commit_trace takes the column-major trace; its extended witness is
+            # column-major too, so the root is byte-identical (a column leaf is
+            # the same data as the old row leaf) and the LDE compares transposed.
+            trace = u64(lde["evals"]).reshape(n, n_cols).T
             commitment = commit_trace(
                 trace, blowup=1 << lde["blowup_bits"], arity=case["arity"]
             )
@@ -62,7 +67,7 @@ class Stage1CommitTest(absltest.TestCase):
                 bool(
                     jnp.array_equal(
                         commitment.extended,
-                        u64(lde["extended"]).reshape(-1, n_cols),
+                        u64(lde["extended"]).reshape(-1, n_cols).T,
                     )
                 ),
                 msg=f"extended mismatch (arity {case['arity']})",

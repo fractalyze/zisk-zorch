@@ -48,9 +48,16 @@ _PIL2_GENERATOR = int(F(_PIL2_W32) ** -1)
 _ARITY_WIDTHS = {2: 8, 3: 12, 4: 16}
 
 
-def extend(trace: Array, blowup: int) -> Array:
-    """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
-    rows in pil2's domain order (`extendPol` semantics).
+def extend(cols: Array, blowup: int) -> Array:
+    """LDE a column-major `(n_cols, N)` evaluation matrix to `(n_cols, N*blowup)`
+    on coset 7, columns in pil2's domain order (`extendPol` semantics).
+
+    Column-major (transpose-free) I/O: each row is one trace column, so both
+    `_PIL2_GENERATOR` NTTs already transform the last (domain) axis directly —
+    no `trace.T` in / `.T` out (the two 8M×n_cols DRAM round-trips this used to
+    pay). The producer hands columns and `commit_trace` merkelizes them
+    column-per-leaf, so the seam never transposes; `open`/`verify` (leaf-major)
+    take `extended.T`.
 
     Bit-reversed-intermediate schedule, matching pil2/sppark's `extendPol`: the
     INTT runs as Gentleman-Sande DIF (natural in → bit-reversed-order coeffs,
@@ -68,9 +75,9 @@ def extend(trace: Array, blowup: int) -> Array:
     stride-`blowup` upsample (each coeff followed by `blowup-1` zeros) rather than
     a trailing zero-pad. Both `_PIL2_GENERATOR` NTTs keep pil2's domain order.
     """
-    if trace.ndim != 2:
-        raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
-    n = trace.shape[0]
+    if cols.ndim != 2:
+        raise ValueError(f"cols must be 2-D, got ndim={cols.ndim}")
+    n = cols.shape[-1]
     # Both the NTT and the bit-reversal index identities (`bitrev_{N·blowup}(i) =
     # bitrev_N(i)·blowup`) require power-of-two sizes; reject bad inputs here
     # rather than fail cryptically inside `lax.ntt`.
@@ -79,7 +86,6 @@ def extend(trace: Array, blowup: int) -> Array:
     if blowup < 1 or (blowup & (blowup - 1)):
         raise ValueError(f"blowup must be a positive power of 2, got {blowup}")
     n_ext = n * blowup
-    cols = trace.T  # (n_cols, N): the NTTs transform the last (domain) axis.
 
     # DIF INTT: natural evals → bit-reversed-order coefficients (1/N included).
     coeffs = lax.bit_reverse(
@@ -97,39 +103,45 @@ def extend(trace: Array, blowup: int) -> Array:
         .reshape(coeffs.shape[:-1] + (n_ext,))
     )
     # DIT coset NTT on the bit-reversed input → natural-order evaluations.
-    extended = lax.ntt(
+    return lax.ntt(
         lax.bit_reverse(padded, dimensions=(padded.ndim - 1,)),
         ntt_type="NTT",
         ntt_length=n_ext,
         generator=_PIL2_GENERATOR,
     )
-    return extended.T
 
 
-def merkle_tree(arity: int) -> MerkleTree:
+def merkle_tree(arity: int, *, column_major: bool = False) -> MerkleTree:
     """pil2's tree for `arity`: linear-hash leaves + arity-to-1 Poseidon2 nodes,
-    one width-`4*arity` permutation for both."""
+    one width-`4*arity` permutation for both.
+
+    `column_major` commits a `(leaf_width, num_leaves)` matrix column-per-leaf
+    (the transpose-free `extend` output), leaving `open`/`verify` leaf-major.
+    """
     if arity not in _ARITY_WIDTHS:
         raise ValueError(f"arity must be one of {sorted(_ARITY_WIDTHS)}, got {arity}")
     perm = goldilocks_perm(_ARITY_WIDTHS[arity])
     return MerkleTree(
         LinearHash(perm),
         Compression(perm, CompressionParams(arity=arity, chunk=DIGEST_ELEMS)),
+        column_major=column_major,
     )
 
 
 @dataclass(frozen=True)
 class TraceCommitment:
     """Stage-1 output: the 4-element root, the digest layers (for the query
-    phase's openings), and the extended matrix (the FRI witness)."""
+    phase's openings), and the extended matrix — column-major `(n_cols, N_ext)`,
+    the FRI witness (leaf-major consumers take `extended.T`)."""
 
     root: Array
     digest_layers: list[Array]
     extended: Array
 
 
-def commit_trace(trace: Array, *, blowup: int, arity: int) -> TraceCommitment:
-    """pil2-stark `extendAndMerkelize`: LDE the trace, merkelize the rows."""
-    extended = extend(trace, blowup)
-    root, digest_layers = merkle_tree(arity).commit(extended)
+def commit_trace(cols: Array, *, blowup: int, arity: int) -> TraceCommitment:
+    """pil2-stark `extendAndMerkelize`: LDE the column-major trace `(n_cols, N)`,
+    merkelize the extended columns (column-per-leaf)."""
+    extended = extend(cols, blowup)
+    root, digest_layers = merkle_tree(arity, column_major=True).commit(extended)
     return TraceCommitment(root=root, digest_layers=digest_layers, extended=extended)
