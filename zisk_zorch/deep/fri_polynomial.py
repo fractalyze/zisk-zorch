@@ -26,14 +26,21 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Sequence
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
 
 from zisk_zorch.deep.opening import _cubic_powers, compute_lev, open_columns
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
-from zisk_zorch.quotient.zerofier import _ONE, _coset_points, _root
+from zisk_zorch.quotient.zerofier import _ONE, _root
+
+_GOLDILOCKS_P = 0xFFFFFFFF00000001
+_COSET_SHIFT = 7  # Goldilocks::SHIFT, == zerofier._SHIFT
+_TWO_ADIC_ROOT = 7277203076849721926  # Goldilocks::W[32], == zerofier._TWO_ADIC_ROOT
 
 
 def _embed_base(col: Array) -> Array:
@@ -41,6 +48,25 @@ def _embed_base(col: Array) -> Array:
     which base×cubic is exact scalar multiplication (cf. `cexp_ref`)."""
     zero = jnp.zeros_like(col)
     return _base_to_cubic(jnp.stack([col, zero, zero], axis=-1).reshape(-1))
+
+
+@functools.lru_cache(maxsize=None)
+def _coset_cubic(n_bits: int, blowup_bits: int) -> Array:
+    """The extended coset `x[i] = SHIFT · w(nBitsExt)^i`, embedded to cubic —
+    byte-identical to `_embed_base(zerofier._coset_points(...))`, but built on the
+    host so it does NOT lower to `zerofier._powers`' `2^nBitsExt`-deep unrolled
+    `jnp` running product. Under jit that unroll (plus the downstream cubic
+    reciprocal in `deep_composition`) overwhelms the XLA NVPTX layout pass and
+    aborts compilation; a host-materialised coset compiles in ~0.1s. Cached since
+    it is fixed by `(n_bits, blowup_bits)`."""
+    n_ext = 1 << (n_bits + blowup_bits)
+    w = pow(_TWO_ADIC_ROOT, 1 << (32 - (n_bits + blowup_bits)), _GOLDILOCKS_P)
+    out = [1] * n_ext
+    out[0] = _COSET_SHIFT % _GOLDILOCKS_P
+    for i in range(1, n_ext):
+        out[i] = out[i - 1] * w % _GOLDILOCKS_P
+    base = jnp.array(np.array(out, dtype=object).astype(np.uint64), dtype=_ONE.dtype)
+    return _embed_base(base)
 
 
 def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
@@ -76,7 +102,11 @@ def deep_composition(
             f"evals ({evals.shape[0]}) and opening_pos ({len(opening_pos)}) must "
             f"match the {m} columns"
         )
-    x = _embed_base(_coset_points(n_bits, blowup_bits))  # (N_ext,) cubic
+    # Host-built coset, then an optimization barrier so XLA treats it as a
+    # runtime value rather than a compile-time constant: a *constant* cubic array
+    # feeding the reciprocal below crashes the NVPTX layout pass (both an unrolled
+    # `jnp` coset and a materialised literal do), while a barriered value compiles.
+    x = jax.lax.optimization_barrier(_coset_cubic(n_bits, blowup_bits))  # (N_ext,) cubic
     xis_per_col = xis[jnp.array(opening_pos)]  # (M,) cubic
     denom = x[:, None] - xis_per_col[None, :]  # (N_ext, M) cubic
     numer = columns_ext - evals[None, :]  # (N_ext, M) cubic
