@@ -12,21 +12,21 @@ absl-py==2.5.0 \
     # via
     #   -r requirements.in
     #   zorch
-jax==0.10.0.dev20260709073514 \
-    --hash=sha256:5f6428f2a5c05246214f1b26e704eb736483cb5dcb248ca4232f3d4df56d8f66
+jax==0.10.0.dev20260713035353 \
+    --hash=sha256:38f9b21c2d4e99271253e1eaefa4835b26fae589de5938220aadd3cf6c026212
     # via
     #   -r requirements.in
     #   rw-constraints
-jax-cuda12-pjrt==0.10.0.dev20260709073514 \
-    --hash=sha256:0b3a3cafc63d7a719892e6c1f132569dbf8d5e8bc339ed69868cbe0c0de187ed
+jax-cuda12-pjrt==0.10.0.dev20260713035353 \
+    --hash=sha256:b80efc58c3f395643424ea5726314078c5038ff19569ce0905c2de2bc382e8f8
     # via
     #   -r requirements.in
     #   jax-cuda12-plugin
-jax-cuda12-plugin==0.10.0.dev20260709073514 \
-    --hash=sha256:d28020ed951ee57c91c4a137f3b20fe72eab349ff6180613ee277f1fd5a5510d
+jax-cuda12-plugin==0.10.0.dev20260713035353 \
+    --hash=sha256:a879c9f2cc7128b6b7a9352c9b3e4c9f203d0453eb293d0e8c5249741ed6efa8
     # via -r requirements.in
-jaxlib==0.10.0.dev20260709073514 \
-    --hash=sha256:17b30acdd3655039364f47f034865e27dee722d47ef86acf04c0bf7e9f2b75b2
+jaxlib==0.10.0.dev20260713035353 \
+    --hash=sha256:0fb2eab4baf5a21e4082943e6585694423acc8e10b7aa17dc058d5c4a4f81f46
     # via
     #   -r requirements.in
     #   jax
@@ -229,16 +229,16 @@ scipy==1.17.1 \
     # via
     #   jax
     #   jaxlib
-zk-dtypes==0.0.9 \
-    --hash=sha256:2baff1e6cd0fefe9c07aaac0a5430d9e385db87af7070466c4613afc20e42911 \
-    --hash=sha256:86b4b4740f029ccdea9ddb71d5ef485c1f72536f174b09f0276022196b3bd079 \
-    --hash=sha256:8dcb9ce90045986af4c45b7ea5c7bd4172437a392a89b070eef3974dd57926c0
+zk-dtypes==0.0.10 \
+    --hash=sha256:06b66ef88dd6394bf7b2a1183fc60c5679a1837fc1b223147807f0f961eac0f7 \
+    --hash=sha256:e462ab54e21ee3dec305854d857519749eef913d817355b75c9e67fbba2fbae3 \
+    --hash=sha256:f2edcaba0e920dddd8e77c86758d54d7e2d5df2bd1acfbadacf392a91e16b026
     # via
     #   -r requirements.in
     #   jax
 zkbench==0.4.0 \
     --hash=sha256:60d6d265fbe87dc8c0fd18e16af01d6f1484ba08c4a5c5c1082fd0ac02acb5d3
     # via -r requirements.in
-zorch==0.1.0.dev20260709090609 \
-    --hash=sha256:c2692ed15c27cacafc72dc9393b840027c5070393ce520f4a56c37c58a6f40a1
+zorch==0.1.0.dev20260712210826 \
+    --hash=sha256:e004b2cd712523e2d95a47de2ba21948a9f376bc92bda7971864a6b7e292d2fb
     # via -r requirements.in
