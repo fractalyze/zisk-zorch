@@ -65,8 +65,8 @@ def extend(cols: Array, blowup: int) -> Array:
     emits the DIF and elides the permute), and the coset NTT runs as Cooley-Tukey
     DIT on that bit-reversed input (`ntt(bit_reverse(·))`, elided by the rewriter's
     producer fold). Keeping the intermediate bit-reversed cancels both standalone
-    bit-reverse kernels — each ~40% of its transform on the ZKX GPU path — while
-    the final evaluations stay natural order (so the merkelize byte-match holds).
+    bit-reverse kernels (a pure-permutation DRAM round-trip with no arithmetic)
+    while the final evaluations stay natural order (so the merkelize byte-match holds).
 
     Two index identities make it exact. Coefficient `i` (natural) evaluates on the
     coset with weight `SHIFT**i`, so on the bit-reversed coeffs the coset powers
