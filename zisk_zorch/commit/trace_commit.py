@@ -17,14 +17,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import jax.numpy as jnp
-from jax import Array, lax
+from jax import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zorch.coding.reed_solomon import ReedSolomon
 from zorch.commit.merkle import MerkleTree
 from zorch.hash.compression import Compression, CompressionParams
-from zorch.poly.univariate import powers
 
 # Goldilocks::SHIFT — the LDE coset generator pil2-stark evaluates on.
 COSET_SHIFT = 7
@@ -52,58 +52,21 @@ def extend(trace: Array, blowup: int) -> Array:
     """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
     rows in pil2's domain order (`extendPol` semantics).
 
-    Bit-reversed-intermediate schedule, matching pil2/sppark's `extendPol`: the
-    INTT runs as Gentleman-Sande DIF (natural in → bit-reversed-order coeffs,
-    written `bit_reverse(ntt(INTT))` so the NTT-fusion rewriter's consumer fold
-    emits the DIF and elides the permute), and the coset NTT runs as Cooley-Tukey
-    DIT on that bit-reversed input (`ntt(bit_reverse(·))`, elided by the rewriter's
-    producer fold). Keeping the intermediate bit-reversed cancels both standalone
-    bit-reverse kernels (a pure-permutation DRAM round-trip with no arithmetic)
-    while the final evaluations stay natural order (so the merkelize byte-match holds).
-
-    Two index identities make it exact. Coefficient `i` (natural) evaluates on the
-    coset with weight `SHIFT**i`, so on the bit-reversed coeffs the coset powers
-    ride in bit-reversed order. And `bitrev_{N·blowup}(i) = bitrev_N(i)·blowup`
-    for `i < N`, so zero-extending the coefficients to the blown-up domain is a
-    stride-`blowup` upsample (each coeff followed by `blowup-1` zeros) rather than
-    a trailing zero-pad. Both `_PIL2_GENERATOR` NTTs keep pil2's domain order.
+    The permute-cancelling LDE schedule lives in `ReedSolomon.extend`, which
+    transforms the last axis; the trace is row-major here, so it rides in as
+    columns (`trace.T`) and back out as rows. `_PIL2_GENERATOR` keeps the
+    transform in pil2's domain order.
     """
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
-    n = trace.shape[0]
-    # Both the NTT and the bit-reversal index identities (`bitrev_{N·blowup}(i) =
-    # bitrev_N(i)·blowup`) require power-of-two sizes; reject bad inputs here
-    # rather than fail cryptically inside `lax.ntt`.
-    if n < 1 or (n & (n - 1)):
-        raise ValueError(f"trace length must be a power of 2, got {n}")
-    if blowup < 1 or (blowup & (blowup - 1)):
-        raise ValueError(f"blowup must be a positive power of 2, got {blowup}")
-    n_ext = n * blowup
-    cols = trace.T  # (n_cols, N): the NTTs transform the last (domain) axis.
-
-    # DIF INTT: natural evals → bit-reversed-order coefficients (1/N included).
-    coeffs = lax.bit_reverse(
-        lax.ntt(cols, ntt_type="INTT", ntt_length=n, generator=_PIL2_GENERATOR),
-        dimensions=(cols.ndim - 1,),
-    )
-    # Coset scale (bit-reversed order): coeff at natural index i by SHIFT**i.
-    coset = lax.bit_reverse(powers(jnp.asarray(COSET_SHIFT, F), n), dimensions=(0,))
-    coeffs = coeffs * coset
-    # Zero-extend N → N·blowup as a stride-blowup upsample (see docstring).
-    padded = (
-        jnp.zeros(coeffs.shape[:-1] + (n, blowup), F)
-        .at[..., 0]
-        .set(coeffs)
-        .reshape(coeffs.shape[:-1] + (n_ext,))
-    )
-    # DIT coset NTT on the bit-reversed input → natural-order evaluations.
-    extended = lax.ntt(
-        lax.bit_reverse(padded, dimensions=(padded.ndim - 1,)),
-        ntt_type="NTT",
-        ntt_length=n_ext,
+    rs = ReedSolomon(
+        trace.shape[0],
+        blowup,
+        F,
+        coset_shift=jnp.asarray(COSET_SHIFT, F),
         generator=_PIL2_GENERATOR,
     )
-    return extended.T
+    return rs.extend(trace.T).T
 
 
 def merkle_tree(arity: int) -> MerkleTree:
