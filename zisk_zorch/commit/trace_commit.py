@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import jax.numpy as jnp
-from jax import Array, lax
+from jax import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
@@ -52,19 +52,21 @@ def extend(trace: Array, blowup: int) -> Array:
     """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
     rows in pil2's domain order (`extendPol` semantics).
 
-    Both the INTT and the coset NTT run under `_PIL2_GENERATOR`, so the native
-    transform indexes the domain in pil2's order directly — no domain-reorder
-    gathers (see the generator note above)."""
+    The permute-cancelling LDE schedule lives in `ReedSolomon.extend`, which
+    transforms the last axis; the trace is row-major here, so it rides in as
+    columns (`trace.T`) and back out as rows. `_PIL2_GENERATOR` keeps the
+    transform in pil2's domain order.
+    """
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
-    n = trace.shape[0]
     rs = ReedSolomon(
-        n, blowup, F, coset_shift=jnp.array(COSET_SHIFT, F), generator=_PIL2_GENERATOR
+        trace.shape[0],
+        blowup,
+        F,
+        coset_shift=jnp.asarray(COSET_SHIFT, F),
+        generator=_PIL2_GENERATOR,
     )
-    coeffs = lax.ntt(
-        trace.T, ntt_type="INTT", ntt_length=n, generator=_PIL2_GENERATOR
-    )  # per-col INTT (1/N incl.)
-    return rs.encode(coeffs).T
+    return rs.extend(trace.T).T
 
 
 def merkle_tree(arity: int) -> MerkleTree:
