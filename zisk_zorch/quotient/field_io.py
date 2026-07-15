@@ -8,9 +8,9 @@ Cubic loading from decimal limbs is `zisk_zorch.golden.u64x3`; use that directly
 
 from __future__ import annotations
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 

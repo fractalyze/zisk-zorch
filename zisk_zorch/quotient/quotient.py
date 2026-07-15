@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from jax import Array
+from frx import Array
 from zorch.constraint_eval import constraint_eval
 
 from zisk_zorch.quotient.zerofier import inv_zerofier

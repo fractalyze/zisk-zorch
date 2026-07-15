@@ -22,8 +22,8 @@ The two AIR paths differ in how they source the row-local constraints:
 
 from __future__ import annotations
 
-import jax.numpy as jnp
-from jax import Array
+import frx.numpy as jnp
+from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.golden import u64x3

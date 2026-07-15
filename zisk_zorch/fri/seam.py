@@ -25,9 +25,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import jax
-import jax.numpy as jnp
-from jax import Array
+import frx
+import frx.numpy as jnp
+from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
@@ -45,7 +45,7 @@ def _cubic_to_base(values: Array) -> Array:
     host round-trip forced eager execution (re-compiling per `prove` call).
     `bitcast_convert` appends the size-3 limb axis, which the reshape folds back
     into the trailing axis to recover the contiguous limb layout."""
-    base = jax.lax.bitcast_convert_type(values, F)
+    base = frx.lax.bitcast_convert_type(values, F)
     return base.reshape(*values.shape[:-1], values.shape[-1] * 3)
 
 
@@ -53,7 +53,7 @@ def _base_to_cubic(values: Array) -> Array:
     """The inverse view: contiguous base limbs -> cubic elements (the 3 limbs are
     that element's coefficients, cf. golden `u64x3`)."""
     triples = values.reshape(*values.shape[:-1], -1, 3)
-    return jax.lax.bitcast_convert_type(triples, F3)
+    return frx.lax.bitcast_convert_type(triples, F3)
 
 
 @dataclass(frozen=True)
@@ -134,7 +134,7 @@ class Pil2FriCode:
         side) — `verify_fold` per query, batched. `group` is `(Q, n_x)` cubic; the
         landing row `positions` picks each query's coset points."""
         prev, current = self.steps[level], self.steps[level + 1]
-        return jax.vmap(
+        return frx.vmap(
             lambda values, idx: verify_fold(
                 values, beta, self.n_bits_ext, prev, current, idx
             )

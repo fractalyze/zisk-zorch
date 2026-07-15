@@ -12,23 +12,28 @@ absl-py==2.5.0 \
     # via
     #   -r requirements.in
     #   zorch
+frx==0.10.0.dev20260714051543 \
+    --hash=sha256:db7a10d48a7ceddc721326757d7af439665fc5f6a8b14535fb62f40cf8e31beb
+    # via -r requirements.in
+frx-cuda12-pjrt==0.10.0.dev20260714051543 \
+    --hash=sha256:ee53262cb021008de6e39d0b57ff93c62ffce4e379b5339cf4cb6458e9b2ecfe
+    # via
+    #   -r requirements.in
+    #   frx-cuda12-plugin
+frx-cuda12-plugin==0.10.0.dev20260714051543 \
+    --hash=sha256:841c42f0b79f4775b3188e15dfc6ac5947fb1a8891a51c5c885e64b4fb4e137d
+    # via -r requirements.in
+frxlib==0.10.0.dev20260714051543 \
+    --hash=sha256:9d2d8c4bbefd3578c801be6e31a67776c0c56c0d4b509e21ff90f37398d9453c
+    # via
+    #   -r requirements.in
+    #   frx
 jax==0.10.0.dev20260714051543 \
     --hash=sha256:51b730a5998089c3be10d968b32ac2a3ecef5cb976c34e71043e4a49ab58fe55
-    # via
-    #   -r requirements.in
-    #   rw-constraints
-jax-cuda12-pjrt==0.10.0.dev20260714051543 \
-    --hash=sha256:b2c815a1a91bc60811f719edc5e2b433722c6a35204191288e0d7a91269d63af
-    # via
-    #   -r requirements.in
-    #   jax-cuda12-plugin
-jax-cuda12-plugin==0.10.0.dev20260714051543 \
-    --hash=sha256:3d6d866ecebf0b94dfb1d7ef22b2c164cb4f4ae9309032349cd334dfd52348fa
-    # via -r requirements.in
+    # via rw-constraints
 jaxlib==0.10.0.dev20260714051543 \
     --hash=sha256:d094b1d14229c43de7a303b77e02dcc1e3bdd883bbf040d4122435df923e26cb
     # via
-    #   -r requirements.in
     #   jax
     #   rw-constraints
 ml-dtypes==0.5.4 \
@@ -72,6 +77,8 @@ ml-dtypes==0.5.4 \
     --hash=sha256:d81fdb088defa30eb37bf390bb7dde35d3a83ec112ac8e33d75ab28cc29dd8b0 \
     --hash=sha256:f21c9219ef48ca5ee78402d5cc831bd58ea27ce89beda894428bc67a52da5328
     # via
+    #   frx
+    #   frxlib
     #   jax
     #   jaxlib
 numpy==2.4.6 \
@@ -149,6 +156,8 @@ numpy==2.4.6 \
     --hash=sha256:f74a575920ab21fe304421a3fc28793d82e299cae9eccb37084e9fc7f3617c20
     # via
     #   -r requirements.in
+    #   frx
+    #   frxlib
     #   jax
     #   jaxlib
     #   ml-dtypes
@@ -160,7 +169,9 @@ numpy==2.4.6 \
 opt-einsum==3.4.0 \
     --hash=sha256:69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd \
     --hash=sha256:96ca72f1b886d148241348783498194c577fa30a8faac108586b14f1ba4473ac
-    # via jax
+    # via
+    #   frx
+    #   jax
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260618065925/rw_constraints-0.1.0.dev20260618065925-py3-none-any.whl \
     --hash=sha256:a49be8b6d51af603547e2a3412b455fc81b6278484b761f73695e3ed9464c490
     # via -r requirements.in
@@ -227,6 +238,8 @@ scipy==1.17.1 \
     --hash=sha256:f8885db0bc2bffa59d5c1b72fad7a6a92d3e80e7257f967dd81abb553a90d293 \
     --hash=sha256:fcb310ddb270a06114bb64bbe53c94926b943f5b7f0842194d585c65eb4edd76
     # via
+    #   frx
+    #   frxlib
     #   jax
     #   jaxlib
 zk-dtypes==0.0.10 \
@@ -235,6 +248,7 @@ zk-dtypes==0.0.10 \
     --hash=sha256:f2edcaba0e920dddd8e77c86758d54d7e2d5df2bd1acfbadacf392a91e16b026
     # via
     #   -r requirements.in
+    #   frx
     #   jax
 zkbench==0.4.0 \
     --hash=sha256:60d6d265fbe87dc8c0fd18e16af01d6f1484ba08c4a5c5c1082fd0ac02acb5d3

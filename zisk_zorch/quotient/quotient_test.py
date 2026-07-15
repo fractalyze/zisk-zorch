@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F

@@ -24,9 +24,9 @@ buildFrameZerofierInv:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1
 
 from __future__ import annotations
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 # pil2's coset shift and the 2^32-order generator `Goldilocks::W[32]`, as field

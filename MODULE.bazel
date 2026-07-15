@@ -18,7 +18,7 @@ module(
 bazel_dep(name = "rules_python", version = "1.7.0")
 
 # zorch arrives as a dev-release wheel via the pip hub (see requirements.in),
-# not a Bazel module — so jax/zk_dtypes resolve once here. Targets depend on it
+# not a Bazel module — so frx/zk_dtypes resolve once here. Targets depend on it
 # with requirement("zorch").
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -29,7 +29,7 @@ python.toolchain(
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
-    # jax / jaxlib / zkx-cuda-pjrt are published on the Fractalyze index.
+    # frx / frxlib / the frx-cuda12 wheels are published on the Fractalyze index.
     extra_pip_args = ["--extra-index-url=https://fractalyze.github.io/pypi/simple/"],
     hub_name = "zisk_zorch_pip",
     python_version = "3.11",

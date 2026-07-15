@@ -20,10 +20,10 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-import jax
-import jax.numpy as jnp
+import frx
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.fri.seam import _cubic_to_base
@@ -55,7 +55,7 @@ def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
     nonce_fe = jnp.asarray(nonces, dtype=F)  # (C,) canonical -> plain field
     chal = jnp.broadcast_to(challenge, (nonce_fe.shape[0], _GRIND_WIDTH - 1))
     states = jnp.concatenate([chal, nonce_fe[:, None]], axis=1)  # (C, 4)
-    out0 = jax.vmap(_GRIND_PERM.permute)(states)[:, 0]
+    out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
     return _canonical(out0)  # decode to canonical u64 (transcript's path)
 
 

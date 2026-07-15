@@ -38,8 +38,8 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Iterable
 
-import jax
-import jax.numpy as jnp
+import frx
+import frx.numpy as jnp
 import numpy as np
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
@@ -55,7 +55,7 @@ from zorch.testkit.random_field import rand_field
 _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
 
 
-def _rand_cubic(length: int, seed: int) -> jax.Array:
+def _rand_cubic(length: int, seed: int) -> frx.Array:
     """Canonical Goldilocks-cubic evals; 3 base limbs view as one cubic element.
 
     Built via numpy then `jnp.asarray`, NOT zorch's `rand_ext_field`: that bitcasts
@@ -76,7 +76,7 @@ def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
             f"{n_cols}/{n_constraints}/{degree}"
         )
 
-    def eval_fn(t: jax.Array) -> jax.Array:
+    def eval_fn(t: frx.Array) -> frx.Array:
         cols = []
         for k in range(n_constraints):
             c = t[:, k % n_cols]
@@ -97,16 +97,16 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
     return steps
 
 
-def _first_array(result: object) -> jax.Array:
+def _first_array(result: object) -> frx.Array:
     """The first device array in a result (an op returns an array, a tuple, or a
     pytree commitment); hashing one representative array pins reproducibility."""
-    leaves = [leaf for leaf in jax.tree_util.tree_leaves(result) if hasattr(leaf, "shape")]
+    leaves = [leaf for leaf in frx.tree_util.tree_leaves(result) if hasattr(leaf, "shape")]
     if not leaves:
         raise TypeError(f"no array leaf to hash in {type(result)}")
     return leaves[0]
 
 
-def _hash_array(arr: jax.Array) -> str:
+def _hash_array(arr: frx.Array) -> str:
     """Hash a field array's raw bytes. zkbench's `compute_array_hash` casts to
     `<u4` (31-bit fields only) and can't represent 64-bit Goldilocks; the raw
     plain limbs are deterministic, which is all an input/output hash needs."""
@@ -191,23 +191,23 @@ class InnerProofBenchmark(JaxBenchmark):
         # Stage-1 inputs: a random trace, its LDE made device-resident so the
         # commit zone's wall time excludes the extend it depends on.
         if {"extend", "commit", "full"} & set(stages):
-            trace = jax.block_until_ready(rand_field(0, (n, args.n_cols), F))
-            extend_jit = jax.jit(lambda t: extend(t, blowup))
+            trace = frx.block_until_ready(rand_field(0, (n, args.n_cols), F))
+            extend_jit = frx.jit(lambda t: extend(t, blowup))
             mt = merkle_tree(args.arity)
             if "extend" in stages:
                 yield op("extend", extend_jit, trace)
             if "commit" in stages:
-                extended = jax.block_until_ready(extend_jit(trace))
-                yield op("commit", jax.jit(lambda e: mt.commit(e)), extended,
+                extended = frx.block_until_ready(extend_jit(trace))
+                yield op("commit", frx.jit(lambda e: mt.commit(e)), extended,
                          hash_arg=extended)
             if "full" in stages:
-                yield op("full", jax.jit(lambda t: mt.commit(extend(t, blowup))), trace)
+                yield op("full", frx.jit(lambda t: mt.commit(extend(t, blowup))), trace)
 
         if "quotient" in stages:
             eval_fn = _make_eval_fn(args.n_cols, args.n_constraints, args.degree)
-            alpha = jax.block_until_ready(_rand_cubic(args.n_constraints, 1))
-            trace_ext = jax.block_until_ready(rand_field(0, (n_ext, args.n_cols), F))
-            qfn = jax.jit(
+            alpha = frx.block_until_ready(_rand_cubic(args.n_constraints, 1))
+            trace_ext = frx.block_until_ready(rand_field(0, (n_ext, args.n_cols), F))
+            qfn = frx.jit(
                 lambda t, eval_fn=eval_fn, alpha=alpha: quotient_from_constraints(
                     eval_fn, t, alpha, n_bits, args.blowup_bits
                 )
@@ -215,8 +215,8 @@ class InnerProofBenchmark(JaxBenchmark):
             yield op("quotient", qfn, trace_ext)
 
         if "divide" in stages:
-            composite = jax.block_until_ready(_rand_cubic(n_ext, 2))
-            dfn = jax.jit(lambda c: compute_quotient(c, n_bits, args.blowup_bits))
+            composite = frx.block_until_ready(_rand_cubic(n_ext, 2))
+            dfn = frx.jit(lambda c: compute_quotient(c, n_bits, args.blowup_bits))
             yield op("divide", dfn, composite)
 
         if "fri" in stages:
@@ -226,7 +226,7 @@ class InnerProofBenchmark(JaxBenchmark):
             goldilocks_perm(12)
             n_bits_ext = n_bits + args.blowup_bits
             steps = _fold_steps(n_bits_ext, args.fold_bits, args.final_bits)
-            fri_pol = jax.block_until_ready(_rand_cubic(1 << n_bits_ext, 0))
+            fri_pol = frx.block_until_ready(_rand_cubic(1 << n_bits_ext, 0))
 
             def fri_outputs(pol, steps=steps, arity=args.arity):
                 # A fresh transcript per call keeps the squeezed challenges
@@ -240,7 +240,7 @@ class InnerProofBenchmark(JaxBenchmark):
             # Jitted: the perm-memoize + device-bitcast seam make the fold loop
             # traceable as one function, so warm fri reflects compute, not the
             # per-call recompile (the fair box-4 number).
-            fri_jit = jax.jit(fri_outputs)
+            fri_jit = frx.jit(fri_outputs)
             yield op("fri", fri_jit, fri_pol, lower=True)
 
 

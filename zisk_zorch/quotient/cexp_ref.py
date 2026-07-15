@@ -27,8 +27,8 @@ the numpy level: the zkx CPU emitter crashes on cubic bitcast/`view`.
 
 from __future__ import annotations
 
-import jax.numpy as jnp
-from jax import Array
+import frx.numpy as jnp
+from frx import Array
 
 from zisk_zorch.golden import u64x3
 from zisk_zorch.quotient.field_io import embed, rotate

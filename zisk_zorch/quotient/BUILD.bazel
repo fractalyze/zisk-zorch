@@ -17,7 +17,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//zisk_zorch:golden",
-        requirement("jax"),
+        requirement("frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
         requirement("zorch"),

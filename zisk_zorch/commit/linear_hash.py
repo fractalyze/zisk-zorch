@@ -16,7 +16,7 @@ builds exactly pil2's tree.
 
 from __future__ import annotations
 
-from jax import Array
+from frx import Array
 from zorch.hash.poseidon2.poseidon2 import Poseidon2
 from zorch.hash.sponge import Sponge, SpongeParams, SpongeType
 

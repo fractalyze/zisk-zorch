@@ -20,8 +20,8 @@ gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alp
 
 from __future__ import annotations
 
-import jax.numpy as jnp
-from jax import Array
+import frx.numpy as jnp
+from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
