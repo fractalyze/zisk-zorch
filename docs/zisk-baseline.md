@@ -10,9 +10,9 @@ Only under that premise is a wall-clock comparison meaningful.
 > 1. **Provenance.** Every row marked ✔ was measured on 2026-07-15, both sides,
 >    on the same box (RTX 5090, driver 595.71.05) against main's shipped pins.
 >    **extend, commit, quotient, LogUp and FRI** run on `origin/main`. **evals and
->    DEEP do not exist on main** — they were measured on branch
->    `fix/deep-coset-compile` (the wire branch #61 plus #67's compile fix) with
->    the same pins, so they are what *would* ship if #61 landed, not what ships.
+>    DEEP were measured on the wiring this branch brings in** (#61's `deep/` plus
+>    #67's compile fix) — they do not exist on `origin/main` yet, so they are what
+>    ships *if this branch lands*, not what ships today.
 >    Where a re-measurement disagreed with the recorded figure, the measurement
 >    wins and the delta is called out.
 > 2. **No same-output gate.** Not one stage has a reproducible byte-match against
@@ -183,8 +183,8 @@ everything else is transcribed from the cited issue.
 | — zerofier divide | *(bracketed)* | 0.32 ms | parity | unit golden only | ✅ |
 | **LogUp grand-sum (I=8)** | **2.45 ms** ✔ | **9.61 ms** ✔ | **3.92×** ✔ | unit golden only | ✅ **shipped** |
 | LogUp grand-sum, with #64 | 2.45 ms ✔ | 3.20 ms | 1.30× | unit golden only | ❌ #64 open |
-| evals (`evmap`) | **3.72 ms** ✔ | **15.8 ms** ✔ | **4.25×** ✔ | none on main | ❌ #61 — measured on branch |
-| DEEP (`computeFRIExpression`) | **8.88 ms** ✔ | **15.6 ms** ✔ | **1.76×** ✔ | **none** | ❌ #61 + #67 — measured on branch |
+| **evals (`evmap`)** | **3.72 ms** ✔ | **15.8 ms** ✔ | **4.25×** ✔ | none | ✅ this branch (#61) |
+| **DEEP (`computeFRIExpression`)** | **8.88 ms** ✔ | **15.6 ms** ✔ | **1.76×** ✔ | **none** | ✅ this branch (#61 + #67) |
 | **FRI total (queries excl.)** | **7.84 ms** ✔ | **19.5 ms** ✔ | **2.49×** ✔ | unit golden only | ✅ **shipped** |
 | — FRI fold | 3.27 ms ✔ | 14.75 ms | 4.48× | unit golden only | ✅ shipped |
 | — FRI merkle | 4.56 ms ✔ | ~5.09 ms | ~1.12× | unit golden only | ✅ shipped |
@@ -213,7 +213,7 @@ everything else is transcribed from the cited issue.
   predicted ~4.3× and #69 ~1.8×; measured directly at the native's config
   (n_ext=2^23, M=68) they are **4.25×** (15.80 vs 3.72 ms) and **1.76×** (15.64 vs
   8.88 ms). Unlike quotient, these projections were sound. Both are measured on
-  `fix/deep-coset-compile`, not main. The DEEP gap is the one #69 names: our
+  the wiring this branch adds (#61 + #67), not on `origin/main`. The DEEP gap is the one #69 names: our
   committed buffer is 68 *cubic* columns (12.75 GiB) where the native holds 62
   base + 6 cubic = 80 gl64 (5.37 GiB), so base columns embedded to cubic cost
   ~2.4x the reads.
