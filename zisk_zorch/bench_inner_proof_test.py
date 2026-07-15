@@ -50,11 +50,9 @@ class BenchInnerProofTest(absltest.TestCase):
         self.assertTrue(ops[0].input_hash)
 
     def test_fri_leg_warms_the_perm_width_its_arity_needs(self) -> None:
-        # The fri leg jits `prove`, which builds `merkle_tree(arity)` *inside*
-        # the trace, so the width-4*arity perm must be memoized host-side first
-        # or its M4 analysis meets a tracer (TracerArrayConversionError). The
-        # warm list used to name widths 8 and 12, which left --arity=4 — the
-        # production arity, and the one the pil2 native runs — broken.
+        # The fri leg jits `prove`, which builds `merkle_tree(arity)` *inside* the
+        # trace, so the width-4*arity perm must be memoized host-side first or its
+        # M4 analysis meets a tracer. Every arity must warm, not a listed few.
         for arity, width in ((2, 8), (3, 12), (4, 16)):
             with self.subTest(arity=arity):
                 goldilocks_perm.cache_clear()

@@ -57,9 +57,8 @@ class ZerofierTest(absltest.TestCase):
         self.golden = load(_TESTDATA / "zerofier_inv.json")
 
     def test_root_rejects_bits_past_the_two_adic_ceiling(self) -> None:
-        # pil2's generator is W[32], so 2^33 has no root. Unguarded this surfaced
-        # as `negative shift count` from `1 << (32 - bits)` — a Python shift, not
-        # the domain constraint. compute_lev is the caller that reaches it.
+        # pil2's generator is W[32], so there is no 2^33-th root; the guard must
+        # name that rather than let `1 << (32 - bits)` fail as a Python shift.
         self.assertIsNotNone(_root(32))
         for bits in (33, 64, -1):
             with self.subTest(bits=bits), self.assertRaisesRegex(ValueError, "W\\[32\\]"):

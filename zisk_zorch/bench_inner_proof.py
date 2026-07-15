@@ -2,10 +2,9 @@
 
 The baseline-vs-port comparison this repo exists for: the three legs of pil2's
 `GENERATING_INNER_PROOFS` (24.6s native on RTX 5090, block 24654300), each timed
-on the GPU plugin (the fractalyze/xla fork's `frx-cuda12` wheels) so the compiled
-path can be lined up against native ZisK. One `zkbench.FrxBenchmark` yields an op
-per (stage, size), so a single run
-emits one report keyed `stage_2p<n_bits>` covering the whole inner proof:
+on the GPU plugin so the compiled path can be lined up against native ZisK. One
+`zkbench.FrxBenchmark` yields an op per (stage, size), so a single run emits one
+report keyed `stage_2p<n_bits>` covering the whole inner proof:
 
   extend   — stage-1 coset LDE (INTT+NTT), pil2's `extendPol`
   commit   — stage-1 linear-hash leaves + k-ary Poseidon2 Merkle, `merkelize`
@@ -17,11 +16,7 @@ emits one report keyed `stage_2p<n_bits>` covering the whole inner proof:
 
 zkbench owns warmup, timed iterations, device-memory peak, statistics, and
 test-vector hashing. The jitted single-function stages also pass a `lower` thunk,
-so zkbench times `lowered.compile()` as `compile_time` (the compile wall the
-Poseidon2-fusion fix in zorch #264 / zkx #676 cut from ~540s to ~5s — filed while
-the compiler stack was still zkx; it's the fractalyze/xla fork now). `fri`'s
-`prove` is a Python driver over jitted islands, not one jitted function, so it
-reports warm latency only (no `--phase compile`).
+so zkbench times `lowered.compile()` as `compile_time`.
 
 `quotient`'s `eval_fn` is a parametric proxy (`--n_constraints` degree-`--degree`
 column products over `--n_cols`) tunable to a target AIR — absolute is a proxy,
@@ -60,10 +55,8 @@ _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
 def _rand_cubic(length: int, seed: int) -> frx.Array:
     """Canonical Goldilocks-cubic evals; 3 base limbs view as one cubic element.
 
-    Built via numpy then `jnp.asarray` rather than zorch's `rand_ext_field`, which
-    bitcasts a jax array (`jnp_array.view(F3)`). That used to abort (`Check failed:
-    IsArray()`) before zkx#755 fixed the EF bitcast; it works on the current stack,
-    so this local path is retained, not required.
+    Built via numpy then `jnp.asarray`; zorch's `rand_ext_field` is equivalent
+    here.
     """
     ints = np.random.default_rng(seed).integers(0, 1 << 30, (length, 3), np.int64)
     return jnp.asarray(ints.astype(F).view(F3).reshape(length))
@@ -223,12 +216,10 @@ class InnerProofBenchmark(FrxBenchmark):
             yield op("divide", dfn, composite)
 
         if "fri" in stages:
-            # Warm the memoized Poseidon2 perms (host-side M4/const analysis) so
-            # the jit trace reuses them instead of rebuilding under trace. Warm
-            # exactly what `prove` builds per call: the transcript's width-12
-            # sponge, and `merkle_tree(arity)`'s width-4*arity perm — derived from
-            # the arity rather than enumerated, so every arity works (hardcoding
-            # 8/12 left `--arity=4`, the production one, tracing a width-16 perm).
+            # `prove` builds its transcript sponge and `merkle_tree(arity)` inside
+            # the trace, so both perms must be memoized host-side first — their M4
+            # analysis cannot see a tracer. Derive the Merkle width from `arity`;
+            # enumerating widths silently drops whichever arity is not listed.
             goldilocks_perm(12)
             merkle_tree(args.arity)
             n_bits_ext = n_bits + args.blowup_bits
