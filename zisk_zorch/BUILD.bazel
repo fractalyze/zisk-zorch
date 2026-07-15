@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Loaders for the golden/ JSON fixtures every byte-match test consumes.
@@ -13,5 +13,43 @@ py_library(
         requirement("frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
+    ],
+)
+
+# Warm-GPU microbench for the inner-proof stages, on zkbench. Deps the cuda
+# plugin so the stages can be timed on the GPU bar, which is the comparison
+# against native ZisK this bench exists for. Run:
+#   CPU: bazel run //zisk_zorch:bench_inner_proof -- --n_bits=20
+#   GPU: JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
+#        bazel run //zisk_zorch:bench_inner_proof -- --n_bits=20 -o report.json
+py_binary(
+    name = "bench_inner_proof",
+    srcs = ["bench_inner_proof.py"],
+    deps = [
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/fri:prover",
+        "//zisk_zorch/poseidon2:goldilocks",
+        "//zisk_zorch/quotient",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("frx_cuda12_pjrt"),
+        requirement("frx_cuda12_plugin"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("zkbench"),
+        requirement("zorch"),
+    ],
+)
+
+# A real bench run needs a GPU host, so CI can't execute one. This covers what
+# would otherwise rot unnoticed: an import error, a BenchmarkOp signature that
+# drifts from zkbench, or a --stages list out of sync with _STAGES.
+py_test(
+    name = "bench_inner_proof_test",
+    size = "small",
+    srcs = ["bench_inner_proof_test.py"],
+    deps = [
+        ":bench_inner_proof",
+        requirement("absl_py"),
     ],
 )

@@ -67,6 +67,24 @@ Run the tests (CPU is the default for determinism):
 bazel test //...
 ```
 
+### Benchmarks
+
+[`zisk_zorch/bench_inner_proof.py`](zisk_zorch/bench_inner_proof.py) times the
+legs of pil2's `GENERATING_INNER_PROOFS` — `extend`, `commit`, `full`,
+`quotient`, `divide`, `fri` — on `zkbench`, one op per (stage, size), so the
+zkx-compiled path can be lined up against native ZisK. It wants a GPU host:
+
+```sh
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
+    bazel run //zisk_zorch:bench_inner_proof -- \
+    --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 --arity=2 \
+    -o "$PWD/report.json"
+```
+
+`//zisk_zorch:bench_inner_proof_test` is the CPU smoke test that keeps it
+importable and building; it pins the wiring only and asserts nothing about
+timings.
+
 ### CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on PRs and pushes to
