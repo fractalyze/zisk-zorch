@@ -42,6 +42,12 @@ _COSET_SHIFT = 7
 # zisk_zorch.commit.trace_commit, which bridges the native NTT's other root).
 _TWO_ADIC_ROOT = 7277203076849721926
 
+# `frx.lax.ntt` (and zorch's ReedSolomon) take the generator whose powers walk
+# the subgroup backwards, i.e. `W[32]^-1`. Same value as
+# `trace_commit._PIL2_GENERATOR`, derived here rather than imported to keep
+# `fri.fold` off `commit`.
+_PIL2_GENERATOR = pow(_TWO_ADIC_ROOT, -1, _GOLDILOCKS_P)
+
 
 def _powers(base: int, count: int) -> np.ndarray:
     """`[base^0, base^1, ..., base^(count-1)] mod p` as an object-dtype array."""
@@ -109,30 +115,22 @@ def intt(evals: Array, n_bits: int) -> Array:
     in natural order (`coeff[k]` is the `x^k` coefficient) — pil2's
     `NTT_Goldilocks::INTT` applied per column.
 
-    An explicit Vandermonde-inverse matmul (`coeff[k] = N^-1 * sum_j evals[j] *
-    W^-jk`): the final FRI polynomial the low-degree test runs on is tiny
-    (`n_bits` is the last fold step), so the O(n^2) matrix form is fine and stays
-    free of the zk<->pil2 root reindex the LDE's native NTT needs (cf.
-    `zisk_zorch.commit.trace_commit`, which folds the same root mismatch into a
-    gather). The subgroup-only INTT — no coset rescale — mirrors pil2, which
-    INTTs the in-clear final pol on the plain subgroup; a coset only rescales
-    coefficients, so it leaves the low-degree test's vanishing set unchanged."""
+    `_PIL2_GENERATOR` is what puts the transform on pil2's `W[n_bits]` rather
+    than zk_dtypes' canonical root — the same constant `trace_commit.extend`
+    hands ReedSolomon. The subgroup-only INTT — no coset rescale — mirrors pil2,
+    which INTTs the in-clear final pol on the plain subgroup; a coset only
+    rescales coefficients, so it leaves the low-degree test's vanishing set
+    unchanged.
+
+    `ntt` transforms the last axis, so the matrix rides in as columns and back
+    out as rows (cf. `extend`, which does the same for `ReedSolomon.extend`)."""
     n = 1 << n_bits
     if evals.ndim != 2 or evals.shape[0] != n:
         raise ValueError(f"evals must be (2^{n_bits}, n_cols) = ({n}, *), got {evals.shape}")
 
-    w = pow(_TWO_ADIC_ROOT, 1 << (32 - n_bits), _GOLDILOCKS_P)
-    w_inv = pow(w, -1, _GOLDILOCKS_P)
-    n_inv = pow(n, -1, _GOLDILOCKS_P)
-
-    # mat[k, j] = N^-1 * W^-(j*k mod N); the j*k table indexes one short run of
-    # inverse-root powers, so the (n, n) matrix is a single gather.
-    exps = (np.arange(n)[:, None] * np.arange(n)[None, :]) % n
-    powers = _powers(w_inv, n)
-    mat = (n_inv * powers[exps]) % _GOLDILOCKS_P
-    m = jnp.array(mat.astype(np.uint64), dtype=F)
-    # coeff[k, c] = sum_j mat[k, j] * evals[j, c].
-    return jnp.sum(m[:, :, None] * evals[None, :, :], axis=1)
+    return frx.lax.ntt(
+        evals.T, ntt_type=frx.lax.NttType.INTT, generator=_PIL2_GENERATOR
+    ).T
 
 
 def verify_fold(

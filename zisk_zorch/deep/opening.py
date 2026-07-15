@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import frx
 import frx.numpy as jnp
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -39,11 +40,18 @@ _CUBIC_ONE = _base_to_cubic(jnp.array([1, 0, 0], F)).reshape(())
 def _cubic_powers(base: Array, count: int) -> Array:
     """`[base^0, ..., base^(count-1)]` for a cubic scalar — the running-product
     `zerofier._powers` uses (the field dtype has no vectorized power), seeded with
-    the cubic one so base×cubic stays exact."""
-    out = [_CUBIC_ONE]
-    for _ in range(count - 1):
-        out.append(out[-1] * base)
-    return jnp.stack(out)
+    the cubic one so base×cubic stays exact.
+
+    `scan`, not a Python loop: `compute_lev` calls this at `count = 2^n_bits`, so
+    a loop costs one dispatch per element (4M at production) and stacks 4M arrays
+    — 47s at 2^20, versus 0.1s here. Under `jit` it would instead unroll 4M
+    multiplies into the jaxpr."""
+
+    def _step(carry: Array, _: Array) -> tuple[Array, Array]:
+        return carry * base, carry
+
+    _, powers = frx.lax.scan(_step, _CUBIC_ONE, None, length=count)
+    return powers
 
 
 def compute_lev(
