@@ -51,6 +51,9 @@ py_test(
     deps = [
         ":bench_inner_proof",
         requirement("absl_py"),
+    ],
+)
+
 # End-to-end inner proof: one Transcript threading commit -> quotient -> FRI ->
 # queries. The DEEP FRI-polynomial stage is an injected seam (no byte-match
 # primitive exists), so this wires the spine, not a pil2-conformant proof.

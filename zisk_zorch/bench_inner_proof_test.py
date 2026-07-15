@@ -14,6 +14,7 @@ import argparse
 from absl.testing import absltest
 
 from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark
+from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
@@ -47,6 +48,24 @@ class BenchInnerProofTest(absltest.TestCase):
         self.assertEqual(ops[0].metadata["stage"], "divide")
         self.assertEqual(ops[0].throughput_unit, "rows/s")
         self.assertTrue(ops[0].input_hash)
+
+    def test_fri_leg_warms_the_perm_width_its_arity_needs(self) -> None:
+        # The fri leg jits `prove`, which builds `merkle_tree(arity)` *inside*
+        # the trace, so the width-4*arity perm must be memoized host-side first
+        # or its M4 analysis meets a tracer (TracerArrayConversionError). The
+        # warm list used to name widths 8 and 12, which left --arity=4 — the
+        # production arity, and the one the pil2 native runs — broken.
+        for arity, width in ((2, 8), (3, 12), (4, 16)):
+            with self.subTest(arity=arity):
+                goldilocks_perm.cache_clear()
+                list(
+                    InnerProofBenchmark().get_ops(
+                        _parse([f"--arity={arity}", "--stages=fri", "--n_bits=7"])
+                    )
+                )
+                before = goldilocks_perm.cache_info().hits
+                goldilocks_perm(width)  # a hit iff get_ops already warmed it
+                self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
 
     def test_unknown_stage_is_rejected(self) -> None:
         # get_ops is a generator, so the guard only fires once it is advanced.
