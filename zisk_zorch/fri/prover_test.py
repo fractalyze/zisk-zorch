@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 from absl.testing import absltest
 
 from zisk_zorch.fri.prover import prove, prove_queries

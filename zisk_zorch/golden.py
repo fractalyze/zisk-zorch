@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import pathlib
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 

@@ -24,10 +24,10 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-import jax
-import jax.numpy as jnp
+import frx
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zorch.coding.reed_solomon import fri_fold_k_values
@@ -100,7 +100,7 @@ def fold(
     def fold_group(values: Array, points: Array) -> Array:
         return fri_fold_k_values(values, challenge, points)
 
-    return jax.vmap(fold_group)(group, domain)
+    return frx.vmap(fold_group)(group, domain)
 
 
 def intt(evals: Array, n_bits: int) -> Array:

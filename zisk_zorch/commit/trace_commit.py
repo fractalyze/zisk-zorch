@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import jax.numpy as jnp
-from jax import Array
+import frx.numpy as jnp
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash

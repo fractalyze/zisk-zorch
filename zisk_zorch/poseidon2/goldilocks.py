@@ -29,9 +29,9 @@ from __future__ import annotations
 
 import functools
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zorch.hash.poseidon2.params import Poseidon2Params

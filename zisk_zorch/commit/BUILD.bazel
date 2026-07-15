@@ -10,7 +10,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        requirement("jax"),
+        requirement("frx"),
         requirement("zorch"),
     ],
 )
@@ -23,7 +23,7 @@ py_library(
     deps = [
         ":linear_hash",
         "//zisk_zorch/poseidon2:goldilocks",
-        requirement("jax"),
+        requirement("frx"),
         requirement("zk_dtypes"),
         requirement("zorch"),
     ],
@@ -35,7 +35,7 @@ py_library(
     srcs = ["openings.py"],
     visibility = ["//visibility:public"],
     deps = [
-        requirement("jax"),
+        requirement("frx"),
         requirement("zorch"),
     ],
 )

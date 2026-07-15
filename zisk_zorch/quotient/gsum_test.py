@@ -4,15 +4,15 @@ the `fields`-crate reference and (for the operation bus) pil2's cExp."""
 
 from __future__ import annotations
 
-import jax
+import frx
 
 # rw chip code views uint64 as the field dtype; x64 must be on before any array op.
-jax.config.update("jax_enable_x64", True)
+frx.config.update("jax_enable_x64", True)
 
 import pathlib  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
-import jax.numpy as jnp  # noqa: E402
+import frx.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 from zk_dtypes import goldilocks as F  # noqa: E402

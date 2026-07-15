@@ -9,13 +9,13 @@ verifies rw's authored interactions for Binary.
 
 from __future__ import annotations
 
-import jax
+import frx
 
-jax.config.update("jax_enable_x64", True)
+frx.config.update("jax_enable_x64", True)
 
 import pathlib  # noqa: E402
 
-import jax.numpy as jnp  # noqa: E402
+import frx.numpy as jnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402

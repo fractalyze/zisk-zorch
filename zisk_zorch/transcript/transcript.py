@@ -16,10 +16,10 @@ byte-match requires pil2's exact buffer discipline).
 
 from __future__ import annotations
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
 import zk_dtypes
-from jax import Array, lax
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm

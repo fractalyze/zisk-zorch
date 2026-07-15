@@ -12,15 +12,15 @@ golden `q`.
 
 from __future__ import annotations
 
-import jax
+import frx
 
 # rw-exported field constants and the cubic embeds need 64-bit ints; set before
 # any array op (see chip_loader_test).
-jax.config.update("jax_enable_x64", True)
+frx.config.update("jax_enable_x64", True)
 
 import pathlib  # noqa: E402
 
-import jax.numpy as jnp  # noqa: E402
+import frx.numpy as jnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.golden import load, u64x3  # noqa: E402

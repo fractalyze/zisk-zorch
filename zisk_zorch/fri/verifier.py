@@ -34,9 +34,9 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 
 from zisk_zorch.commit.openings import verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree

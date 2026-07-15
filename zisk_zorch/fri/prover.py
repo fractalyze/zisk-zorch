@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from jax import Array
+from frx import Array
 
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree

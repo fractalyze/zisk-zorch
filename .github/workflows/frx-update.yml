@@ -4,13 +4,15 @@
 # notify-downstream workflow and opens a pin-bump PR. zisk-zorch must be listed
 # in that dispatcher's consumer list for events to arrive.
 #
-# The frx/jax mix below is real, not a botched rename. The sender names the
-# event and `frx_version` after the wheels it advertises, but that version is
-# one build published under both names, so it is also the right number for the
-# jax pins this repo still has. `upstream_repo` stays jax because pip-bump
-# interpolates it into a github.com/fractalyze/<repo>/commit link and the
-# publishing repo is still named jax. Only `packages:` names this repo's pins,
-# and it moves when the pins move to frx.
+# The one remaining `jax` below is real, not a botched rename: `upstream_repo`
+# stays jax because pip-bump interpolates it into a
+# github.com/fractalyze/<repo>/commit link, and the publishing repo is still
+# named jax (fractalyze/frx exists but is a PyPI-name placeholder, so pointing
+# there links a commit that does not exist in it).
+#
+# Rule of thumb: `event_type` / `*_version` name the wheels; `*_repo` names the
+# GitHub repo; `packages:` names this repo's pins — now frx, matching
+# requirements.in.
 
 name: FRX Update
 
@@ -30,11 +32,11 @@ jobs:
         with:
           token: ${{ secrets.BUMPER_GH_PAT }}
 
-      - name: Bump jax/jaxlib/jax-cuda12-plugin/zkx-cuda-pjrt
+      - name: Bump frx/frxlib/frx-cuda12-plugin/frx-cuda12-pjrt
         uses: fractalyze/github-actions/pip-bump@main
         with:
           upstream_repo: jax
           version: ${{ github.event.client_payload.frx_version }}
           upstream_commit: ${{ github.event.client_payload.commit }}
-          packages: jax jaxlib jax-cuda12-plugin zkx-cuda-pjrt
+          packages: frx frxlib frx-cuda12-plugin frx-cuda12-pjrt
           github_token: ${{ secrets.BUMPER_GH_PAT }}
