@@ -363,6 +363,47 @@ everything else is transcribed from the cited issue.
   (verified), and the earlier recorded numbers came from a separate harness, so
   the short warm list never blocked them.
 
+### End-to-end (`prove_inner`)
+
+The per-stage rows above are what this doc can compare. A whole-proof number is
+**not** among them, for two independent reasons.
+
+**There is no pil2 figure to compare against.** The only native total is
+`GENERATING_INNER_PROOFS` = 24.6 s, which covers **111 AIR instances** of block
+24654300. `prove_inner` proves one AIR. Dividing one into the other is the ~111x
+scope error listed above as un-quotable, and the per-stage natives cannot be
+summed into a total either — their brackets differ (FRI excludes the query phase,
+commit excludes its extend, `MAIN_EXPR` excludes the INTT-back and Merkle).
+
+**And at production size it does not run.** Measured 2026-07-15 on an RTX 5090
+(31.8 GiB), through the real DEEP combiner:
+
+| n_bits | n_cols | result |
+|---|---|---|
+| 14 | 16 | proves, 71.6 s cold |
+| 18 | 38 | proves, 101.1 s cold |
+| 22 | 24 | **OOM** — needs 4.69 GiB more than the card has |
+| 22 | 38 | **OOM** — needs 7.31 GiB more |
+
+The blocking allocation is DEEP's committed buffer, `2^23 x (M+1) x 24B`: it
+embeds every base column to cubic, so 38 trace columns + the quotient cost
+**7.31 GiB** where native pil2 holds the same data as 80 gl64 = **5.00 GiB**
+(62 base + 6 cubic). Predicted and observed agree exactly at both widths, so the
+cause is not in doubt. It surfaces inside `_grind` only because that is the first
+blocking sync after DEEP — frx is async; the traceback names where the queue
+drained, not where the buffer was requested.
+
+That makes **#69 (base columns embedded to cubic) a blocker, not a perf item** —
+it is what stands between this prover and a production-size inner proof on a
+32 GB GPU. Two things that do *not* help: **#64** (LogUp grand-sum) is not in the
+spine at all — `prove_inner` never calls `grand_sum`; and **#70** targets the FRI
+fold's speed (14.75 -> 1.42 ms), not DEEP's footprint.
+
+Nothing verifies these proofs. There is no `verify_inner`, so "it proved" means
+the spine ran and produced roots, a grind nonce, and openings — not that the
+output is correct, and certainly not that it is pil2-conformant (DEEP has no
+golden; see the byte-match note above).
+
 ### Measure shipped code
 
 A number is only a baseline if it runs what the team **ships**. zisk-zorch has
