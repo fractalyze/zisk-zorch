@@ -42,11 +42,12 @@ class GoldilocksPoseidon2Test(absltest.TestCase):
         self.assertCountEqual(widths_seen, WIDTHS)
 
     def test_dedicated_fusion_routing(self) -> None:
-        # zorch#264 carries the HorizenLabs base M4 as an `external_m4` marker
-        # and zkx#676 applies it via multiply-free add-chains, so the
-        # block-structured widths lower to the dedicated zorch.poseidon2 emitter
-        # (the fast commit-compile path). Width 4's plain single-block M4 is not
-        # marker-carried, so it stays on the generic fused region.
+        # zorch#264 carries the HorizenLabs base M4 as an `external_m4` marker,
+        # which zkx#676 taught the compiler to apply via multiply-free
+        # add-chains, so the block-structured widths lower to the dedicated
+        # zorch.poseidon2 emitter (the fast commit-compile path). Width 4's
+        # plain single-block M4 is not marker-carried, so it stays on the
+        # generic fused region.
         for width in WIDTHS:
             self.assertEqual(
                 goldilocks_perm(width).has_dedicated_fusion,

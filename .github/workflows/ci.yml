@@ -19,10 +19,13 @@ concurrency:
 # `matrix`, hence the dynamic matrix). Runners are labelled by capability — a
 # CPU-only box is `[self-hosted, cpu]`, a GPU box `[self-hosted, gpu]`.
 #
-# The CPU leg excludes `gpu`-tagged tests: the executing pil2 byte-match tests
-# (poseidon2/transcript/commit/fri) need the GPU emitter — the zkx CPU emitter
-# can't run them yet (EF bitcast + Poseidon2 FF; fractalyze/zkx#755). They still
-# `bazel build` on CPU; they only *run* on the GPU leg.
+# The CPU leg's `-gpu` filter currently matches nothing: the executing pil2
+# byte-match tests (poseidon2/transcript/commit/fri) were GPU-only until the
+# zorch bump to dev20260622060558 brought in the CPU emitter's EF-bitcast +
+# Poseidon2 `external_m4` fix (fractalyze/zkx#755, filed while the compiler stack
+# was still zkx — it's the fractalyze/xla fork now), which let their `gpu` tags be
+# dropped. The filter stays as the seam for re-tagging a test the CPU emitter
+# can't run.
 jobs:
   setup:
     runs-on: ubuntu-latest
@@ -51,8 +54,8 @@ jobs:
       # No setup-bazel: it's for ephemeral runners and clobbers the box's
       # ~/.bazelrc; on self-hosted runners bazel and its caches already persist.
 
-      # Build everything (including the gpu-tagged tests, which the per-leg test
-      # filter may skip) so a build break in any target fails fast on every leg.
+      # Build every target unfiltered so a build break fails fast on every leg,
+      # including in anything the per-leg test filter would skip.
       - name: bazel build
         run: bazel build -- //...
 

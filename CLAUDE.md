@@ -7,6 +7,8 @@ this file is just the map plus the rules every change must respect.
 - **Coding conventions:** [`docs/conventions.md`](docs/conventions.md)
 - **Stage-1 commit pipeline:** [`docs/stage1-commit.md`](docs/stage1-commit.md)
 - **Stage-2 constraint ingestion:** [`docs/stage2-constraint-ingest.md`](docs/stage2-constraint-ingest.md)
+- **Testing:** [`docs/testing.md`](docs/testing.md)
+- **Per-stage baseline vs native pil2:** [`docs/zisk-baseline.md`](docs/zisk-baseline.md) — the protocol any perf number must trace to.
 
 ## Non-negotiables
 

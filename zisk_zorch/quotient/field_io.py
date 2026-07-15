@@ -20,8 +20,9 @@ def embed(values: list[str]) -> Array:
 
     The decimals are already canonical (`< p`, the golden's `as_canonical_u64` /
     pil2's field literals), so `astype(F)` value-converts each straight into the
-    plain field — no explicit reduction needed (already canonical). Numpy-level:
-    the zkx CPU emitter crashes on cubic bitcast/`view`."""
+    plain field — no explicit reduction needed (already canonical). The embed is
+    numpy-level because the CPU emitter used to crash on a cubic bitcast/`view`;
+    zkx#755 fixed that, so this is retained, not required."""
     limbs = np.array([[int(v), 0, 0] for v in values], dtype=np.uint64)
     return jnp.array(limbs.astype(F).view(F3).reshape(limbs.shape[0]))
 
@@ -47,8 +48,9 @@ def base_trace(case: dict, n_cols: int) -> Array:
 
 def rotate(col: Array, shift: int) -> Array:
     """`out[i] = col[(i + shift) mod n]` — the extended-domain image of a
-    next/previous-row opening. Built from slice+concat (no `jnp.roll` in the
-    zkx jax fork)."""
+    next/previous-row opening. Built from slice+concat because the fork had no
+    working `jnp.roll` when this was written; it works on the current stack, so
+    the slice+concat form is retained, not required."""
     n = col.shape[0]
     s = shift % n
     return col if s == 0 else jnp.concatenate([col[s:], col[:s]])

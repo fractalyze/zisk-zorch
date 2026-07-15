@@ -22,7 +22,8 @@ The op list is N-independent (one straight-line program per row), so it runs on
 any extended domain; tests drive it on a small synthetic one. Every operand is
 evaluated in the cubic extension `F3` — a base operand embeds as `(b, 0, 0)`, so
 base x cubic stays exact scalar multiplication. The base->cubic embed happens at
-the numpy level: the zkx CPU emitter crashes on cubic bitcast/`view`.
+the numpy level because the CPU emitter used to crash on a cubic bitcast/`view`;
+zkx#755 fixed that, so the numpy path is retained, not required.
 """
 
 from __future__ import annotations

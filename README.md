@@ -44,9 +44,11 @@ that pin this repo's glue, all from
 
 ## Development
 
-`zisk-zorch` is pure Python on JAX + the ZKX PJRT plugin, built with Bazel
-(bzlmod). It consumes `zorch` as a Bazel module, pinned in `MODULE.bazel` via
-`git_override` for reproducible builds.
+`zisk-zorch` is pure Python on JAX + the Fractalyze
+[xla](https://github.com/fractalyze/xla) fork's PJRT plugin (the `jax-cuda12`
+wheels), built with Bazel (bzlmod). It consumes `zorch` as a dev-release wheel
+from the Fractalyze index, pinned in [`requirements.in`](requirements.in), so
+`jax` and `zk_dtypes` resolve once here.
 
 ```sh
 python3.11 -m venv .venv && . .venv/bin/activate
@@ -91,8 +93,12 @@ timings.
 `main` (self-hosted runners): a CPU leg always runs (`bazel build //...` + the
 full test suite, pil2 byte-match included), and a GPU leg is added when the
 `HAS_GPU_RUNNER` repo variable is `true`. The byte-match runs on CPU since the
-zkx `dev20260622060558` bump ([fractalyze/zkx#755](https://github.com/fractalyze/zkx/issues/755)
-fixed the EF bitcast + Poseidon2 `external_m4` path).
+`dev20260622060558` bump ([fractalyze/zkx#755](https://github.com/fractalyze/zkx/issues/755)
+fixed the EF bitcast + Poseidon2 `external_m4` path — filed while the compiler
+stack was still zkx; it's the [fractalyze/xla](https://github.com/fractalyze/xla)
+fork now).
+
+For how the suite is run, sized, and fixtured, see [`docs/testing.md`](docs/testing.md).
 
 ### Regenerating the golden vectors
 
