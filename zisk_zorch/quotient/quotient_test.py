@@ -19,6 +19,7 @@ from zk_dtypes import goldilocksx3 as F3
 from zisk_zorch.golden import load, u64
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
 from zisk_zorch.quotient.zerofier import (
+    _root,
     inv_frame_zerofier,
     inv_one_row_zerofier,
     inv_zerofier,
@@ -54,6 +55,15 @@ class ZerofierTest(absltest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.golden = load(_TESTDATA / "zerofier_inv.json")
+
+    def test_root_rejects_bits_past_the_two_adic_ceiling(self) -> None:
+        # pil2's generator is W[32], so 2^33 has no root. Unguarded this surfaced
+        # as `negative shift count` from `1 << (32 - bits)` — a Python shift, not
+        # the domain constraint. compute_lev is the caller that reaches it.
+        self.assertIsNotNone(_root(32))
+        for bits in (33, 64, -1):
+            with self.subTest(bits=bits), self.assertRaisesRegex(ValueError, "W\\[32\\]"):
+                _root(bits)
 
     def test_every_row_matches_pil2_build_zh_inv(self) -> None:
         for case in self.golden["every_row"]:

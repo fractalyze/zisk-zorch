@@ -38,7 +38,16 @@ _ONE = jnp.ones((), F)
 
 
 def _root(bits: int) -> Array:
-    """The order-`2^bits` root of unity `Goldilocks::W[bits]`, a field scalar."""
+    """The order-`2^bits` root of unity `Goldilocks::W[bits]`, a field scalar.
+
+    pil2 fixes the two-adic generator at `W[32]`, so the subgroup it can reach
+    tops out at order 2^32 — the guard names that ceiling, which the bare shift
+    below would otherwise report as `negative shift count` from inside here."""
+    if not 0 <= bits <= 32:
+        raise ValueError(
+            f"bits must be in [0, 32] — pil2's two-adic generator is W[32], so "
+            f"there is no 2^{bits}-th root of unity; got {bits}"
+        )
     return jnp.power(_TWO_ADIC_ROOT, 1 << (32 - bits))
 
 

@@ -42,16 +42,14 @@ def _cubic_powers(base: Array, count: int) -> Array:
     `zerofier._powers` uses (the field dtype has no vectorized power), seeded with
     the cubic one so base×cubic stays exact.
 
-    `scan`, not a Python loop: `compute_lev` calls this at `count = 2^n_bits`, so
-    a loop costs one dispatch per element (4M at production) and stacks 4M arrays
-    — 47s at 2^20, versus 0.1s here. Under `jit` it would instead unroll 4M
-    multiplies into the jaxpr."""
-
-    def _step(carry: Array, _: Array) -> tuple[Array, Array]:
-        return carry * base, carry
-
-    _, powers = frx.lax.scan(_step, _CUBIC_ONE, None, length=count)
-    return powers
+    A cumulative product, not a running loop: `compute_lev` calls this at
+    `count = 2^n_bits`, where anything sequential in `count` dominates the stage.
+    `associative_scan` is log-depth, so it stays flat where `lax.scan` (O(count)
+    depth) grows with the trace — 0.006s vs 36s at 2^22, byte-identical. A Python
+    loop is worse still: one dispatch per element, and under `jit` it unrolls
+    every multiply into the jaxpr."""
+    seed = jnp.concatenate([_CUBIC_ONE.reshape(1), jnp.full((count - 1,), base)])
+    return frx.lax.associative_scan(jnp.multiply, seed)
 
 
 def compute_lev(
