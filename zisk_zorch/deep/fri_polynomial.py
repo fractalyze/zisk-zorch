@@ -12,14 +12,9 @@ so the division is exact), so `f` has degree `< N` and FRI can fold it. `x` is
 the extended coset (`zerofier._coset_points`), `ξ_o = z·g^{opening}` the OOD
 points (no coset shift, unlike LEv), and `vf` the squeezed batching challenge.
 
-**Byte-match boundary.** `friExp` in a real proving key bakes in *which* columns
-are batched, their order, and each one's challenge power (from `expressions.bin`);
-`deep_composition` implements the generic formula over the columns it is handed.
-Matching a specific AIR's `friExp` byte-for-byte needs that compiled op list (the
-same machinery `cexp_ref` interprets for the quotient) and a pil2 golden — a
-later slice. This module is verified by the FRI low-degree property instead: a
-correctly-opened `f` folds to a low-degree final polynomial; a wrong opening does
-not.
+`deep_composition` implements the generic formula over the columns it is handed;
+a real proving key's `friExp` also fixes *which* columns are batched, their order,
+and each one's challenge power (`docs/architecture.md`).
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp
 """

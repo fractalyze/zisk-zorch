@@ -1,28 +1,15 @@
 """End-to-end inner-proof prover — the Fiat-Shamir spine threading every stage.
 
-Each stage of the inner proof already exists as an isolated primitive
-(`commit_trace`, `quotient_from_constraints`, `fri.prove`, `sample_query_positions`,
-`prove_queries`); `bench_inner_proof.py` times them separately on *random* inputs.
-This module is the missing wiring: it runs them in pil2's order and threads one
-`Transcript` so each stage's Merkle root is absorbed and the next stage's
-challenges (`alpha`, the FRI fold betas, the query positions) are squeezed from
-that running state — the Fiat-Shamir byte stream pil2-proofman's `genProof`
-drives (`gen_proof.hpp`).
+Runs the stages in pil2's order over one `Transcript`, so each stage's Merkle
+root is absorbed before the next stage's challenges (`alpha`, the FRI fold betas,
+the query positions) are squeezed from that running state — the byte stream
+pil2-proofman's `genProof` drives.
 
-Two honest boundaries, both load-bearing given this repo's byte-match contract:
+The quotient-commit leaf layout mirrors the FRI seam's cubic convention (each
+cubic row -> its 3 contiguous Goldilocks limbs, cf. `seam._cubic_to_base`), which
+is pil2's `FIELD_EXTENSION`-contiguous memory order.
 
-- **The DEEP / FRI-polynomial construction** (pil2's `calculateFRIPolynomial`)
-  now lives in `zisk_zorch/deep/`: squeeze the out-of-domain point, open the
-  committed polynomials there (`deep.opening`), absorb the openings, squeeze the
-  batching challenge, and build the codeword (`deep.fri_polynomial`). It is the
-  default `fri_polynomial_fn`. Its generic DEEP-ALI formula is not yet pinned to
-  a specific AIR's compiled `friExp` (that needs a proving-key op list + golden,
-  a later slice) — `quotient_as_fri_polynomial` remains as a trivial fallback
-  that folds FRI over the quotient itself.
-
-- **The quotient-commit leaf layout** mirrors the FRI seam's cubic convention
-  (each cubic row -> its 3 contiguous Goldilocks limbs, cf. `seam._cubic_to_base`),
-  which is pil2's `FIELD_EXTENSION`-contiguous memory order.
+See `docs/architecture.md` for the DEEP seam and its byte-match boundary.
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp
 """
@@ -154,8 +141,8 @@ def prove_inner(
     transcript.put(trace_commit.root)
     alpha = _alpha_powers(transcript.get_field(), n_constraints)
 
-    # Q = C/Z on the extended domain; its cubic rows commit as 3 contiguous base
-    # limbs (pil2 FIELD_EXTENSION layout) so the leaf hash matches the FRI seam.
+    # Cubic rows commit as 3 contiguous base limbs (pil2 FIELD_EXTENSION layout),
+    # so the leaf hash matches the FRI seam.
     quotient = quotient_from_constraints(
         eval_fn, trace_commit.extended, alpha, n_bits, blowup_bits
     )
@@ -163,8 +150,8 @@ def prove_inner(
     quotient_root, quotient_layers = merkle_tree(arity).commit(quotient_matrix)
     transcript.put(quotient_root)
 
-    # The DEEP seam owns its out-of-domain squeeze; see module docstring for why
-    # the FRI codeword is injected rather than built here.
+    # Injected, not built here: the DEEP seam owns its out-of-domain squeeze, so it
+    # must sit between the quotient's root and the FRI betas on this transcript.
     fri_pol = fri_polynomial_fn(
         FriPolynomialContext(
             trace=trace_commit,
@@ -181,7 +168,6 @@ def prove_inner(
     steps = _fold_steps(n_bits_ext, fold_bits, final_bits)
     fri = prove(fri_pol, steps, arity=arity, transcript=transcript)
 
-    # Grind + derive positions, then open every committed tree at each position.
     positions, nonce = sample_query_positions(
         transcript,
         fri.final_pol,
