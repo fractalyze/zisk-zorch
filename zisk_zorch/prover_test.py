@@ -8,7 +8,7 @@ and the whole thing is deterministic in the Fiat-Shamir transcript.
 
 from __future__ import annotations
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F

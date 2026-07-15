@@ -7,10 +7,10 @@ see [conventions.md](conventions.md).
 
 ## Development environment
 
-Pure Python on JAX + the Fractalyze [xla](https://github.com/fractalyze/xla)
-fork's PJRT plugin (the `jax-cuda12` wheels), built with Bazel 9 (bzlmod).
+Pure Python on frx + the Fractalyze [xla](https://github.com/fractalyze/xla)
+fork's PJRT plugin (the `frx-cuda12` wheels), built with Bazel 9 (bzlmod).
 `zisk-zorch` consumes `zorch` as a dev-release wheel from the Fractalyze index,
-pinned in [`../requirements.in`](../requirements.in), so `jax` and `zk_dtypes`
+pinned in [`../requirements.in`](../requirements.in), so `frx` and `zk_dtypes`
 resolve once there.
 
 ```sh
@@ -27,16 +27,16 @@ export PYTHONPATH="$PWD"
 ```
 
 **A venv from `requirements.in` alone is CPU-only.** The pins name
-`jax-cuda12-plugin` but none of the `nvidia-*-cu12` libraries it loads, so
-`jax.devices()` returns `[CpuDevice(id=0)]` and a GPU run silently benchmarks the
+`frx-cuda12-plugin` but none of the `nvidia-*-cu12` libraries it loads, so
+`frx.devices()` returns `[CpuDevice(id=0)]` and a GPU run silently benchmarks the
 CPU. For GPU work install the extra at the **same pinned version** and assert the
 device:
 
 ```sh
 pip install -r requirements.in \
-    "jax-cuda12-plugin[with-cuda]==$(sed -n 's/^jax-cuda12-plugin==//p' requirements.in)" \
+    "frx-cuda12-plugin[with-cuda]==$(sed -n 's/^frx-cuda12-plugin==//p' requirements.in)" \
     --extra-index-url https://fractalyze.github.io/pypi/simple/
-python -c 'import jax; print(jax.devices())'    # must show CudaDevice, not CpuDevice
+python -c 'import frx; print(frx.devices())'    # must show CudaDevice, not CpuDevice
 ```
 
 ## Testing
@@ -177,16 +177,16 @@ plus the `verify_*` runnables that consume it (#59).
 ### zisk-zorch side — `bench_inner_proof.py`
 
 **A venv from `requirements.in` alone is CPU-only and will silently benchmark the
-CPU.** The pins name `jax-cuda12-plugin` but none of the `nvidia-*-cu12`
-libraries it loads, so `jax.devices()` returns `[CpuDevice(id=0)]` and
+CPU.** The pins name `frx-cuda12-plugin` but none of the `nvidia-*-cu12`
+libraries it loads, so `frx.devices()` returns `[CpuDevice(id=0)]` and
 `JAX_PLATFORMS=cuda` fails with *"Backend 'cuda' is not in the list of known
 backends"*. Install the extra at the **same pinned version**:
 
 ```sh
 pip install -r requirements.in \
-    "jax-cuda12-plugin[with-cuda]==$(sed -n 's/^jax-cuda12-plugin==//p' requirements.in)" \
+    "frx-cuda12-plugin[with-cuda]==$(sed -n 's/^frx-cuda12-plugin==//p' requirements.in)" \
     --extra-index-url https://fractalyze.github.io/pypi/simple/
-python -c 'import jax; print(jax.devices())'    # must show CudaDevice, not CpuDevice
+python -c 'import frx; print(frx.devices())'    # must show CudaDevice, not CpuDevice
 ```
 
 Then, the run that produced the ✔ extend rows above:
@@ -214,7 +214,7 @@ select). zkbench owns warmup (3) + timed iterations (20) and reports warm
   `XLA_PYTHON_CLIENT_MEM_FRACTION=0.95`. This is what forced #68/#69 to
   extrapolate; at 0.95 both measure directly at the native's size. Reach for it
   before assuming a stage does not fit.
-- **Do NOT `jax.profiler.trace` at 2^23.** It leaks host RAM, spikes load, and
+- **Do NOT `frx.profiler.trace` at 2^23.** It leaks host RAM, spikes load, and
   wedges CUDA (#65). Decompose by direct sub-op timing instead.
 - **Run `--phase compile` and `--phase runtime` as separate invocations.** The
   memory peak is process-cumulative — PJRT exposes no portable per-op reset.
@@ -373,8 +373,8 @@ three ways to accidentally measure something else:
 git fetch origin && git diff origin/main -- requirements.in requirements_lock_3_11.txt
 
 # 2. Does the venv match the pins?
-grep -E '^(zorch|jax|jaxlib|jax-cuda12-(plugin|pjrt)|zk-dtypes)==' requirements.in
-pip show zorch jax jax-cuda12-pjrt | grep -E 'Name|Version'
+grep -E '^(zorch|frx|frxlib|frx-cuda12-(plugin|pjrt)|zk-dtypes)==' requirements.in
+pip show zorch frx frx-cuda12-pjrt | grep -E 'Name|Version'
 
 # 3. Any local source override in play? (must be absent/empty)
 test ! -s .bazelrc.user || echo "LOCAL OVERRIDE ACTIVE — move it aside"
@@ -385,7 +385,7 @@ test ! -s .bazelrc.user || echo "LOCAL OVERRIDE ACTIVE — move it aside"
   is a no-op today.
 - **`.bazelrc.user` can point `zkx` / `prime_ir` at local checkouts.** Move it
   aside before a baseline run.
-- **The GPU plugin is whichever `jax-cuda12-pjrt` wheel the venv has** (the
+- **The GPU plugin is whichever `frx-cuda12-pjrt` wheel the venv has** (the
   fractalyze/xla fork's backend). Perf work often hot-swaps a locally built
   `pjrt_c_api_gpu_plugin.so` over the wheel's
   `jax_plugins/xla_cuda12/xla_cuda_plugin.so` — if you did that, **restore the

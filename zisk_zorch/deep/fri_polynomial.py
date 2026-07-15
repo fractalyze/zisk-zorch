@@ -29,10 +29,10 @@ from __future__ import annotations
 import functools
 from collections.abc import Sequence
 
-import jax
-import jax.numpy as jnp
+import frx
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 
 from zisk_zorch.deep.opening import _cubic_powers, compute_lev, open_columns
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
@@ -106,7 +106,7 @@ def deep_composition(
     # runtime value rather than a compile-time constant: a *constant* cubic array
     # feeding the reciprocal below crashes the NVPTX layout pass (both an unrolled
     # `jnp` coset and a materialised literal do), while a barriered value compiles.
-    x = jax.lax.optimization_barrier(_coset_cubic(n_bits, blowup_bits))  # (N_ext,) cubic
+    x = frx.lax.optimization_barrier(_coset_cubic(n_bits, blowup_bits))  # (N_ext,) cubic
     xis_per_col = xis[jnp.array(opening_pos)]  # (M,) cubic
     denom = x[:, None] - xis_per_col[None, :]  # (N_ext, M) cubic
     numer = columns_ext - evals[None, :]  # (N_ext, M) cubic

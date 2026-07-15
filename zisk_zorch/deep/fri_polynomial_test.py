@@ -10,8 +10,8 @@ negative control.
 
 from __future__ import annotations
 
-import jax
-import jax.numpy as jnp
+import frx
+import frx.numpy as jnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -89,7 +89,7 @@ class DeepCompositionTest(absltest.TestCase):
 
 
 def _limbs(cubic_scalar: jnp.ndarray) -> jnp.ndarray:
-    return jax.lax.bitcast_convert_type(cubic_scalar, F).reshape(3)
+    return frx.lax.bitcast_convert_type(cubic_scalar, F).reshape(3)
 
 
 if __name__ == "__main__":

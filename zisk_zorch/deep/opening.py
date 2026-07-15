@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import jax.numpy as jnp
-from jax import Array
+import frx.numpy as jnp
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.fri.fold import intt

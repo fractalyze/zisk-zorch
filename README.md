@@ -44,11 +44,11 @@ that pin this repo's glue, all from
 
 ## Development
 
-`zisk-zorch` is pure Python on JAX + the Fractalyze
-[xla](https://github.com/fractalyze/xla) fork's PJRT plugin (the `jax-cuda12`
+`zisk-zorch` is pure Python on frx + the Fractalyze
+[xla](https://github.com/fractalyze/xla) fork's PJRT plugin (the `frx-cuda12`
 wheels), built with Bazel (bzlmod). It consumes `zorch` as a dev-release wheel
 from the Fractalyze index, pinned in [`requirements.in`](requirements.in), so
-`jax` and `zk_dtypes` resolve once here.
+`frx` and `zk_dtypes` resolve once here.
 
 ```sh
 python3.11 -m venv .venv && . .venv/bin/activate

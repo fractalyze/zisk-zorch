@@ -8,7 +8,7 @@ LEv-weighted sum recovers a direct evaluation at each opening point `ξ = z·g^p
 
 from __future__ import annotations
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -22,7 +22,7 @@ _BLOWUP_BITS = 1
 
 
 def _rand_cubic(n: int, seed: int) -> jnp.ndarray:
-    """`n` random cubic elements (golden `u64x3` numpy path — the jax-fork-safe
+    """`n` random cubic elements (golden `u64x3` numpy path — the fork-safe
     `.view`)."""
     flat = np.random.default_rng(seed).integers(0, 1 << 30, (n, 3)).astype(np.uint64)
     return jnp.array(flat.astype(F).view(F3).reshape(n))
@@ -68,16 +68,16 @@ class OpeningTest(absltest.TestCase):
 
 def _limbs(cubic_scalar: jnp.ndarray) -> jnp.ndarray:
     """A cubic scalar as its 3 Goldilocks limbs — `compute_lev`'s `z` input."""
-    import jax
+    import frx
 
-    return jax.lax.bitcast_convert_type(cubic_scalar, F).reshape(3)
+    return frx.lax.bitcast_convert_type(cubic_scalar, F).reshape(3)
 
 
 def _cubic_eq(a: jnp.ndarray, b: jnp.ndarray) -> bool:
-    import jax
+    import frx
 
-    la = np.asarray(jax.lax.bitcast_convert_type(a, F).reshape(3))
-    lb = np.asarray(jax.lax.bitcast_convert_type(b, F).reshape(3))
+    la = np.asarray(frx.lax.bitcast_convert_type(a, F).reshape(3))
+    lb = np.asarray(frx.lax.bitcast_convert_type(b, F).reshape(3))
     return bool(np.array_equal(la, lb))
 
 

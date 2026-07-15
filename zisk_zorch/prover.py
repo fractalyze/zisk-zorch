@@ -32,9 +32,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import jax.numpy as jnp
+import frx.numpy as jnp
 import numpy as np
-from jax import Array
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.openings import group_proof
