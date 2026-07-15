@@ -3,29 +3,17 @@
 # Pulled from the Fractalyze package index alongside upstream PyPI:
 #   pip install -r requirements.in \
 #     --extra-index-url https://fractalyze.github.io/pypi/simple/
-#
-# zisk-zorch is the ZisK-specific consumer of zorch's agnostic blocks; zorch
-# arrives as a dev-release wheel from the Fractalyze index (below), so jax and
-# zk_dtypes resolve once here rather than from a separate zorch pip hub.
-# zk_dtypes (native finite-field dtypes) arrives via jax but is pinned here
-# directly: the byte-match path uses it, and the FRI fold needs >= 0.0.6, the
-# first wheel where `goldilocksx3` is pil2's cubic extension x^3 - x - 1.
 absl-py
 numpy
-# rw_constraints — riscv-witness's exported ZisK AIR constraints + interactions
-# (constraints/zisk/v1), the stage-2 ingestion source (zisk-zorch#1). Bumped to
-# the first dev wheel after arith's assumes_operation send landed
-# (riscv-witness#1941) — the last gsum_e slot the Arith stage-2 re-author needs.
-# Kept at the earliest such wheel on purpose: a later cut switches mem/main/
-# mem_align to next-row constraints whose eval_constraints driver calls jnp.roll,
-# which the zkx jax fork lacks (a separate compat issue, not this slice's).
-rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260618065925/rw_constraints-0.1.0.dev20260618065925-py3-none-any.whl
 zorch==0.1.0.dev20260714055619
 jax==0.10.0.dev20260714051543
 zk-dtypes==0.0.10
 jaxlib==0.10.0.dev20260714051543
 jax-cuda12-plugin==0.10.0.dev20260714051543
 jax-cuda12-pjrt==0.10.0.dev20260714051543
+
+rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260618065925/rw_constraints-0.1.0.dev20260618065925-py3-none-any.whl
+
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
 # (warm-GPU inner-proof microbench, zisk-zorch#30). Same pin as zorch.
 zkbench==0.4.0
