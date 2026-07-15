@@ -236,8 +236,8 @@ zk-dtypes==0.0.10 \
     # via
     #   -r requirements.in
     #   jax
-zkbench==0.4.0 \
-    --hash=sha256:60d6d265fbe87dc8c0fd18e16af01d6f1484ba08c4a5c5c1082fd0ac02acb5d3
+zkbench==0.5.0 \
+    --hash=sha256:1c6020d02504f43aa6b7cfa62e7ba300cf6305abab771ff83626cae912352bb3
     # via -r requirements.in
 zorch==0.1.0.dev20260714055619 \
     --hash=sha256:e7737279339e4954bdbac6dbdea11f9ede8249073a046f76f6537e45dae21ee0

@@ -3,7 +3,7 @@
 The baseline-vs-port comparison this repo exists for: the three legs of pil2's
 `GENERATING_INNER_PROOFS` (24.6s native on RTX 5090, block 24654300), each timed
 on the ZKX GPU plugin so the zkx-compiled path can be lined up against native
-ZisK. One `zkbench.JaxBenchmark` yields an op per (stage, size), so a single run
+ZisK. One `zkbench.FrxBenchmark` yields an op per (stage, size), so a single run
 emits one report keyed `stage_2p<n_bits>` covering the whole inner proof:
 
   extend   — stage-1 coset LDE (INTT+NTT), pil2's `extendPol`
@@ -43,7 +43,7 @@ import jax.numpy as jnp
 import numpy as np
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-from zkbench import BenchmarkConfig, BenchmarkOp, JaxBenchmark, compute_hash
+from zkbench import BenchmarkConfig, BenchmarkOp, FrxBenchmark, compute_hash
 
 from zisk_zorch.commit.trace_commit import extend, merkle_tree
 from zisk_zorch.fri.prover import prove
@@ -113,7 +113,7 @@ def _hash_array(arr: jax.Array) -> str:
     return compute_hash(np.asarray(arr).tobytes())
 
 
-class InnerProofBenchmark(JaxBenchmark):
+class InnerProofBenchmark(FrxBenchmark):
     """One op per (stage, n_bits) across the inner proof, for `zkbench`."""
 
     def get_config(self) -> BenchmarkConfig:
