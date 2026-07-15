@@ -21,13 +21,14 @@ silently; a permalink stays true to the constant it pins.
 
 Every primitive that mirrors pil2-stark (Poseidon2 permutation, linear hash,
 Merkle tree, transcript, LDE) is pinned by a golden vector generated from the
-reference's own `fields` crate by [`../golden/`](../golden/). Conventions:
+reference's own `fields` crate by
+[`../tools/fixture-gen/`](../tools/fixture-gen/). Conventions:
 
 - Goldens live in `testdata/golden/*.json` next to the test that consumes
   them, are small (KBs), and are committed.
 - A golden test compares with exact equality (`jnp.array_equal`), never a
   tolerance — field elements either match or they don't.
-- Regenerate with `cd golden && cargo run --release`; the harness is
+- Regenerate with `cd tools/fixture-gen && cargo run --release`; the harness is
   deterministic (fixed seeds), so a regeneration must be a no-op unless the
   reference pin changed.
 - Never let an unordered container's iteration order feed the RNG stream (or

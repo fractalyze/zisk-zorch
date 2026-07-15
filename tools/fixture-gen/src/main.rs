@@ -1146,7 +1146,9 @@ fn cexp_eval_case(fragment: &Value, n_bits: usize, blowup_bits: usize, seed: u64
 }
 
 fn write(path: &str, value: Value) {
-    let path = Path::new("..").join(path);
+    // Anchor on the crate, not the CWD: the fixtures live at a fixed offset from
+    // this manifest, so `cargo run` writes the same files from any directory.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
     println!("wrote {}", path.display());
@@ -1328,15 +1330,15 @@ fn main() {
         }),
     );
     let memalign_cexp: Value = serde_json::from_str(include_str!(
-        "../../zisk_zorch/quotient/testdata/memalign_readbyte_cexp.json"
+        "../../../zisk_zorch/quotient/testdata/memalign_readbyte_cexp.json"
     ))
     .unwrap();
     let binary_cexp: Value = serde_json::from_str(include_str!(
-        "../../zisk_zorch/quotient/testdata/binary_cexp.json"
+        "../../../zisk_zorch/quotient/testdata/binary_cexp.json"
     ))
     .unwrap();
     let arith_cexp: Value = serde_json::from_str(include_str!(
-        "../../zisk_zorch/quotient/testdata/arith_cexp.json"
+        "../../../zisk_zorch/quotient/testdata/arith_cexp.json"
     ))
     .unwrap();
     write(

@@ -24,7 +24,7 @@ Early bootstrap. First slice: the **stage-1 trace commit** (≈ pil2-stark's
 `extendAndMerkelize`) — coset-7 NTT LDE onto the extended domain, pil2
 linear-hash row leaves, k-ary Poseidon2 Merkle tree, and the pil2 transcript —
 byte-matched against golden vectors generated from pil2-proofman v1.0.0-alpha's
-`fields` crate (see [`golden/`](golden/)).
+`fields` crate (see [`tools/fixture-gen/`](tools/fixture-gen/)).
 
 ## The scheme (what ZisK actually runs)
 
@@ -98,16 +98,18 @@ fixed the EF bitcast + Poseidon2 `external_m4` path — filed while the compiler
 stack was still zkx; it's the [fractalyze/xla](https://github.com/fractalyze/xla)
 fork now).
 
-For how the suite is run, sized, and fixtured, see [`docs/testing.md`](docs/testing.md).
+For how the suite is run, sized, and fixtured, see
+[`docs/development.md`](docs/development.md).
 
 ### Regenerating the golden vectors
 
 The byte-match fixtures under `zisk_zorch/**/testdata/golden/` are produced by
-the Rust harness in [`golden/`](golden/), which links the same `fields` crate
+the Rust harness in [`tools/fixture-gen/`](tools/fixture-gen/), which links the same
+`fields` crate
 pil2-proofman v1.0.0-alpha ships:
 
 ```sh
-cd golden && cargo run --release
+cd tools/fixture-gen && cargo run --release
 ```
 
 ## License

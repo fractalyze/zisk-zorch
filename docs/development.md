@@ -1,4 +1,125 @@
-# ZisK-vs-zisk-zorch per-stage inner-proof benchmark
+# Development guide
+
+Everything needed to build, test, and benchmark zisk-zorch: the environment
+setup, the test conventions, and the per-stage baseline against native pil2. For
+the prover's structure see [architecture.md](architecture.md); for coding style
+see [conventions.md](conventions.md).
+
+## Development environment
+
+Pure Python on JAX + the Fractalyze [xla](https://github.com/fractalyze/xla)
+fork's PJRT plugin (the `jax-cuda12` wheels), built with Bazel 9 (bzlmod).
+`zisk-zorch` consumes `zorch` as a dev-release wheel from the Fractalyze index,
+pinned in [`../requirements.in`](../requirements.in), so `jax` and `zk_dtypes`
+resolve once there.
+
+```sh
+python3.11 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.in \
+    --extra-index-url https://fractalyze.github.io/pypi/simple/
+bazel test //...                 # hermetic, sandboxed; JAX_PLATFORMS=cpu default
+```
+
+For iterative dev outside Bazel, source the venv and put the repo on the path:
+
+```sh
+export PYTHONPATH="$PWD"
+```
+
+**A venv from `requirements.in` alone is CPU-only.** The pins name
+`jax-cuda12-plugin` but none of the `nvidia-*-cu12` libraries it loads, so
+`jax.devices()` returns `[CpuDevice(id=0)]` and a GPU run silently benchmarks the
+CPU. For GPU work install the extra at the **same pinned version** and assert the
+device:
+
+```sh
+pip install -r requirements.in \
+    "jax-cuda12-plugin[with-cuda]==$(sed -n 's/^jax-cuda12-plugin==//p' requirements.in)" \
+    --extra-index-url https://fractalyze.github.io/pypi/simple/
+python -c 'import jax; print(jax.devices())'    # must show CudaDevice, not CpuDevice
+```
+
+## Testing
+
+```sh
+bazel test //...     # hermetic, sandboxed; JAX_PLATFORMS=cpu by default
+```
+
+Tests are backend-agnostic. [`.bazelrc`](../.bazelrc) pins
+`JAX_PLATFORMS=cpu` so a plain `bazel test` is deterministic on any machine —
+CPU is the default, not a requirement. CI overrides it per matrix leg
+(`--test_env=JAX_PLATFORMS=cuda` on the GPU leg).
+
+`//...` is the whole suite on either backend: the executing pil2 byte-match
+tests (poseidon2 / transcript / commit / fri) were GPU-only until the zorch
+bump to `dev20260622060558` brought in the CPU emitter's EF-bitcast +
+Poseidon2 `external_m4` fix ([fractalyze/zkx#755](https://github.com/fractalyze/zkx/issues/755)
+— filed while the compiler stack was still zkx; it's the
+[fractalyze/xla](https://github.com/fractalyze/xla) fork now), which let their
+`gpu` tags be dropped. Nothing carries a `gpu` tag today.
+
+### Test sizing & timeouts
+
+`size` and `timeout` are independent knobs:
+
+- **`size`** (`small`/`medium`/`large`) is a *resource* hint: roughly how much
+  RAM/CPU the test needs, which governs how many run in parallel.
+- **`timeout`** (`short`/`moderate`/`long`/`eternal` = 60/300/900/3600 s) is the
+  wall-clock cap. When left unset it is *derived* from `size`
+  (small→short, medium→moderate, large→long).
+
+Every test here declares a `size` and none declares a `timeout` — the suite runs
+on size-derived caps. Measured locally (warm, CPU, under parallel load), the
+shape is:
+
+| test | size | cap | actual |
+|---|---|---|---|
+| `fri:verifier_test` | medium | 300 s | **135 s** |
+| `commit:openings_test` | medium | 300 s | **130 s** |
+| `commit:trace_commit_test` | large | 900 s | 90 s |
+| `fri:prover_test` | medium | 300 s | 49 s |
+| `commit:linear_hash_test` | medium | 300 s | 39 s |
+| everything else | small/medium | 60–300 s | 2–6 s |
+
+The two to watch are `verifier_test` and `openings_test`, **not** the `large`
+one: they sit at ~45% of a 300 s cap, while `trace_commit_test` uses 10% of its
+900 s. Declare a **`timeout` explicitly** if you push either past ~150 s, rather
+than leaning on the derived default. Why: a dependency bump (a wheel or the zorch
+pin) invalidates the Bazel cache, so the whole suite re-runs **cold** on the
+shared self-hosted CI runner — which is slower than a local box under parallel
+test load. A test that finishes in 150 s locally can blow past the 300 s
+`medium` cap on CI and fail as a `TIMEOUT` even though nothing is wrong.
+
+Sizes are currently loose in the other direction too — `bazel test //...
+--test_verbose_timeout_warnings` reports `trace_commit_test` as oversized for
+`large` and nine `medium` tests as small enough for `small`. Tightening them
+would buy parallelism; it is not load-bearing, so it hasn't been done.
+
+> A green CI on a branch with **no** recent dep bump is usually an all-cache-hit
+> run, not evidence the tests fit their caps — the cold path only surfaces after
+> a bump. When you bump a dep, sanity-check that the run actually re-ran the
+> heavy tests.
+
+### Fixtures
+
+Two kinds, both vendored and small (KBs), both compared with exact equality —
+field elements either match or they don't.
+
+- **Goldens** (`zisk_zorch/*/testdata/golden/*.json`) pin every primitive that
+  mirrors pil2-stark against pil2-proofman v1.0.0-alpha's own `fields` crate.
+  Generated by the Rust harness in
+  [`../tools/fixture-gen/`](../tools/fixture-gen/) (`cd tools/fixture-gen && cargo
+  run --release`); the rules that keep them reproducible live in
+  [conventions.md](conventions.md#golden-tests-are-the-spec).
+- **Proving-key artifacts** (`zisk_zorch/quotient/testdata/<air>_cexp.json` and
+  `<air>_constraints.json`) carry a ZisK AIR's stage-2 composite-cExp fragment
+  and its per-constraint SSAs, extracted from the ziskup proving key by
+  [`../scripts/extract_cexp.py`](../scripts/extract_cexp.py). These are the
+  reference the re-authored quotient is checked against; the chip constraints
+  it re-authors from arrive separately, through the `rw_constraints` wheel
+  (see [architecture.md](architecture.md#stage-2--constraints-and-interactions)).
+
+## Per-stage baseline against native pil2
 
 How to compare zisk-zorch's GPU prover against ZisK's native pil2-proofman /
 pil2-stark CUDA reference, **per stage**, on the premise that **both prove the
@@ -20,7 +141,7 @@ Only under that premise is a wall-clock comparison meaningful.
 >    baselines*. Do not quote one as "zisk-zorch is Nx pil2" outside this doc
 >    until its row's golden column says so.
 
-## Two numbers that must not be re-quoted
+### Two numbers that must not be re-quoted
 
 - **The "45 ms quotient".** An earlier `quotient` proxy ran 64 constraints of
   degree 3 — **1/55th** of the real Main AIR's op density (#66). It was
@@ -35,7 +156,7 @@ Only under that premise is a wall-clock comparison meaningful.
   other is a ~111× scope error — exactly the confound sp1-zorch had to retract.
   A real total awaits an all-AIR run.
 
-## The benchmark that would be valid (and what's missing)
+### The benchmark that would be valid (and what's missing)
 
 Both sides would prove the **same inner proof** (e.g. the block-24654300 one the
 bench already targets) and their per-stage intermediates would be byte-identical,
@@ -53,7 +174,7 @@ plus the `verify_*` runnables that consume it (#59).
 > fixture, loader, and capture recipe are gone. It is not currently reproducible,
 > so stage-1 cannot carry a `byte-match` mark.
 
-## zisk-zorch side — `bench_inner_proof.py`
+### zisk-zorch side — `bench_inner_proof.py`
 
 **A venv from `requirements.in` alone is CPU-only and will silently benchmark the
 CPU.** The pins name `jax-cuda12-plugin` but none of the `nvidia-*-cu12`
@@ -105,7 +226,7 @@ select). zkbench owns warmup (3) + timed iterations (20) and reports warm
 - The `output_hash` in the report is a self-consistency hash **across zisk-zorch
   runs** — it is *not* a pil2 byte-match and cannot back the golden column.
 
-## Native pil2 side
+### Native pil2 side
 
 **Full inner proof** — the only invocation recorded anywhere (#30):
 
@@ -165,7 +286,7 @@ scan **0.238 ms** = **2.451 ms**, reproducing the recorded 2.45 ms.
 
 `/tmp` is not durable; treat all of this as a stopgap, not the fix.
 
-## Per-stage comparison
+### Per-stage comparison
 
 RTX 5090, one AIR, N=2^22 → N_ext=2^23 (`blowup_bits=1`) unless noted. **Each row
 brackets a different span** — read the notes. ✔ = re-measured 2026-07-15;
@@ -242,7 +363,7 @@ everything else is transcribed from the cited issue.
   (verified), and the earlier recorded numbers came from a separate harness, so
   the short warm list never blocked them.
 
-## Measure shipped code
+### Measure shipped code
 
 A number is only a baseline if it runs what the team **ships**. zisk-zorch has
 three ways to accidentally measure something else:
@@ -274,7 +395,7 @@ test ! -s .bazelrc.user || echo "LOCAL OVERRIDE ACTIVE — move it aside"
 > baseline against a `zorch` override weeks behind `origin/main` and misread it as
 > the shipped number. The same trap is live here.
 
-## Size caveat
+### Size caveat
 
 Never compare across differently-sized inputs.
 
@@ -288,7 +409,7 @@ Never compare across differently-sized inputs.
 - **The FRI schedule must be production**: uniform drop-3 to nBits 5
   (`[22,19,16,13,10,7,5]` dominant). ZisK uses no non-uniform schedule.
 
-## References
+### References
 
 - Template: sp1-zorch [`docs/sp1-baseline.md`](https://github.com/fractalyze/sp1-zorch/blob/499fe71852de/docs/sp1-baseline.md).
 - This doc: #60. Byte-match runnables (the missing gate): #59.

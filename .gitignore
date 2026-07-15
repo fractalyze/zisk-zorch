@@ -22,8 +22,9 @@ dist/
 .venv/
 venv/
 
-# Rust golden harness build output
-/golden/target/
+# Rust fixture generator build output (tools/fixture-gen/.gitignore also
+# carries /target so the crate stays self-contained, as sp1-zorch's does)
+/tools/fixture-gen/target/
 
 # Compiled / vendored shared libs are opt-in only
 *.so
