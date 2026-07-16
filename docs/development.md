@@ -1,17 +1,17 @@
 # Development guide
 
-Everything needed to build, test, and benchmark zisk-zorch: the environment
-setup, the test conventions, and the per-stage baseline against native pil2. For
-the prover's structure see [architecture.md](architecture.md); for coding style
-see [conventions.md](conventions.md).
+Everything needed to build, test, and benchmark zisk-zorch: the environment, the
+test conventions, and the per-stage baseline against native pil2. For the
+prover's structure see [architecture.md](architecture.md); for coding style see
+[conventions.md](conventions.md).
 
 ## Development environment
 
 Pure Python on frx + the Fractalyze [xla](https://github.com/fractalyze/xla)
-fork's PJRT plugin (the `frx-cuda12` wheels), built with Bazel 9 (bzlmod).
-`zisk-zorch` consumes `zorch` as a dev-release wheel from the Fractalyze index,
-pinned in [`../requirements.in`](../requirements.in), so `frx` and `zk_dtypes`
-resolve once there.
+fork's PJRT plugin, built with Bazel 9 (bzlmod). `zorch` arrives as a dev-release
+wheel from the Fractalyze index, pinned in
+[`../requirements.in`](../requirements.in), so `frx` and `zk_dtypes` resolve once
+there.
 
 ```sh
 python3.11 -m venv .venv && . .venv/bin/activate
@@ -20,23 +20,17 @@ pip install -r requirements.in \
 bazel test //...                 # hermetic, sandboxed; JAX_PLATFORMS=cpu default
 ```
 
-For iterative dev outside Bazel, source the venv and put the repo on the path:
+For iterative dev outside Bazel: `export PYTHONPATH="$PWD"`.
+
+**A venv from `requirements.in` has no GPU.** The pins name `frx-cuda12-plugin`,
+but `frx_plugins/xla_cuda12` resolves its CUDA extensions by importing
+`jax_cuda13_plugin` / `jax_cuda12_plugin` / `jaxlib.cuda` — never
+`frx_cuda12_plugin`. `initialize()` then asserts on `cuda_versions is None`, the
+`cuda` backend never registers, and work silently runs on the CPU. Assert the
+device before trusting any GPU number:
 
 ```sh
-export PYTHONPATH="$PWD"
-```
-
-**A venv from `requirements.in` alone is CPU-only.** The pins name
-`frx-cuda12-plugin` but none of the `nvidia-*-cu12` libraries it loads, so
-`frx.devices()` returns `[CpuDevice(id=0)]` and a GPU run silently benchmarks the
-CPU. For GPU work install the extra at the **same pinned version** and assert the
-device:
-
-```sh
-pip install -r requirements.in \
-    "frx-cuda12-plugin[with-cuda]==$(sed -n 's/^frx-cuda12-plugin==//p' requirements.in)" \
-    --extra-index-url https://fractalyze.github.io/pypi/simple/
-python -c 'import frx; print(frx.devices())'    # must show CudaDevice, not CpuDevice
+python -c 'import frx; print(frx.devices())'   # must show CudaDevice, not CpuDevice
 ```
 
 ## Testing
@@ -45,414 +39,217 @@ python -c 'import frx; print(frx.devices())'    # must show CudaDevice, not CpuD
 bazel test //...     # hermetic, sandboxed; JAX_PLATFORMS=cpu by default
 ```
 
-Tests are backend-agnostic. [`.bazelrc`](../.bazelrc) pins
-`JAX_PLATFORMS=cpu` so a plain `bazel test` is deterministic on any machine —
-CPU is the default, not a requirement. CI overrides it per matrix leg
-(`--test_env=JAX_PLATFORMS=cuda` on the GPU leg).
-
-`//...` is the whole suite on either backend: the executing pil2 byte-match
-tests (poseidon2 / transcript / commit / fri) were GPU-only until the zorch
-bump to `dev20260622060558` brought in the CPU emitter's EF-bitcast +
-Poseidon2 `external_m4` fix ([fractalyze/zkx#755](https://github.com/fractalyze/zkx/issues/755)
-— filed while the compiler stack was still zkx; it's the
-[fractalyze/xla](https://github.com/fractalyze/xla) fork now), which let their
-`gpu` tags be dropped. Nothing carries a `gpu` tag today.
+[`.bazelrc`](../.bazelrc) pins `JAX_PLATFORMS=cpu` so a plain `bazel test` is
+deterministic on any machine — CPU is the default, not a requirement. CI
+overrides it per matrix leg. `//...` is the whole suite on either backend; the
+`-gpu` tag filter currently matches nothing.
 
 ### Test sizing & timeouts
 
-`size` and `timeout` are independent knobs:
-
-- **`size`** (`small`/`medium`/`large`) is a *resource* hint: roughly how much
-  RAM/CPU the test needs, which governs how many run in parallel.
-- **`timeout`** (`short`/`moderate`/`long`/`eternal` = 60/300/900/3600 s) is the
-  wall-clock cap. When left unset it is *derived* from `size`
-  (small→short, medium→moderate, large→long).
-
-Every test here declares a `size` and none declares a `timeout` — the suite runs
-on size-derived caps. Measured locally (warm, CPU, under parallel load), the
-shape is:
+`size` and `timeout` are independent knobs: **`size`** (`small`/`medium`/`large`)
+is a resource hint governing parallelism; **`timeout`**
+(`short`/`moderate`/`long`/`eternal` = 60/300/900/3600 s) is the wall-clock cap,
+derived from `size` when unset. Every test here declares a `size` and none
+declares a `timeout`. Measured locally (warm, CPU, under parallel load):
 
 | test | size | cap | actual |
 |---|---|---|---|
 | `fri:verifier_test` | medium | 300 s | **135 s** |
 | `commit:openings_test` | medium | 300 s | **130 s** |
 | `commit:trace_commit_test` | large | 900 s | 90 s |
-| `fri:prover_test` | medium | 300 s | 49 s |
-| `commit:linear_hash_test` | medium | 300 s | 39 s |
-| everything else | small/medium | 60–300 s | 2–6 s |
+| everything else | small/medium | 60–300 s | 2–49 s |
 
 The two to watch are `verifier_test` and `openings_test`, **not** the `large`
-one: they sit at ~45% of a 300 s cap, while `trace_commit_test` uses 10% of its
-900 s. Declare a **`timeout` explicitly** if you push either past ~150 s, rather
-than leaning on the derived default. Why: a dependency bump (a wheel or the zorch
-pin) invalidates the Bazel cache, so the whole suite re-runs **cold** on the
-shared self-hosted CI runner — which is slower than a local box under parallel
-test load. A test that finishes in 150 s locally can blow past the 300 s
-`medium` cap on CI and fail as a `TIMEOUT` even though nothing is wrong.
+one: they sit at ~45% of a 300 s cap while `trace_commit_test` uses 10% of its
+900 s. Declare a **`timeout` explicitly** if you push either past ~150 s. A
+dependency bump invalidates the Bazel cache, so the suite re-runs **cold** on the
+shared CI runner — slower than a local box under parallel load, and a test that
+finishes in 150 s here can blow the 300 s `medium` cap there and fail as
+`TIMEOUT`.
 
-Sizes are currently loose in the other direction too — `bazel test //...
---test_verbose_timeout_warnings` reports `trace_commit_test` as oversized for
-`large` and nine `medium` tests as small enough for `small`. Tightening them
-would buy parallelism; it is not load-bearing, so it hasn't been done.
+> A green CI on a branch with no dep bump is usually an all-cache-hit run (the
+> remote cache is shared with dev boxes), not evidence the tests fit their caps.
 
-> A green CI on a branch with **no** recent dep bump is usually an all-cache-hit
-> run, not evidence the tests fit their caps — the cold path only surfaces after
-> a bump. When you bump a dep, sanity-check that the run actually re-ran the
-> heavy tests.
+Sizes are loose in the other direction too — `--test_verbose_timeout_warnings`
+flags `trace_commit_test` as oversized and nine `medium` tests as `small`-able.
 
 ### Fixtures
 
-Two kinds, both vendored and small (KBs), both compared with exact equality —
-field elements either match or they don't.
+Two kinds, both vendored, small, and compared with exact equality — field
+elements either match or they don't.
 
 - **Goldens** (`zisk_zorch/*/testdata/golden/*.json`) pin every primitive that
   mirrors pil2-stark against pil2-proofman v1.0.0-alpha's own `fields` crate.
-  Generated by the Rust harness in
-  [`../tools/fixture-gen/`](../tools/fixture-gen/) (`cd tools/fixture-gen && cargo
-  run --release`); the rules that keep them reproducible live in
-  [conventions.md](conventions.md#golden-tests-are-the-spec).
-- **Proving-key artifacts** (`zisk_zorch/quotient/testdata/<air>_cexp.json` and
-  `<air>_constraints.json`) carry a ZisK AIR's stage-2 composite-cExp fragment
-  and its per-constraint SSAs, extracted from the ziskup proving key by
-  [`../scripts/extract_cexp.py`](../scripts/extract_cexp.py). These are the
-  reference the re-authored quotient is checked against; the chip constraints
-  it re-authors from arrive separately, through the `rw_constraints` wheel
-  (see [architecture.md](architecture.md#stage-2--constraints-and-interactions)).
+  Regenerate with `cd tools/fixture-gen && cargo run --release`; the rules that
+  keep them reproducible live in
+  [conventions.md](conventions.md#golden-tests-are-the-spec). A clean
+  `git status` afterwards is the byte-match.
+- **Proving-key artifacts** (`quotient/testdata/<air>_{cexp,constraints}.json`)
+  carry a ZisK AIR's stage-2 composite-cExp fragment and per-constraint SSAs,
+  extracted from the ziskup proving key by
+  [`../scripts/extract_cexp.py`](../scripts/extract_cexp.py).
 
 ## Per-stage baseline against native pil2
 
-How to compare zisk-zorch's GPU prover against ZisK's native pil2-proofman /
-pil2-stark CUDA reference, **per stage**, on the premise that **both prove the
-same instance, at the same scope, and produce the same output** (byte-match).
-Only under that premise is a wall-clock comparison meaningful.
+How to compare this prover against ZisK's native pil2-stark CUDA reference **per
+stage**, on the premise that both prove the same instance, at the same scope, and
+produce the same output. Only under that premise is a wall-clock comparison
+meaningful.
 
-> **Read this first — two independent reasons no number here is a baseline yet.**
->
-> 1. **Provenance.** Every row marked ✔ was measured on 2026-07-15, both sides,
->    on the same box (RTX 5090, driver 595.71.05) against main's shipped pins.
->    **extend, commit, quotient, LogUp and FRI** run on `origin/main`. **evals and
->    DEEP were measured on the wiring this branch brings in** (#61's `deep/` plus
->    #67's compile fix) — they do not exist on `origin/main` yet, so they are what
->    ships *if this branch lands*, not what ships today.
->    Where a re-measurement disagreed with the recorded figure, the measurement
->    wins and the delta is called out.
-> 2. **No same-output gate.** Not one stage has a reproducible byte-match against
->    a real pil2-stark dump. The ratios are therefore *engineering signal, not
->    baselines*. Do not quote one as "zisk-zorch is Nx pil2" outside this doc
->    until its row's golden column says so.
+> **No row here is a baseline yet.** Not one stage has a reproducible byte-match
+> against a real pil2 dump — `tools/fixture-gen` pins primitives on tiny
+> synthetic inputs, and #59's real-dump harness was never committed. The ratios
+> are engineering signal. Do not quote one as "zisk-zorch is Nx pil2" outside
+> this page.
 
-### Two numbers that must not be re-quoted
+**Numbers that must not be re-quoted:**
 
-- **The "45 ms quotient".** An earlier `quotient` proxy ran 64 constraints of
-  degree 3 — **1/55th** of the real Main AIR's op density (#66). It was
-  drastically undersized, not a win. The calibrated proxy (900 x degree-9)
-  measures **77.0 ms** at 2^23.
-- **The "~270 ms quotient" that replaced it.** Also not a real number: it was
-  extrapolated from sizes where XLA had not yet fused the proxy. Measured, 2^23
-  is 77.0 ms. See the quotient note below.
-- **Any per-leg ms against the 24.6 s `GENERATING_INNER_PROOFS`.** That phase is
-  the **whole** inner proof across **111 AIR instances** of block 24654300 (#30);
-  `bench_inner_proof.py` times **one** AIR at one height. Dividing one into the
-  other is a ~111× scope error — exactly the confound sp1-zorch had to retract.
-  A real total awaits an all-AIR run.
-
-### The benchmark that would be valid (and what's missing)
-
-Both sides would prove the **same inner proof** (e.g. the block-24654300 one the
-bench already targets) and their per-stage intermediates would be byte-identical,
-so per-stage wall-clocks compare the same computation.
-
-**The gate does not exist yet.** `golden/` pins each primitive against
-pil2-proofman v1.0.0-alpha's `fields` crate, but only on *tiny synthetic* inputs —
-it cannot show that the assembled prover reproduces pil2 on a real block (#59).
-The blocking sub-task is a **pil2-proofman per-stage dump** of a real inner proof,
-plus the `verify_*` runnables that consume it (#59).
-
-> Stage-1's commit root **was** byte-matched once against a real pil2-stark CUDA
-> dump (2026-07-10, #59's first slice). **No artifact survives** — the harness was
-> never committed on any branch (only orphaned `.pyc` remain), and its dump
-> fixture, loader, and capture recipe are gone. It is not currently reproducible,
-> so stage-1 cannot carry a `byte-match` mark.
+- **"45 ms quotient"** — a proxy of 64 degree-3 constraints, 1/55th of Main's op
+  density (#66).
+- **"~270 ms quotient"** — extrapolated from sizes where XLA had not yet fused
+  the proxy; the fused 2^23 measures far less.
+- **"77 ms quotient" / "0.58x"** — measured before `_make_eval_fn` drew distinct
+  columns, so CSE folded 900 constraints down to 38: ~1/24th of the claimed
+  density.
+- **Any per-leg ms against the 24.6 s `GENERATING_INNER_PROOFS`** — that phase is
+  the whole inner proof across **111 AIR instances** of block 24654300 (#30);
+  this bench times **one** AIR. A ~111x scope error.
 
 ### zisk-zorch side — `bench_inner_proof.py`
 
-**A venv from `requirements.in` alone is CPU-only and will silently benchmark the
-CPU.** The pins name `frx-cuda12-plugin` but none of the `nvidia-*-cu12`
-libraries it loads, so `frx.devices()` returns `[CpuDevice(id=0)]` and
-`JAX_PLATFORMS=cuda` fails with *"Backend 'cuda' is not in the list of known
-backends"*. Install the extra at the **same pinned version**:
-
-```sh
-pip install -r requirements.in \
-    "frx-cuda12-plugin[with-cuda]==$(sed -n 's/^frx-cuda12-plugin==//p' requirements.in)" \
-    --extra-index-url https://fractalyze.github.io/pypi/simple/
-python -c 'import frx; print(frx.devices())'    # must show CudaDevice, not CpuDevice
-```
-
-Then, the run that produced the ✔ extend rows above:
-
 ```sh
 CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_PREALLOCATE=false \
-PYTHONPATH=<zisk-zorch> \
-  python -m zisk_zorch.bench_inner_proof \
+  bazel run //zisk_zorch:bench_inner_proof -- \
     --stages=extend --n_bits=22 --n_cols=38 --blowup_bits=1 --phase runtime \
-    -o report.json      # --n_cols=24 for cm2
+    -o report.json
 ```
 
-Stages: `extend`, `commit`, `full`, `quotient`, `divide`, `fri` (`--stages` to
-select). zkbench owns warmup (3) + timed iterations (20) and reports warm
-`latency`, `compile_time`, and a device-memory high-water mark.
+zkbench owns warmup (3) + timed iterations (20) and reports warm `latency`,
+`compile_time`, and a device-memory high-water mark.
 
-- **`CUDA_VISIBLE_DEVICES=0` is load-bearing** on this box — device enumeration
-  wedges otherwise (#65).
-- **Use `--arity=4` for FRI** — production arity, and what the pil2 native runs.
-  (It only started working with the warm-list fix in this change; before that it
-  raised `TracerArrayConversionError`.)
-- **A `RESOURCE_EXHAUSTED` at 2^23 is usually not the card.** JAX caps the BFC
-  allocator at ~75% of the GPU (23.5 GiB of this 5090's 31.8), so a working set
-  in the 24–30 GiB band OOMs at the default and runs with
-  `XLA_PYTHON_CLIENT_MEM_FRACTION=0.95`. This is what forced #68/#69 to
-  extrapolate; at 0.95 both measure directly at the native's size. Reach for it
-  before assuming a stage does not fit.
-- **Do NOT `frx.profiler.trace` at 2^23.** It leaks host RAM, spikes load, and
-  wedges CUDA (#65). Decompose by direct sub-op timing instead.
-- **Run `--phase compile` and `--phase runtime` as separate invocations.** The
-  memory peak is process-cumulative — PJRT exposes no portable per-op reset.
-- **The default flags are not production-shaped.** `--n_cols` defaults to 64,
-  which matches no real AIR (Main is 38 cm1 / 24 cm2), and `--arity` defaults to
-  2 while production is 4. `--fold_bits=3` is the uniform factor-8 drop every
-  ZisK starkStruct uses; a drop-2 schedule no ZisK config uses would add tail
-  rounds and overstate the fold.
-- The `output_hash` in the report is a self-consistency hash **across zisk-zorch
-  runs** — it is *not* a pil2 byte-match and cannot back the golden column.
+- **`CUDA_VISIBLE_DEVICES=0` is load-bearing** here — device enumeration wedges
+  otherwise (#65).
+- **A `RESOURCE_EXHAUSTED` at 2^23 is usually not the card.** frx caps the
+  allocator at ~75% of the GPU (23.5 of this 5090's 31.8 GiB);
+  `XLA_PYTHON_CLIENT_MEM_FRACTION=0.95` runs sizes that otherwise appear not to
+  fit. This is what forced #68/#69 to extrapolate.
+- **Do NOT `frx.profiler.trace` at 2^23** — it leaks host RAM and wedges CUDA
+  (#65). Decompose by direct sub-op timing.
+- **Run `--phase compile` and `--phase runtime` separately** — the memory peak is
+  process-cumulative.
+- **The defaults are not production-shaped**: `--n_cols` defaults to 64 (Main is
+  38 cm1 / 24 cm2) and `--arity` to 2 (production is 4).
+- **`--n_constraints` is only as real as the products are distinct.**
+  `_make_eval_fn` draws each constraint's columns from a seeded RNG so the 900
+  products over 38 columns are distinct; picking them in index order repeats a
+  tuple every `n_cols` and CSE folds the repeats away, silently measuring a
+  fraction of the requested density. `bench_inner_proof_test` pins this.
+- The report's `output_hash` is a self-consistency hash across zisk-zorch runs —
+  *not* a pil2 byte-match.
 
 ### Native pil2 side
 
-**Full inner proof** — the only invocation recorded anywhere (#30):
+**Full inner proof** — the only invocation recorded (#30): `cargo-zisk 0.18.0
+[gpu] --emulator --no-aggregation` on mainnet block 24654300 → ~47 s wall, 111
+AIR instances, of which `GENERATING_INNER_PROOFS` = **24.6 s**. Note the version
+skew: that is pil2-proofman **v0.18.0**, while the goldens pin **v1.0.0-alpha**.
 
-```
-cargo-zisk 0.18.0 [gpu]  --emulator --no-aggregation     # mainnet block 24654300
-```
-
-→ ~47 s wall, 7.41 GB peak, 111 AIR instances, of which `GENERATING_INNER_PROOFS`
-= **24.6 s**. Block choice is constrained: block 21740136's procured input is
-version-incompatible with the bundled `zec-reth.elf` (`Deserialization
-UnexpectedEof`) — use 24654300 or re-procure.
-
-> **Version skew.** `cargo-zisk 0.18.0` is pil2-proofman **v0.18.0**, but the
-> goldens pin **v1.0.0-alpha**. The 24.6 s was measured against a different
-> reference than this repo byte-matches.
-
-**Per-stage** — ⚠️ **no native per-stage bench is reproducible *from this repo*.**
-Every native figure came from Google-Benchmark binaries and hand-lifted CUDA
-kernels built ad-hoc under `/tmp/claude-1006/` on one box (`main_bench`,
-`fri_bench`, `evmap_bench`, `friexp_bench`, `ntt_bench`, `merkle_bench`; pil2
-source at `/tmp/claude-1006/pil2-proofman/pil2-stark`, build scripts alongside).
-Rebuilding them behind a committed script is open work.
-
-While that scratch dir survives, the extend and quotient natives do run:
+**Per-stage** — ⚠️ not reproducible *from this repo*. The figures come from
+Google-Benchmark binaries and hand-lifted CUDA kernels built ad-hoc under
+`/tmp/claude-1006/` (`main_bench`, `fri_bench`, `evmap_bench`, `friexp_bench`,
+`gsum_bench`; pil2 source alongside). Rebuilding them behind a committed script is
+open work. `bench_main_proof_gpu.cu` is the authority on what each row must match:
+N=2^22, N_ext=2^23, cm1=38 / cm2=24, Merkle **W=16 arity=4**.
 
 ```sh
-cd /tmp/claude-1006
-LD_LIBRARY_PATH=/tmp/claude-1006/gmp-prefix/lib CUDA_VISIBLE_DEVICES=0 \
+cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=0 \
   ./main_bench --benchmark_filter='MAIN_EXPR_PATTERN|MAIN_LDE_CM1|MAIN_LDE_CM2|MAIN_MERKLE' \
-    --benchmark_min_time=5x --benchmark_repetitions=3 \
-    --benchmark_report_aggregates_only=true
+    --benchmark_min_time=5x --benchmark_repetitions=3 --benchmark_report_aggregates_only=true
+./fri_bench     # no flags; arity 4 and [23,20,17,14,11,8,5] compiled in
+./gsum_bench    # no flags; sweeps log2N, I=8
+./evmap_bench; ./friexp_bench   # each prints 1-opening THEN 2-opening — the rows below use 1
 ```
-
-`bench_main_proof_gpu.cu` pins the Main AIR's real production dims and is the
-authority for what each row must match: N=2^22, N_ext=2^23, cm1=38 / cm2=24
-columns, Merkle **W=16 arity=4**.
-
-Re-run 2026-07-15 (RTX 5090, driver 595.71.05): `MAIN_LDE_CM1` **32.5 ms**
-(cv 0.10%), `MAIN_LDE_CM2` **20.4 ms** (cv 0.03%), `MAIN_EXPR_PATTERN` **133 ms**
-(cv 0.15%), `MAIN_MERKLE_STAGE1` **36.6 ms** (cv 1.07%), `MAIN_MERKLE_STAGE2`
-**19.9 ms** (cv 0.22%) — reproducing the recorded 32.5 / 20.4 / 134; the merkle
-absolutes were previously unrecorded.
-
-FRI likewise (`./fri_bench`, same env; it takes no flags — arity 4 and the
-`[23,20,17,14,11,8,5]` schedule are compiled in): fold **3.27 ms**, merkle
-**4.56 ms**, total **7.84 ms** (best of 7), reproducing the recorded
-3.29 / 4.56 / 7.86.
-
-evals / DEEP: `./evmap_bench` and `./friexp_bench` (optional arg = reps,
-default 7). Each prints **two** cases — 1 opening point then 2; the rows above
-use **1 opening**, so do not read the last block. Re-run 2026-07-15: evmap
-**3.72 ms**, friexp **8.88 ms** (recorded 3.70 / 8.90).
-
-LogUp: `./gsum_bench` (no flags; sweeps log2N, I=8 compiled in). At log2N=22 it
-pairs pil2's own Blelloch scan with the cubic inv+fold: invfold **2.213 ms** +
-scan **0.238 ms** = **2.451 ms**, reproducing the recorded 2.45 ms.
-
-`/tmp` is not durable; treat all of this as a stopgap, not the fix.
 
 ### Per-stage comparison
 
-RTX 5090, one AIR, N=2^22 → N_ext=2^23 (`blowup_bits=1`) unless noted. **Each row
-brackets a different span** — read the notes. ✔ = re-measured 2026-07-15;
-everything else is transcribed from the cited issue.
+RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-16. Each
+row brackets a different span (FRI excludes the query phase; commit excludes its
+extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 
-| stage | native pil2 | zisk-zorch | ratio | golden | on main? |
-|---|---|---|---|---|---|
-| **extend cm1 (38 col)** | **32.5 ms** ✔ | **23.7 ms** ✔ | **0.73×** ✔ | unit golden only | ✅ **shipped** |
-| **extend cm2 (24 col)** | **20.4 ms** ✔ | **14.9 ms** ✔ | **0.73×** ✔ | unit golden only | ✅ **shipped** |
-| extend cm1, with #63 | 32.5 ms ✔ | 18.7 ms | 0.58× | unit golden only | ❌ needs #63 |
-| extend cm2, with #63 | 20.4 ms ✔ | 11.8 ms | 0.58× | unit golden only | ❌ needs #63 |
-| **commit stage1 (38 col)** | **36.6 ms** ✔ | **38.8 ms** ✔ | **1.06×** ✔ | unit golden only | ✅ **shipped** |
-| **commit stage2 (24 col)** | **19.9 ms** ✔ | **20.9 ms** ✔ | **1.05×** ✔ | unit golden only | ✅ **shipped** |
-| quotient (constraint eval) | 133 ms ✔ | **77.0 ms** ✔ | 0.58× ⚠️ | unit golden only | ✅ shipped — but proxy/proxy |
-| — zerofier divide | *(bracketed)* | 0.32 ms | parity | unit golden only | ✅ |
-| **LogUp grand-sum (I=8)** | **2.45 ms** ✔ | **9.61 ms** ✔ | **3.92×** ✔ | unit golden only | ✅ **shipped** |
-| LogUp grand-sum, with #64 | 2.45 ms ✔ | 3.20 ms | 1.30× | unit golden only | ❌ #64 open |
-| **evals (`evmap`)** | **3.72 ms** ✔ | **15.8 ms** ✔ | **4.25×** ✔ | none | ✅ this branch (#61) |
-| **DEEP (`computeFRIExpression`)** | **8.88 ms** ✔ | **15.6 ms** ✔ | **1.76×** ✔ | **none** | ✅ this branch (#61 + #67) |
-| **FRI total (queries excl.)** | **7.84 ms** ✔ | **19.5 ms** ✔ | **2.49×** ✔ | unit golden only | ✅ **shipped** |
-| — FRI fold | 3.27 ms ✔ | 14.75 ms | 4.48× | unit golden only | ✅ shipped |
-| — FRI merkle | 4.56 ms ✔ | ~5.09 ms | ~1.12× | unit golden only | ✅ shipped |
-| FRI total (INTT fold) | 7.84 ms ✔ | ~6.5 ms | ~0.83× | unit golden only | ❌ #70 + zorch#456 |
+| stage | native pil2 | zisk-zorch | ratio | on main? |
+|---|---|---|---|---|
+| extend cm1 (38 col) | 32.5 ms | 23.6 ms | **0.73×** | ✅ |
+| extend cm2 (24 col) | 20.4 ms | 15.0 ms | **0.73×** | ✅ |
+| commit stage1 (38 col) | 36.6 ms | 38.9 ms | **1.06×** | ✅ |
+| commit stage2 (24 col) | 19.9 ms | 21.0 ms | **1.05×** | ✅ |
+| quotient ⚠️ | 133 ms @2^23 | 92.5 ms @2^21 | — | sizes differ; see below |
+| LogUp grand-sum (I=8) | 2.45 ms | 9.81 ms | **4.00×** | ✅ (not in the spine) |
+| evals (`evmap`) | 3.72 ms | 15.8 ms | **4.25×** | ❌ #61 |
+| DEEP (`friExp`) | 8.88 ms | 15.6 ms | **1.76×** | ❌ #61 |
+| FRI total (queries excl.) | 7.84 ms | 19.7 ms | **2.49×** | ✅ |
 
-⚠️ **= proxy or extrapolation. Specifically:**
+Open PRs move three: #63 takes extend to 0.58×, #64 LogUp to 1.30×, #70 +
+zorch#456 FRI to 0.83× (its fold is 14.75 of the 19.7 ms). #69 is the evals/DEEP
+gap — our committed buffer embeds every base column to cubic, so it is 2.55× the
+native's reads.
 
-- **`quotient` is still proxy-vs-proxy, but #66's "~270 ms / ~2.0× slower" does
-  not survive measurement.** #66 measured at ≤2^21 and extrapolated to ~270 ms,
-  believing 2^22+ OOMs at ~44 GB. On main's shipped pins (2026-07-15) the real
-  2^23 run is **77.0 ms at 5.13 GiB peak** — no OOM. The extrapolation failed
-  because the proxy changes regime: at ≤2^21 XLA materializes the intermediates
-  (9.91 GiB, ~33 ns/row); at ≥2^22 it fuses them (5.13 GiB, **~9.2 ns/row**), so
-  projecting from the unfused sizes over-predicts by ~3.5×. The work is real —
-  time scales with `--n_constraints` (225 / 450 / 900 → 33.2 / 47.6 / 77.0 ms).
-  **The "we are ~2× slower on quotient" reading is unsupported; measured, the
-  proxy is faster than the native proxy.** What has *not* changed is that both
-  sides are proxies — ours is 900 independent degree-9 products, the native is a
-  density mimic tuned to the real ~135 ms kernel, not the interpreter — so 0.58×
-  is not a baseline. Settling it still needs the real Main constraints through
-  `constraint_eval` (#66).
-- **`evals` and `DEEP` zisk-zorch numbers are extrapolated** from 2^19–2^21 (both
-  OOM at 2^22+); the native figures are real runs. Their code lives on the
-  unmerged wire branch (#61), and DEEP additionally depends on #67.
-- **evals and DEEP are branch numbers, and both extrapolations held.** #68
-  predicted ~4.3× and #69 ~1.8×; measured directly at the native's config
-  (n_ext=2^23, M=68) they are **4.25×** (15.80 vs 3.72 ms) and **1.76×** (15.64 vs
-  8.88 ms). Unlike quotient, these projections were sound. Both are measured on
-  the wiring this branch adds (#61 + #67), not on `origin/main`. The DEEP gap is the one #69 names: our
-  committed buffer is 68 *cubic* columns (12.75 GiB) where the native holds 62
-  base + 6 cubic = 80 gl64 (5.37 GiB), so base columns embedded to cubic cost
-  ~2.4x the reads.
-- **Bracket boundaries differ**: `fri` excludes the query phase; `commit` excludes
-  the extend it depends on; native `MAIN_EXPR` excludes the INTT-back and Merkle.
-- **`extend` 0.58× is cumulative over three levers** (xla#254 + #63 + xla#257).
-  The plugin ones shipped (#71); **#63 has not**. Main's shipped extend was
-  measured on 2026-07-15 at **0.73× on both column counts** (23.7 ms / 14.9 ms) —
-  already past parity. #63 is what takes it to 0.58×.
-- **`LogUp` on main is 3.92×, not the 1.30× #64 reports.** The recorded arc
-  (11.39 → 7.09 → 3.51 → 3.20 ms) was captured on locally-built plugins, so its
-  intermediate points are not comparable to a shipped-pin run; main measured
-  **9.61 ms** on 2026-07-15. #64 (fused fold + [I,N] layout) is what closes it to
-  1.30×. There is no `gsum` leg in `bench_inner_proof` — this was measured by
-  calling `grand_sum` directly at the native's config (N=2^22, I=8, `[N,I]`
-  cubic).
-- **`commit` runs at arity 4 at production dims**, despite `--arity`'s help text
-  warning that "arity>=3 hits the `merkle_commit` power-of-two leaf-layer limit at
-  scale". It did not bite at 2^23 x 38 — but the default is still 2, so pass
-  `--arity=4` explicitly or you will measure a tree the native never builds.
-- **The `fri` leg runs at production arity as of this change.** It used to warm a
-  hardcoded widths 8 and 12, so `--arity=4` — the arity #49/#65 and the pil2
-  native all use — traced a width-16 perm and died with
-  `TracerArrayConversionError`. It now warms `merkle_tree(arity)`'s width,
-  derived from the flag. FRI itself was never broken: `prove` runs fine at arity 4
-  (verified), and the earlier recorded numbers came from a separate harness, so
-  the short warm list never blocked them.
+**⚠️ quotient has no ratio, and cannot yet.** At Main's density (900 degree-9
+constraints over 38 columns) the proxy measures 47.4 ms at 2^20 rows and 92.5 ms
+at 2^21 — a flat ~44 ns/row, so it scales cleanly. It does not reach 2^23: it
+materializes ~900 full-height intermediates and needs **~55 GiB**, against this
+card's 31.8. The native's 133 ms exists only at 2^23 (`MAIN_EXPR_PATTERN` has
+Main's dims compiled in, no sweep), so there is no same-size pair to divide —
+extrapolating ours to 2^23 would cross the OOM boundary, which is exactly how the
+"~270 ms" came about.
+
+That memory gap is the finding: pil2's bytecode interpreter keeps operands
+register-resident where we materialize — the same shape as #69. The real number
+needs the re-authored Main constraints (#66), which reuse columns instead of
+forming 900 independent products.
 
 ### End-to-end (`prove_inner`)
 
-The per-stage rows above are what this doc can compare. A whole-proof number is
-**not** among them, for two independent reasons.
+Proves at 2^18 × 38 in 101.1 s through the real DEEP combiner. **At 2^22 it does
+not fit**: DEEP's committed buffer is `2^23 × (M+1) × 24B` = **7.31 GiB** at 38
+columns, where native pil2 holds the same columns as 80 gl64 = **5.00 GiB**.
+Predicted and observed agree exactly at both 24 and 38 columns. So **#69 is a
+blocker on running at all**, not a perf item; #64 cannot help (`grand_sum` is not
+in the spine) and #70 targets the fold's speed, not DEEP's footprint.
 
-**There is no pil2 figure to compare against.** The only native total is
-`GENERATING_INNER_PROOFS` = 24.6 s, which covers **111 AIR instances** of block
-24654300. `prove_inner` proves one AIR. Dividing one into the other is the ~111x
-scope error listed above as un-quotable, and the per-stage natives cannot be
-summed into a total either — their brackets differ (FRI excludes the query phase,
-commit excludes its extend, `MAIN_EXPR` excludes the INTT-back and Merkle).
-
-**And at production size it does not run.** Measured 2026-07-15 on an RTX 5090
-(31.8 GiB), through the real DEEP combiner:
-
-| n_bits | n_cols | result |
-|---|---|---|
-| 14 | 16 | proves, 71.6 s cold |
-| 18 | 38 | proves, 101.1 s cold |
-| 22 | 24 | **OOM** — needs 4.69 GiB more than the card has |
-| 22 | 38 | **OOM** — needs 7.31 GiB more |
-
-The blocking allocation is DEEP's committed buffer, `2^23 x (M+1) x 24B`: it
-embeds every base column to cubic, so 38 trace columns + the quotient cost
-**7.31 GiB** where native pil2 holds the same data as 80 gl64 = **5.00 GiB**
-(62 base + 6 cubic). Predicted and observed agree exactly at both widths, so the
-cause is not in doubt. It surfaces inside `_grind` only because that is the first
-blocking sync after DEEP — frx is async; the traceback names where the queue
-drained, not where the buffer was requested.
-
-That makes **#69 (base columns embedded to cubic) a blocker, not a perf item** —
-it is what stands between this prover and a production-size inner proof on a
-32 GB GPU. Two things that do *not* help: **#64** (LogUp grand-sum) is not in the
-spine at all — `prove_inner` never calls `grand_sum`; and **#70** targets the FRI
-fold's speed (14.75 -> 1.42 ms), not DEEP's footprint.
-
-Nothing verifies these proofs. There is no `verify_inner`, so "it proved" means
-the spine ran and produced roots, a grind nonce, and openings — not that the
-output is correct, and certainly not that it is pil2-conformant (DEEP has no
-golden; see the byte-match note above).
+No whole-proof ratio appears above because none can: the only native total covers
+111 AIRs. And nothing verifies these proofs — there is no `verify_inner`, so "it
+proved" means the spine ran, not that the output is correct.
 
 ### Measure shipped code
 
-A number is only a baseline if it runs what the team **ships**. zisk-zorch has
-three ways to accidentally measure something else:
+A number is only a baseline if it runs what the team **ships**:
 
 ```sh
-# 1. Are the pins the shipped ones? (must be empty)
-git fetch origin && git diff origin/main -- requirements.in requirements_lock_3_11.txt
-
-# 2. Does the venv match the pins?
-grep -E '^(zorch|frx|frxlib|frx-cuda12-(plugin|pjrt)|zk-dtypes)==' requirements.in
-pip show zorch frx frx-cuda12-pjrt | grep -E 'Name|Version'
-
-# 3. Any local source override in play? (must be absent/empty)
+git fetch origin && git diff origin/main -- requirements.in requirements_lock_3_11.txt  # must be empty
+pip show zorch frx frx-cuda12-pjrt | grep -E 'Name|Version'                             # venv == pins?
 test ! -s .bazelrc.user || echo "LOCAL OVERRIDE ACTIVE — move it aside"
 ```
 
-- **zorch is a pip wheel pinned in `requirements.in`**, not a Bazel
-  `git_override` — that knob was removed (#55). A `--override_module=zorch=` line
-  is a no-op today.
-- **`.bazelrc.user` can point `zkx` / `prime_ir` at local checkouts.** Move it
-  aside before a baseline run.
-- **The GPU plugin is whichever `frx-cuda12-pjrt` wheel the venv has** (the
-  fractalyze/xla fork's backend). Perf work often hot-swaps a locally built
-  `pjrt_c_api_gpu_plugin.so` over the wheel's
-  `jax_plugins/xla_cuda12/xla_cuda_plugin.so` — if you did that, **restore the
-  `.orig`** or you are not measuring the shipped plugin.
+`zorch` is a pip wheel pinned in `requirements.in`, not a Bazel `git_override`
+(#55) — an `--override_module=zorch=` line is a no-op. `.bazelrc.user` can point
+`zkx` / `prime_ir` at local checkouts. And perf work often hot-swaps a locally
+built `pjrt_c_api_gpu_plugin.so` over the wheel's — restore the `.orig` or you are
+not measuring the shipped plugin.
 
-> This is not hypothetical. #60 exists partly because sp1-zorch captured a
-> baseline against a `zorch` override weeks behind `origin/main` and misread it as
-> the shipped number. The same trap is live here.
+> Not hypothetical: #60 exists partly because sp1-zorch captured a baseline
+> against a `zorch` override weeks behind `origin/main` and misread it as shipped.
 
 ### Size caveat
 
-Never compare across differently-sized inputs.
-
-- **One block is many inner proofs.** Block 24654300 has 111 AIR instances; a
-  per-AIR ms and the 24.6 s phase total are not the same scope.
-- **AIRs differ in width.** Main is 38 (cm1) / 24 (cm2) columns; DEEP/evals see 68.
-  Always state the column count with the number.
-- **Height is the axis everything scales on.** Every figure here is anchored to
-  N=2^22 / N_ext=2^23. An extrapolated number and a measured one are also a size
-  mismatch — mark them.
-- **The FRI schedule must be production**: uniform drop-3 to nBits 5
-  (`[22,19,16,13,10,7,5]` dominant). ZisK uses no non-uniform schedule.
+Never compare across differently-sized inputs. One block is 111 AIR instances;
+AIRs differ in width (Main is 38 cm1 / 24 cm2, DEEP/evals see 68); height is the
+axis everything scales on, and every figure here is anchored to N=2^22 /
+N_ext=2^23. An extrapolated number and a measured one are also a size mismatch —
+mark them. The FRI schedule must be production: uniform drop-3 to nBits 5
+(`[22,19,16,13,10,7,5]`); ZisK uses no non-uniform schedule.
 
 ### References
 
-- Template: sp1-zorch [`docs/sp1-baseline.md`](https://github.com/fractalyze/sp1-zorch/blob/499fe71852de/docs/sp1-baseline.md).
-- This doc: #60. Byte-match runnables (the missing gate): #59.
-- Per-stage work: extend #58 / #63, commit #54, quotient #66, LogUp #64,
-  evals #68, DEEP #67 / #69, FRI #65 / #70, roadmap #3.
+Template: sp1-zorch [`docs/development.md`](https://github.com/fractalyze/sp1-zorch/blob/main/docs/development.md).
+This page: #60. The missing byte-match gate: #59. Per-stage work: extend #58/#63,
+commit #54, quotient #66, LogUp #64, evals #68, DEEP #67/#69, FRI #65/#70.

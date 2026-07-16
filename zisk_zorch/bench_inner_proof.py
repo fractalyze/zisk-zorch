@@ -65,19 +65,34 @@ def _rand_cubic(length: int, seed: int) -> frx.Array:
 def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
     """`n_constraints` constraints in the trailing axis, each a degree-`degree`
     product of distinct columns — a field-mul proxy for an AIR's constraint
-    expression."""
+    expression.
+
+    Each constraint draws its own column set (seeded by its index, so the proxy
+    stays reproducible). Walking the columns in index order instead would repeat
+    a tuple every `n_cols` constraints, and CSE folds the repeats away: a real
+    AIR reuses columns across constraints but rarely the same product twice, so
+    the duplicates would silently measure a fraction of the requested density."""
     if min(n_cols, n_constraints, degree) < 1:
         raise ValueError(
             f"n_cols/n_constraints/degree must be >= 1, got "
             f"{n_cols}/{n_constraints}/{degree}"
         )
+    if degree > n_cols:
+        raise ValueError(
+            f"degree {degree} needs at least that many columns to draw a distinct "
+            f"product from, got n_cols={n_cols}"
+        )
+    picks = [
+        np.random.default_rng(k).choice(n_cols, size=degree, replace=False)
+        for k in range(n_constraints)
+    ]
 
     def eval_fn(t: frx.Array) -> frx.Array:
         cols = []
-        for k in range(n_constraints):
-            c = t[:, k % n_cols]
-            for d in range(1, degree):
-                c = c * t[:, (k * degree + d) % n_cols]
+        for pick in picks:
+            c = t[:, pick[0]]
+            for j in pick[1:]:
+                c = c * t[:, j]
             cols.append(c)
         return jnp.stack(cols, axis=-1)  # (rows, n_constraints)
 
