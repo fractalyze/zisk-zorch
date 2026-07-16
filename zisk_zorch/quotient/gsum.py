@@ -11,8 +11,9 @@ This module builds the two primitives the witness needs: the per-tuple
 denominator (Horner in `std_alpha`, `+ std_gamma`) and the prefix-sum grand-sum.
 The committed `gsum` column then feeds both the stage-2 commitment and the
 quotient composite's bus / running-sum constraints (see
-docs/stage2-constraint-ingest.md, quotient.py). Host-driven and un-jitted like
-the rest of the proof orchestration.
+docs/stage2-constraint-ingest.md, quotient.py). Host-driven like the rest of the
+proof orchestration, except `grand_sum` — the one pure numeric leaf kernel,
+`@frx.jit`'d so its unrolled fold fuses into a single pass.
 
 std_sum driver: https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L24-L65
 gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/hints.cpp
@@ -20,10 +21,10 @@ gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alp
 
 from __future__ import annotations
 
+import frx
 import frx.numpy as jnp
 from frx import Array
 from zk_dtypes import goldilocks as F
-from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.quotient.field_io import embed, embed_base
 
@@ -44,6 +45,7 @@ def bus_denominator(tuple_: Array, alpha: Array, gamma: Array) -> Array:
     return den + gamma
 
 
+@frx.jit
 def grand_sum(numerators: Array, denominators: Array) -> Array:
     """The committed `gsum` column: the running prefix sum of each row's local
     term `sum_i numerator_i * denominator_i^-1`.
@@ -53,29 +55,10 @@ def grand_sum(numerators: Array, denominators: Array) -> Array:
     `gsum[0]`); the last entry is the airgroup `gsum_result` (modulo pil2's
     single-row direct update, handled by the caller).
     """
-    # The zkx CPU emitter only handles elementwise cubic ops — `jnp.sum`/
-    # `jnp.cumsum` (bitcast-expand), `lax.associative_scan` (interior padding),
-    # and cubic matmul all crash. So fold the (small, static) interaction axis by
-    # hand and take the prefix sum with a Hillis-Steele scan built from the ops
-    # that do survive: slice, concatenate, add.
-    ratio = numerators / denominators
-    local = ratio[:, 0]
-    for i in range(1, ratio.shape[1]):
-        local = local + ratio[:, i]
-    return _prefix_sum(local)
-
-
-def _prefix_sum(x: Array) -> Array:
-    """Inclusive prefix sum over axis 0 via a Hillis-Steele scan (log-depth, only
-    slice/concat/add — the cubic ops the zkx CPU emitter supports)."""
-    n = x.shape[0]
-    acc = x
-    shift = 1
-    while shift < n:
-        pad = jnp.zeros(shift, dtype=F3)
-        acc = acc + jnp.concatenate([pad, acc[:-shift]])
-        shift *= 2
-    return acc
+    local = numerators[:, 0] / denominators[:, 0]
+    for i in range(1, numerators.shape[1]):
+        local = local + numerators[:, i] / denominators[:, i]
+    return jnp.cumsum(local)
 
 
 def _scalar(value) -> Array:
