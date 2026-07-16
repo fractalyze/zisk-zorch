@@ -191,11 +191,15 @@ extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 | DEEP (`friExp`) | 8.88 ms | 15.6 ms | **1.76×** | ❌ #61 |
 | FRI total (queries excl.) | 7.84 ms | 19.7 ms | **2.49×** | ✅ |
 
-The LogUp row already reflects #64 (the `@frx.jit` + `jnp.cumsum` fold fusion,
-now merged): it took grand-sum from 4.00× to 3.23×, and the residual is the cubic
-inverse — `num/den` over 33.5 M cubic elements is ~7 ms of the 7.91 ms, so the
-fold and scan are no longer the bottleneck. Closing to 1.30× needs the Fermat
-inverse for the extension base reciprocal (prime-ir #398, not yet in the pin).
+The LogUp row reflects #64 (the `@frx.jit` + `jnp.cumsum` fold fusion, now
+merged). Its win is the fusion: the pre-#64 path — a Hillis-Steele scan
+materializing the `[N, I]` ratio to HBM — measures ~22 ms (9.0×) at this pin;
+#64 fuses div + fold + scan into one pass and lands at 7.91 ms (3.23×), matching
+the PR's own pre-Fermat figure (25.1 → 7.85 ms). The residual is the cubic
+inverse — `num/den` over 33.5 M cubic elements is ~7 of the 7.91 ms, so the fold
+and scan are no longer the bottleneck. #64's headline 1.43× is on the
+Fermat-inverse plugin; closing this pin's 3.23× to it needs that extension base
+reciprocal (prime-ir #398), not more fold work.
 
 Open PRs move two more: #63 takes extend to 0.58×, and #70 + zorch#456 take FRI
 to 0.83× (its fold is 14.75 of the 19.7 ms). #69 is the evals/DEEP gap — our
