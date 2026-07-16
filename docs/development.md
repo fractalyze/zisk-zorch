@@ -186,15 +186,21 @@ extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 | commit stage1 (38 col) | 36.6 ms | 38.9 ms | **1.06×** | ✅ |
 | commit stage2 (24 col) | 19.9 ms | 21.0 ms | **1.05×** | ✅ |
 | quotient ⚠️ | 133 ms @2^23 | 92.5 ms @2^21 | — | sizes differ; see below |
-| LogUp grand-sum (I=8) | 2.45 ms | 9.81 ms | **4.00×** | ✅ (not in the spine) |
+| LogUp grand-sum (I=8) | 2.45 ms | 7.91 ms | **3.23×** | ✅ (not in the spine) |
 | evals (`evmap`) | 3.72 ms | 15.8 ms | **4.25×** | ❌ #61 |
 | DEEP (`friExp`) | 8.88 ms | 15.6 ms | **1.76×** | ❌ #61 |
 | FRI total (queries excl.) | 7.84 ms | 19.7 ms | **2.49×** | ✅ |
 
-Open PRs move three: #63 takes extend to 0.58×, #64 LogUp to 1.30×, #70 +
-zorch#456 FRI to 0.83× (its fold is 14.75 of the 19.7 ms). #69 is the evals/DEEP
-gap — our committed buffer embeds every base column to cubic, so it is 2.55× the
-native's reads.
+The LogUp row already reflects #64 (the `@frx.jit` + `jnp.cumsum` fold fusion,
+now merged): it took grand-sum from 4.00× to 3.23×, and the residual is the cubic
+inverse — `num/den` over 33.5 M cubic elements is ~7 ms of the 7.91 ms, so the
+fold and scan are no longer the bottleneck. Closing to 1.30× needs the Fermat
+inverse for the extension base reciprocal (prime-ir #398, not yet in the pin).
+
+Open PRs move two more: #63 takes extend to 0.58×, and #70 + zorch#456 take FRI
+to 0.83× (its fold is 14.75 of the 19.7 ms). #69 is the evals/DEEP gap — our
+committed buffer embeds every base column to cubic, so it is 2.55× the native's
+reads.
 
 **⚠️ quotient has no ratio, and cannot yet.** At Main's density (900 degree-9
 constraints over 38 columns) the proxy measures 47.4 ms at 2^20 rows and 92.5 ms
