@@ -76,31 +76,29 @@ def _committed_columns(trace_ext: Array, quotient: Array) -> Array:
     return jnp.concatenate([trace_ext.astype(F3), quotient[:, None]], axis=1)
 
 
-def make_deep_combiner(opening_points: Sequence[int] = (0,)):
-    """A `prove_inner` `fri_polynomial_fn` that runs the real DEEP flow, threading
-    the transcript exactly as pil2's `genProof`: squeeze the OOD `z`, open the
-    committed columns, absorb the openings, squeeze the batching challenge `vf`,
-    and build `f`. `opening_points` are the AIR's wrapped opening shifts (default
-    `(0,)` = open at `z` only)."""
-
-    def combine(ctx) -> Array:
-        columns = _committed_columns(ctx.trace.extended, ctx.quotient)
-        opening_pos = [0] * columns.shape[1]  # all at z; wrapped openings are AIR-specific
-        z = ctx.transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
-        lev = compute_lev(_base_to_cubic(z).reshape(()), list(opening_points), ctx.n_bits)
-        evals = open_columns(
-            columns, lev, opening_pos, n_bits=ctx.n_bits, blowup_bits=ctx.blowup_bits
-        )
-        ctx.transcript.put(_cubic_to_base(evals))  # absorb openings
-        vf = _base_to_cubic(ctx.transcript.get_field()).reshape(())  # batching challenge
-        xis = _ood_points(z, opening_points, ctx.n_bits)
-        return deep_composition(
-            columns, evals, xis, opening_pos, vf,
-            n_bits=ctx.n_bits, blowup_bits=ctx.blowup_bits,
-        )
-
-    return combine
-
-
-# Default DEEP combiner: single opening at z.
-deep_fri_polynomial = make_deep_combiner()
+def deep_fri_polynomial(
+    trace_ext: Array,
+    quotient: Array,
+    transcript,
+    *,
+    n_bits: int,
+    blowup_bits: int,
+    opening_points: Sequence[int] = (0,),
+) -> Array:
+    """The real DEEP flow, threading the transcript exactly as pil2's `genProof`:
+    squeeze the OOD `z`, open the committed columns, absorb the openings, squeeze
+    the batching challenge `vf`, and build `f`. `trace_ext` is the extended trace
+    and `quotient` the cubic quotient codeword (the committed columns);
+    `opening_points` are the AIR's wrapped opening shifts (default `(0,)` = open
+    at `z` only)."""
+    columns = _committed_columns(trace_ext, quotient)
+    opening_pos = [0] * columns.shape[1]  # all at z; wrapped openings are AIR-specific
+    z = transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
+    lev = compute_lev(_base_to_cubic(z).reshape(()), list(opening_points), n_bits)
+    evals = open_columns(columns, lev, opening_pos, n_bits=n_bits, blowup_bits=blowup_bits)
+    transcript.put(_cubic_to_base(evals))  # absorb openings
+    vf = _base_to_cubic(transcript.get_field()).reshape(())  # batching challenge
+    xis = _ood_points(z, opening_points, n_bits)
+    return deep_composition(
+        columns, evals, xis, opening_pos, vf, n_bits=n_bits, blowup_bits=blowup_bits
+    )

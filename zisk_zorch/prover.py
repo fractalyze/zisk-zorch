@@ -25,7 +25,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -82,31 +82,6 @@ class InnerBridge:
     trace_openings: list[list[Array]] | None = None
     quotient_openings: list[list[Array]] | None = None
     fri_openings: list[list[Array]] | None = None
-
-
-@dataclass(frozen=True)
-class FriPolynomialContext:
-    """Everything the DEEP / FRI-polynomial seam may combine, plus the live
-    transcript it squeezes its out-of-domain challenge from. A byte-match
-    implementation reads the committed evaluations here and absorbs/squeezes on
-    `transcript`; the placeholder ignores all but `quotient`."""
-
-    trace: TraceCommitment
-    quotient: Array  # cubic, length 2^n_bits_ext (the extended domain)
-    quotient_root: Array
-    n_bits: int
-    blowup_bits: int
-    transcript: Transcript
-
-
-def quotient_as_fri_polynomial(ctx: "FriPolynomialContext") -> Array:
-    """Runnable placeholder combiner: fold FRI over the quotient codeword itself.
-
-    The quotient is a cubic codeword of length `2^n_bits_ext`, so it is a valid
-    FRI input and drives the whole prover spine end to end. It is NOT pil2's DEEP
-    batching (no out-of-domain openings of the trace), so a proof built with it
-    does not byte-match pil2 — use it for wiring/shape tests, not conformance."""
-    return ctx.quotient
 
 
 class TraceCommitStage(Round):
@@ -179,36 +154,47 @@ class QuotientStage(Round):
 
 
 class DeepStage(Round):
-    """pil2 `calculateFRIPolynomial`: build the codeword FRI folds. Injected, not
-    built here — the DEEP seam owns its out-of-domain squeeze, so it must sit
-    between the quotient's root and the FRI betas on this transcript. The message
-    is the codeword."""
+    """pil2 `calculateFRIPolynomial`: build the codeword FRI folds. Owns its
+    out-of-domain squeeze, so it sits between the quotient's root and the FRI
+    betas on this transcript, reading the committed trace and quotient off the
+    bridge. The message is the codeword."""
 
     def __init__(
         self,
-        fri_polynomial_fn: Callable[[FriPolynomialContext], Array],
         *,
         n_bits: int,
         blowup_bits: int,
+        opening_points: Sequence[int] = (0,),
     ) -> None:
-        self._fri_polynomial_fn = fri_polynomial_fn
         self._n_bits = n_bits
         self._blowup_bits = blowup_bits
+        self._opening_points = opening_points
 
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, Array]:
-        fri_pol = self._fri_polynomial_fn(
-            FriPolynomialContext(
-                trace=bridge.trace_commit,
-                quotient=bridge.quotient,
-                quotient_root=bridge.quotient_root,
-                n_bits=self._n_bits,
-                blowup_bits=self._blowup_bits,
-                transcript=transcript,
-            )
+        fri_pol = deep_fri_polynomial(
+            bridge.trace_commit.extended,
+            bridge.quotient,
+            transcript,
+            n_bits=self._n_bits,
+            blowup_bits=self._blowup_bits,
+            opening_points=self._opening_points,
         )
         return replace(bridge, fri_pol=fri_pol), transcript, fri_pol
+
+
+class QuotientEchoStage(Round):
+    """Placeholder DEEP: fold FRI over the quotient codeword itself, skipping the
+    out-of-domain opening. The quotient is a valid cubic FRI input, so this drives
+    the spine end to end for wiring/shape tests — but it is NOT pil2's DEEP
+    batching (no trace openings), so a proof built with it does not byte-match
+    pil2. Not for conformance."""
+
+    def __call__(
+        self, bridge: InnerBridge, transcript: Transcript
+    ) -> tuple[InnerBridge, Transcript, Array]:
+        return replace(bridge, fri_pol=bridge.quotient), transcript, bridge.quotient
 
 
 class FriStage(Round):
@@ -318,15 +304,14 @@ def prove_inner_chain(
     final_bits: int = 5,
     pow_bits: int = 16,
     n_queries: int = 64,
-    fri_polynomial_fn: Callable[[FriPolynomialContext], Array] | None = None,
+    deep_stage: Round | None = None,
 ) -> ProveChain:
     """The ZisK inner-proof chain. One definition for the stage wiring so the
     benchmark, the byte-match runnables, and proof assembly cannot drift on it.
 
     `n_bits` sizes the base trace domain; the trace itself rides the bridge.
-    `fri_polynomial_fn` supplies the FRI codeword from the committed stages (the
-    DEEP stage); it defaults to the real `deep_fri_polynomial` combiner — pass
-    `quotient_as_fri_polynomial` for the trivial fallback."""
+    `deep_stage` fills the DEEP slot; it defaults to the real `DeepStage` — pass
+    `QuotientEchoStage()` for the trivial fallback that skips the OOD opening."""
     n_bits_ext = n_bits + blowup_bits
     return ProveChain(
         [
@@ -338,11 +323,7 @@ def prove_inner_chain(
                 blowup_bits=blowup_bits,
                 arity=arity,
             ),
-            DeepStage(
-                fri_polynomial_fn or deep_fri_polynomial,
-                n_bits=n_bits,
-                blowup_bits=blowup_bits,
-            ),
+            deep_stage or DeepStage(n_bits=n_bits, blowup_bits=blowup_bits),
             FriStage(
                 steps=_fold_steps(n_bits_ext, fold_bits, final_bits), arity=arity
             ),
@@ -367,14 +348,15 @@ def prove_inner(
     final_bits: int = 5,
     pow_bits: int = 16,
     n_queries: int = 64,
-    fri_polynomial_fn: Callable[[FriPolynomialContext], Array] | None = None,
+    deep_stage: Round | None = None,
     transcript: Transcript | None = None,
 ) -> InnerProof:
     """Run `prove_inner_chain` over one shared `Transcript` and assemble the proof.
 
     `trace` is the `(2^n_bits, n_cols)` base-field evaluation matrix; `eval_fn`
     produces the `n_constraints` constraints in its trailing axis (pil2's cExp
-    order)."""
+    order). `deep_stage` fills the DEEP slot — default real `DeepStage`, or
+    `QuotientEchoStage()` for the trivial fallback."""
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D (rows, cols), got ndim={trace.ndim}")
     n = trace.shape[0]
@@ -391,7 +373,7 @@ def prove_inner(
         final_bits=final_bits,
         pow_bits=pow_bits,
         n_queries=n_queries,
-        fri_polynomial_fn=fri_polynomial_fn,
+        deep_stage=deep_stage,
     )
     bridge, _, _ = chain(InnerBridge(trace=trace), transcript or Transcript())
 

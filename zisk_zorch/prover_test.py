@@ -13,7 +13,7 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import prove_inner, quotient_as_fri_polynomial
+from zisk_zorch.prover import QuotientEchoStage, prove_inner
 
 _N_BITS = 6
 _N_COLS = 8
@@ -46,7 +46,7 @@ def _eval_fn(trace: jnp.ndarray) -> jnp.ndarray:
     return jnp.stack(cols, axis=-1)
 
 
-def _prove(seed: int = 0, fri_polynomial_fn=quotient_as_fri_polynomial):
+def _prove(seed: int = 0, deep_stage=QuotientEchoStage()):
     return prove_inner(
         _trace(seed),
         _eval_fn,
@@ -57,7 +57,7 @@ def _prove(seed: int = 0, fri_polynomial_fn=quotient_as_fri_polynomial):
         final_bits=_FINAL_BITS,
         pow_bits=_POW_BITS,
         n_queries=_N_QUERIES,
-        fri_polynomial_fn=fri_polynomial_fn,
+        deep_stage=deep_stage,
     )
 
 
@@ -98,10 +98,10 @@ class ProveInnerTest(absltest.TestCase):
         )
 
     def test_default_deep_stage_runs(self):
-        # The default fri_polynomial_fn is the real DEEP combiner (opens the
-        # committed columns at the OOD point, absorbs, batches) — exercise the
-        # whole pil2 spine, not just the quotient-passthrough fallback.
-        proof = _prove(fri_polynomial_fn=None)
+        # The default deep_stage is the real DeepStage (opens the committed
+        # columns at the OOD point, absorbs, batches) — exercise the whole pil2
+        # spine, not just the quotient-passthrough fallback.
+        proof = _prove(deep_stage=None)
         self.assertEqual(proof.final_pol.shape, (1 << _FINAL_BITS,))
         self.assertEqual(len(proof.query_positions), _N_QUERIES)
 

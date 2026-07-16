@@ -66,4 +66,5 @@ instead: the OOD opening by the round-trip identity
 `Σ_k LEv[k]·p(shift·g^k) = p(z·g^p)`, the composition by the FRI low-degree test
 (a correct opening folds low, a wrong one does not). Both hold for *any* correct
 DEEP-ALI implementation, so neither pins pil2's choices.
-`quotient_as_fri_polynomial` remains as a trivial FRI-over-quotient fallback.
+`QuotientEchoStage` remains as a trivial FRI-over-quotient fallback for the DEEP
+slot (wiring/shape tests, no OOD opening).
