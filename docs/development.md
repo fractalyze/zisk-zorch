@@ -106,8 +106,11 @@ meaningful.
 
 - **"45 ms quotient"** — a proxy of 64 degree-3 constraints, 1/55th of Main's op
   density (#66).
-- **"~270 ms quotient"** — extrapolated from sizes where XLA had not yet fused
-  the proxy; the fused 2^23 measures far less.
+- **"~270 ms quotient"** — an extrapolation to a size the proxy cannot reach, not
+  a measurement. Do not re-quote it — and do not quote the ~370 ms that
+  extrapolating the *corrected* proxy would give either: 2^23 is two doublings
+  past the OOM boundary below. Quotient has no number at Main's size, in either
+  direction.
 - **"77 ms quotient" / "0.58x"** — measured before `_make_eval_fn` drew distinct
   columns, so CSE folded 900 constraints down to 38: ~1/24th of the claimed
   density.
@@ -195,12 +198,21 @@ native's reads.
 
 **⚠️ quotient has no ratio, and cannot yet.** At Main's density (900 degree-9
 constraints over 38 columns) the proxy measures 47.4 ms at 2^20 rows and 92.5 ms
-at 2^21 — a flat ~44 ns/row, so it scales cleanly. It does not reach 2^23: it
-materializes ~900 full-height intermediates and needs **~55 GiB**, against this
-card's 31.8. The native's 133 ms exists only at 2^23 (`MAIN_EXPR_PATTERN` has
-Main's dims compiled in, no sweep), so there is no same-size pair to divide —
-extrapolating ours to 2^23 would cross the OOM boundary, which is exactly how the
-"~270 ms" came about.
+at 2^21 — a flat ~44 ns/row. **2^22 is its ceiling, and it is a hard one**: the
+proxy materializes ~900 full-height base-field intermediates, so it needs
+`900 × rows × 8 B`, and the model predicts the measurements closely.
+
+| rows | predicted | measured |
+|---|---|---|
+| 2^21 | 14.06 GiB | 13.65 GiB peak, 92.5 ms |
+| 2^22 | 28.1 GiB | **OOM** — a single 21.97 GiB allocation fails |
+| 2^23 | 56.2 GiB | unreachable |
+
+Against ~23.5 GiB usable (frx caps at ~75% of the card's 31.8), 2^22 is already
+out. The native's 133 ms exists only at 2^23 (`MAIN_EXPR_PATTERN` has Main's dims
+compiled in, no sweep), so there is no same-size pair to divide, and closing the
+gap by extrapolation would cross two doublings and the OOM boundary — which is
+how both "~270 ms" and "77 ms" came about.
 
 That memory gap is the finding: pil2's bytecode interpreter keeps operands
 register-resident where we materialize — the same shape as #69. The real number
