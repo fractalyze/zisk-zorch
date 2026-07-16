@@ -25,20 +25,14 @@ from collections.abc import Sequence
 
 import frx.numpy as jnp
 from frx import Array
+from zk_dtypes import goldilocksx3 as F3
 
 from zorch.poly.univariate import powers
 
 from zisk_zorch.deep.opening import open_columns
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
-from zisk_zorch.quotient.zerofier import _ONE, _coset_points, _root
-
-
-def _embed_base(col: Array) -> Array:
-    """A base-field column as cubic elements `(b, 0, 0)` — the embedding under
-    which base×cubic is exact scalar multiplication (cf. `cexp_ref`)."""
-    zero = jnp.zeros_like(col)
-    return _base_to_cubic(jnp.stack([col, zero, zero], axis=-1).reshape(-1))
+from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 
 def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
@@ -46,13 +40,7 @@ def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
     points the composition divides by. No coset shift (that is LEv's, not this)."""
     zc = _base_to_cubic(z).reshape(())
     g = _root(n_bits)
-    xis = []
-    for p in opening_points:
-        w = jnp.power(g, abs(p))
-        if p < 0:
-            w = _ONE / w
-        xis.append(zc * w)
-    return jnp.stack(xis)
+    return jnp.stack([zc * jnp.power(g, p) for p in opening_points])
 
 
 def deep_composition(
@@ -74,7 +62,7 @@ def deep_composition(
             f"evals ({evals.shape[0]}) and opening_pos ({len(opening_pos)}) must "
             f"match the {m} columns"
         )
-    x = _embed_base(_coset_points(n_bits, blowup_bits))  # (N_ext,) cubic
+    x = _coset_points(n_bits, blowup_bits)  # (N_ext,) base — promotes below
     xis_per_col = xis[jnp.array(opening_pos)]  # (M,) cubic
     denom = x[:, None] - xis_per_col[None, :]  # (N_ext, M) cubic
     numer = columns_ext - evals[None, :]  # (N_ext, M) cubic
@@ -82,11 +70,10 @@ def deep_composition(
 
 
 def _committed_columns(trace_ext: Array, quotient: Array) -> Array:
-    """The committed cubic columns the DEEP opens: each extended trace column
-    embedded as cubic, then the cubic quotient. `(2^nBitsExt, n_cols + 1)`."""
-    cols = [_embed_base(trace_ext[:, c]) for c in range(trace_ext.shape[1])]
-    cols.append(quotient)
-    return jnp.stack(cols, axis=1)
+    """The committed cubic columns the DEEP opens: the extended trace embedded as
+    cubic (`b -> (b, 0, 0)`, the dtype's own value conversion), then the cubic
+    quotient. `(2^nBitsExt, n_cols + 1)`."""
+    return jnp.concatenate([trace_ext.astype(F3), quotient[:, None]], axis=1)
 
 
 def make_deep_combiner(opening_points: Sequence[int] = (0,)):

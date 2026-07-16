@@ -67,10 +67,7 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
 
     cols = []
     for p in opening_points:
-        w_p = pow(w, abs(p), _MODULUS)
-        if p < 0:
-            w_p = pow(w_p, -1, _MODULUS)
-        g = xi_challenge * _base(w_p * shift_inv % _MODULUS)
+        g = xi_challenge * _base(pow(w, p, _MODULUS) * shift_inv)
         num = jnp.power(g, n) - one
         # c_j = N^-1 * (g^N - 1) / (g * w^-j - 1), vectorized over j.
         cols.append(inv_n * num * (one / (g * wj_inv - one)))
