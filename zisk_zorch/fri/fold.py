@@ -26,53 +26,30 @@ from __future__ import annotations
 
 import frx
 import frx.numpy as jnp
-import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 
-from zorch.coding.reed_solomon import fri_fold_k_values
+from zorch.coding.reed_solomon import eval_domain, fri_fold_k_values
 
-# Goldilocks field modulus and the LDE coset generator (`Goldilocks::SHIFT`).
-_GOLDILOCKS_P = 0xFFFFFFFF00000001
-_COSET_SHIFT = 7
-
-# pil2-stark's two-adic generator `Goldilocks::W[32]` (order 2^32); `W[bits]`,
-# the 2^bits-th root, is `W[32]^(2^(32 - bits))`. Same element pil2 folds on,
-# so the coset points match without any zk/pil2 root reindex (cf.
-# zisk_zorch.commit.trace_commit, which bridges the native NTT's other root).
-_TWO_ADIC_ROOT = 7277203076849721926
-
-# `frx.lax.ntt` (and zorch's ReedSolomon) take the generator whose powers walk the
-# subgroup backwards, i.e. `W[32]^-1`. Same value as
-# `trace_commit._PIL2_GENERATOR`.
-_PIL2_GENERATOR = pow(_TWO_ADIC_ROOT, -1, _GOLDILOCKS_P)
-
-
-def _powers(base: int, count: int) -> np.ndarray:
-    """`[base^0, base^1, ..., base^(count-1)] mod p` as an object-dtype array."""
-    out = [1] * count
-    for k in range(1, count):
-        out[k] = out[k - 1] * base % _GOLDILOCKS_P
-    return np.array(out, dtype=object)
+from zisk_zorch.quotient.zerofier import _PIL2_GENERATOR, _SHIFT
 
 
 def _coset_domain(n_bits_ext: int, prev_bits: int, current_bits: int) -> Array:
     """The per-group coset points as a `(2^current_bits, n_x)` base-field array:
     row `g` holds `shift_eff * w(prev_bits)^(g + j*cur_n)` for `j` in `[0, n_x)`,
     where `shift_eff = SHIFT^(2^(n_bits_ext - prev_bits))` is the previous
-    layer's coset shift and `cur_n = 2^current_bits`."""
+    layer's coset shift and `cur_n = 2^current_bits`.
+
+    `eval_domain` reads the layer's coset off the same NTT the encoder uses, so
+    the `2^prev_bits` points come out in domain order; the reshape-transpose lays
+    them out as the groups the fold reads (index `j*cur_n + g` at `[g, j]`)."""
     cur_n = 1 << current_bits
     n_x = 1 << (prev_bits - current_bits)
-
-    shift_eff = pow(_COSET_SHIFT, 1 << (n_bits_ext - prev_bits), _GOLDILOCKS_P)
-    w = pow(_TWO_ADIC_ROOT, 1 << (32 - prev_bits), _GOLDILOCKS_P)
-
-    # w^(g + j*cur_n) = w^g * (w^cur_n)^j, so the full 2^prev_bits power table is
-    # the outer product of two short runs of lengths cur_n and n_x.
-    col = _powers(w, cur_n)
-    row = _powers(pow(w, cur_n, _GOLDILOCKS_P), n_x)
-    canonical = (shift_eff * col[:, None] * row[None, :]) % _GOLDILOCKS_P
-    return jnp.array(canonical.astype(np.uint64), dtype=F)
+    shift_eff = jnp.power(_SHIFT, 1 << (n_bits_ext - prev_bits))
+    domain = eval_domain(
+        F, 1 << prev_bits, shift=shift_eff, generator=_PIL2_GENERATOR
+    )
+    return domain.reshape(n_x, cur_n).T
 
 
 def fold(

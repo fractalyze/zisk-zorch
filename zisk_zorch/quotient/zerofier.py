@@ -38,6 +38,12 @@ _SHIFT = jnp.array(np.array(7, dtype=np.uint64), dtype=F)
 _TWO_ADIC_ROOT = jnp.array(np.array(7277203076849721926, dtype=np.uint64), dtype=F)
 _ONE = jnp.ones((), F)
 
+# `frx.lax.ntt` (and zorch's `ReedSolomon` / `eval_domain`) take the generator
+# whose powers walk the subgroup backwards, i.e. `W[32]^-1`. Kept here with the
+# root it inverts so the LDE, the FRI fold and the zerofier cannot drift apart on
+# which root pil2 is on.
+_PIL2_GENERATOR = int(jnp.power(_TWO_ADIC_ROOT, -1))
+
 
 def _root(bits: int) -> Array:
     """The order-`2^bits` root of unity `Goldilocks::W[bits]`, a field scalar.

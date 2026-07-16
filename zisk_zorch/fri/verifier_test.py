@@ -22,8 +22,8 @@ from absl.testing import absltest
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
+from zk_dtypes import pfinfo
 
-from zisk_zorch.fri.fold import _COSET_SHIFT, _GOLDILOCKS_P, _TWO_ADIC_ROOT
 from zisk_zorch.fri.prover import prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.fri.verifier import verify
@@ -31,6 +31,13 @@ from zisk_zorch.golden import load, u64, u64x3
 from zisk_zorch.transcript.transcript import Transcript
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
+
+# pil2's SHIFT and W[32], restated so the reference evaluation below is an
+# independent oracle: importing the prover's own constants (or its coset) would
+# check the fold against itself.
+_GOLDILOCKS_P = int(pfinfo(F).modulus)
+_COSET_SHIFT = 7
+_TWO_ADIC_ROOT = 7277203076849721926
 _POW_BITS = 8  # grinding difficulty; small keeps the prover's PoW search short
 _GOLDILOCKS_ORDER = 0xFFFF_FFFF_0000_0001
 

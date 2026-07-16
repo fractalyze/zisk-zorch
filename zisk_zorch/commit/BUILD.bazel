@@ -21,6 +21,7 @@ py_library(
     srcs = ["trace_commit.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//zisk_zorch/quotient",
         ":linear_hash",
         "//zisk_zorch/poseidon2:goldilocks",
         requirement("frx"),
