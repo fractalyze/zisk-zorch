@@ -12,7 +12,7 @@ frxlib==0.10.0.dev20260716014911
 frx-cuda12-plugin==0.10.0.dev20260716014911
 frx-cuda12-pjrt==0.10.0.dev20260716014911
 
-rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260618065925/rw_constraints-0.1.0.dev20260618065925-py3-none-any.whl
+rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl
 
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
 # (warm-GPU inner-proof microbench, zisk-zorch#30). Same pin as zorch.
