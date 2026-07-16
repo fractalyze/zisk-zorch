@@ -1,9 +1,10 @@
 """OOD-opening round trip: `Σ_k LEv[k]·p(shift·g^k) == p(ξ)`.
 
-Not a pil2 golden — the identity itself pins `compute_lev`/`open_columns` to
-pil2's `computeLEv`/`evmap` formulas. Build a random low-degree polynomial, its
-evaluations on the extended coset (the "committed column"), and confirm the
-LEv-weighted sum recovers a direct evaluation at each opening point `ξ = z·g^p`.
+Not a pil2 golden — the identity itself pins `open_columns` to pil2's `evmap`
+formula (`compute_lev` carries its own pil2 golden; see `evals/lev_test.py`).
+Build a random low-degree polynomial, its evaluations on the extended coset (the
+"committed column"), and confirm the LEv-weighted sum recovers a direct
+evaluation at each opening point `ξ = z·g^p`.
 """
 
 from __future__ import annotations
@@ -16,7 +17,8 @@ from zk_dtypes import goldilocksx3 as F3
 
 from zorch.poly.univariate import powers
 
-from zisk_zorch.deep.opening import compute_lev, open_columns
+from zisk_zorch.deep.opening import open_columns
+from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 _N_BITS = 5
@@ -55,7 +57,7 @@ class OpeningTest(absltest.TestCase):
 
         # openingPoints [0, 1]: open at z and at z·g (the wrapped next-row point).
         opening_points = (0, 1)
-        lev = compute_lev(_limbs(z), opening_points, _N_BITS)
+        lev = compute_lev(z, list(opening_points), _N_BITS)
         g = _root(_N_BITS)
         for o, p in enumerate(opening_points):
             xi = z * jnp.power(g, p)
@@ -67,12 +69,6 @@ class OpeningTest(absltest.TestCase):
                 f"opening {p} did not recover p(z·g^{p})",
             )
 
-
-def _limbs(cubic_scalar: jnp.ndarray) -> jnp.ndarray:
-    """A cubic scalar as its 3 Goldilocks limbs — `compute_lev`'s `z` input."""
-    import frx
-
-    return frx.lax.bitcast_convert_type(cubic_scalar, F).reshape(3)
 
 
 def _cubic_eq(a: jnp.ndarray, b: jnp.ndarray) -> bool:

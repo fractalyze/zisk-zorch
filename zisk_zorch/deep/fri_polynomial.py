@@ -28,7 +28,8 @@ from frx import Array
 
 from zorch.poly.univariate import powers
 
-from zisk_zorch.deep.opening import compute_lev, open_columns
+from zisk_zorch.deep.opening import open_columns
+from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
 from zisk_zorch.quotient.zerofier import _ONE, _coset_points, _root
 
@@ -99,7 +100,7 @@ def make_deep_combiner(opening_points: Sequence[int] = (0,)):
         columns = _committed_columns(ctx.trace.extended, ctx.quotient)
         opening_pos = [0] * columns.shape[1]  # all at z; wrapped openings are AIR-specific
         z = ctx.transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
-        lev = compute_lev(z, opening_points, ctx.n_bits)
+        lev = compute_lev(_base_to_cubic(z).reshape(()), list(opening_points), ctx.n_bits)
         evals = open_columns(
             columns, lev, opening_pos, n_bits=ctx.n_bits, blowup_bits=ctx.blowup_bits
         )

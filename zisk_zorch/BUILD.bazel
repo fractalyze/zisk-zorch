@@ -75,7 +75,7 @@ py_library(
         "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("numpy"),
-        requirement("zk_dtypes"),
+        requirement("zorch"),
     ],
 )
 
