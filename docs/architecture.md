@@ -2,9 +2,9 @@
 
 `prove_inner` ([`../zisk_zorch/prover.py`](../zisk_zorch/prover.py)) runs the
 inner-proof stages in pil2-proofman's `genProof` order over a single Fiat-Shamir
-`Transcript`. This page maps the proof onto those stages, then names the
-conventions that make each one byte-identical to pil2-stark. Every primitive that
-mirrors pil2 is pinned against pil2-proofman v1.0.0-alpha's `fields` crate via
+`Transcript`. This page maps the proof onto those stages and names the pil2
+vocabulary each one mirrors. Every primitive that mirrors pil2 is pinned against
+pil2-proofman v1.0.0-alpha's `fields` crate via
 [`../tools/fixture-gen/`](../tools/fixture-gen/).
 
 For coding style see [conventions.md](conventions.md); to build, test, and
@@ -35,41 +35,10 @@ roots — the property the per-stage benchmarks cannot exercise.
 | DEEP | `calculateFRIPolynomial` | Squeeze the OOD point `z`, open the committed polynomials there (`computeLEv`+`evmap`), absorb, squeeze `vf`, build the DEEP-ALI codeword | `deep/` | **none** — see below |
 | FRI | `FRI::fold` / `proveQueries` | Fold the codeword down the layer chain committing each layer, grind, open every tree per query | `fri/` | `fri_fold`, `fri_prove`, `fri_final`, `grinding`, `query_sample` |
 
-## The conventions that make it byte-identical
-
-- **Poseidon2 parameters** ([`goldilocks.py`](../zisk_zorch/poseidon2/goldilocks.py)):
-  pil2's external M4 is the HorizenLabs reference matrix, NOT the Plonky3 one
-  zorch defaults to, so every width passes its matrix explicitly. zorch#264
-  carries it as an `external_m4` marker, so widths 8/12/16 lower to the dedicated
-  `zorch.poseidon2` emitter; width 4's plain single-block M4 is not
-  marker-carried and stays on the generic fused region.
-- **NTT domain order** ([`trace_commit.py`](../zisk_zorch/commit/trace_commit.py)):
-  zk_dtypes' two-adic generator is Plonky3's; pil2's `W[32]` differs
-  (`pil2 = zk^4168946053`). `_PIL2_GENERATOR` puts every transform on pil2's root
-  — `extend` hands it to `ReedSolomon`, `fri.fold.intt` to `frx.lax.ntt`.
-- **Leaf hashing** ([`linear_hash.py`](../zisk_zorch/commit/linear_hash.py)):
-  pil2's chained linear hash (zero-padded blocks, capacity chaining) is NOT
-  zorch's padding-free sponge, so it lives here and duck-types the leaf-hasher
-  seam. One width-`4*arity` permutation hashes both leaves and nodes; incomplete
-  levels complete with zero digests.
-- **Transcript** ([`transcript.py`](../zisk_zorch/transcript/transcript.py)):
-  pil2's pending/out buffer discipline; 3-limb cubic challenges; 63-bit query
-  index packing.
-- **Openings** ([`openings.py`](../zisk_zorch/commit/openings.py)):
-  `MerkleTreeGL::getGroupProof`'s flat `[row..., mp levels...]` array. zorch's
-  k-ary `open` already packs siblings in pil2's mp order, so serialization is
-  flatten-and-concatenate.
-- **Quotient leaf layout**: each cubic row commits as its 3 contiguous Goldilocks
-  limbs — pil2's `FIELD_EXTENSION` memory order, matching the FRI seam.
-- **α-power order** must follow pil2's eSTARK convention (proving-key
-  `expressionsinfo`, incl. `imPols`), NOT rw's `constraint_order`, which is SP1
-  `eval_block` / zerocheck indexing.
-- **Ingest dtypes** ([`chip_loader.py`](../zisk_zorch/constraints/chip_loader.py)):
-  constraints *and* interactions are `goldilocks` — the registry's `jnp.uint32`
-  default is SP1-specific (its interaction code is bitwise), while ZisK's is pure
-  field arithmetic. Evaluating chip code needs `jax_enable_x64`, and Bazel
-  runfiles need a symlink-following tree copy
-  ([riscv-witness#1580](https://github.com/fractalyze/riscv-witness/issues/1580)).
+Each stage's pil2 conventions — the Poseidon2 M4 choice, the NTT domain order,
+the linear-hash chaining, the transcript's buffer discipline, the opening layout,
+the α-power order — live in the module docstring of the code that implements
+them, per [conventions.md](conventions.md).
 
 ## The DEEP byte-match boundary
 

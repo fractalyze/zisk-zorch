@@ -14,18 +14,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# Mirrors fractalyze/zorch's CI: a CPU leg always runs; a GPU leg is added only
-# when the `HAS_GPU_RUNNER` repo variable is `true` (a job-level `if` can't read
-# `matrix`, hence the dynamic matrix). Runners are labelled by capability — a
-# CPU-only box is `[self-hosted, cpu]`, a GPU box `[self-hosted, gpu]`.
+# Build the test matrix dynamically: always a CPU leg, plus a GPU leg only when
+# the `HAS_GPU_RUNNER` repo variable is `true` (a job-level `if` can't read
+# `matrix`, so the leg is added here rather than skipped later — without GPU
+# hardware it's absent, not queued forever). Runners are labelled by capability:
+# a CPU-only box is `[self-hosted, cpu]`, a GPU box `[self-hosted, gpu]`.
 #
-# The CPU leg's `-gpu` filter currently matches nothing: the executing pil2
-# byte-match tests (poseidon2/transcript/commit/fri) were GPU-only until the
-# zorch bump to dev20260622060558 brought in the CPU emitter's EF-bitcast +
-# Poseidon2 `external_m4` fix (fractalyze/zkx#755, filed while the compiler stack
-# was still zkx — it's the fractalyze/xla fork now), which let their `gpu` tags be
-# dropped. The filter stays as the seam for re-tagging a test the CPU emitter
-# can't run.
+# The CPU leg's `-gpu` filter matches nothing today — the pil2 byte-match tests
+# all run on the CPU emitter. It stays as the seam for re-tagging a test the CPU
+# emitter can't run.
 jobs:
   setup:
     runs-on: ubuntu-latest
