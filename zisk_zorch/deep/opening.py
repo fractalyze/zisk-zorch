@@ -28,6 +28,8 @@ import frx.numpy as jnp
 from frx import Array
 from zk_dtypes import goldilocks as F
 
+from zorch.poly.univariate import powers
+
 from zisk_zorch.fri.fold import intt
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
 from zisk_zorch.quotient.zerofier import _ONE, _SHIFT, _root
@@ -35,18 +37,6 @@ from zisk_zorch.quotient.zerofier import _ONE, _SHIFT, _root
 # Cubic multiplicative identity (limb0 = 1), for the geometric-series seed —
 # never assumes a `jnp.ones` cubic-storage layout.
 _CUBIC_ONE = _base_to_cubic(jnp.array([1, 0, 0], F)).reshape(())
-
-
-def _cubic_powers(base: Array, count: int) -> Array:
-    """`[base^0, ..., base^(count-1)]` for a cubic scalar — the running-product
-    `zerofier._powers` uses (the field dtype has no vectorized power), seeded with
-    the cubic one so base×cubic stays exact.
-
-    `compute_lev` calls this at `count = 2^n_bits`, so anything sequential in
-    `count` dominates the stage: `associative_scan` is log-depth where a `scan`
-    or a Python loop is O(count)."""
-    seed = jnp.concatenate([_CUBIC_ONE.reshape(1), jnp.full((count - 1,), base)])
-    return frx.lax.associative_scan(jnp.multiply, seed)
 
 
 def compute_lev(
@@ -67,7 +57,7 @@ def compute_lev(
         if p < 0:
             w = _ONE / w
         # pre[k] = (z·g^p·shift⁻¹)^k; INTT turns the series into the eval weights.
-        columns.append(_cubic_powers(zc * w * shift_inv, n))
+        columns.append(powers(zc * w * shift_inv, n))
     pre = jnp.stack(columns, axis=1)  # (N, n_openings) cubic
     coeffs = intt(_cubic_to_base(pre), n_bits)  # INTT each limb-column at W[nBits]
     return _base_to_cubic(coeffs)  # (N, n_openings) cubic

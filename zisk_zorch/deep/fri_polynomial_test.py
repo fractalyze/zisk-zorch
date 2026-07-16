@@ -17,8 +17,9 @@ from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
+from zorch.poly.univariate import powers
+
 from zisk_zorch.deep.fri_polynomial import _ood_points, deep_composition
-from zisk_zorch.deep.opening import _cubic_powers
 from zisk_zorch.fri.fold import intt
 from zisk_zorch.fri.seam import _cubic_to_base
 from zisk_zorch.quotient.zerofier import _coset_points
@@ -47,7 +48,7 @@ def _coset_evals(coeffs: jnp.ndarray) -> jnp.ndarray:
 
 
 def _poly_eval(coeffs_row: jnp.ndarray, point: jnp.ndarray) -> jnp.ndarray:
-    return jnp.sum(coeffs_row * _cubic_powers(point, coeffs_row.shape[0]))
+    return jnp.sum(coeffs_row * powers(point, coeffs_row.shape[0]))
 
 
 def _high_coeffs(f: jnp.ndarray) -> np.ndarray:

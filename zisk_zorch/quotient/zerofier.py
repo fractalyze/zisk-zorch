@@ -29,6 +29,8 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 
+from zorch.poly.univariate import powers
+
 # pil2's coset shift and the 2^32-order generator `Goldilocks::W[32]`, as field
 # scalars (cf. zisk_zorch.evals.lev / zisk_zorch.fri.fold, which share them —
 # the field dtype carries the modulus but not the generator or the shift).
@@ -51,16 +53,6 @@ def _root(bits: int) -> Array:
     return jnp.power(_TWO_ADIC_ROOT, 1 << (32 - bits))
 
 
-def _powers(base: Array, count: int) -> Array:
-    """`[base^0, ..., base^(count-1)]` as a field array. A running product —
-    the field dtype has no vectorized power (a JAX power op takes a scalar
-    exponent), so the per-element powers are chained."""
-    out = [_ONE]
-    for _ in range(count - 1):
-        out.append(out[-1] * base)
-    return jnp.stack(out)
-
-
 def _check(n_bits: int, blowup_bits: int) -> None:
     if n_bits < 0:
         raise ValueError(f"n_bits must be non-negative, got {n_bits}")
@@ -73,7 +65,7 @@ def _check(n_bits: int, blowup_bits: int) -> None:
 def _coset_points(n_bits: int, blowup_bits: int) -> Array:
     """`x[i] = shift * w(nBitsExt)^i` on the extended coset — pil2 `computeX`."""
     n_ext = 1 << (n_bits + blowup_bits)
-    return _SHIFT * _powers(_root(n_bits + blowup_bits), n_ext)
+    return _SHIFT * powers(_root(n_bits + blowup_bits), n_ext)
 
 
 def inv_zerofier(n_bits: int, blowup_bits: int) -> Array:
@@ -89,7 +81,7 @@ def inv_zerofier(n_bits: int, blowup_bits: int) -> Array:
     extend = 1 << blowup_bits
     n_ext = 1 << (n_bits + blowup_bits)
     sn = jnp.power(_SHIFT, 1 << n_bits)  # shift^N
-    period = _ONE / (sn * _powers(_root(blowup_bits), extend) - _ONE)
+    period = _ONE / (sn * powers(_root(blowup_bits), extend) - _ONE)
     return jnp.tile(period, n_ext // extend)
 
 

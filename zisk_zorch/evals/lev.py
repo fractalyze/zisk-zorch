@@ -34,6 +34,8 @@ from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 
+from zorch.poly.univariate import powers
+
 # The Goldilocks modulus, the LDE coset generator, and pil2's 2^32-order
 # generator `Goldilocks::W[32]` (cf. zisk_zorch.fri.fold, which folds on the
 # same root — pfinfo carries the modulus but not the generator or the shift).
@@ -45,14 +47,6 @@ _TWO_ADIC_ROOT = 7277203076849721926
 def _base(value: int) -> Array:
     """A canonical Goldilocks int -> a plain goldilocks scalar (value-converted)."""
     return jnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
-
-
-def _base_powers(base: int, count: int) -> Array:
-    """`[base^0, ..., base^(count-1)] mod p` as a 1-D plain goldilocks array."""
-    out = [1] * count
-    for k in range(1, count):
-        out[k] = out[k - 1] * base % _MODULUS
-    return jnp.array(np.array(out, dtype=np.uint64), dtype=F)
 
 
 def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> Array:
@@ -69,7 +63,7 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
     w = pow(_TWO_ADIC_ROOT, 1 << (32 - n_bits), _MODULUS)
     shift_inv = pow(_COSET_SHIFT, -1, _MODULUS)
     # w^-j over the base domain — the per-coefficient evaluation points.
-    wj_inv = _base_powers(pow(w, -1, _MODULUS), n)
+    wj_inv = powers(_base(pow(w, -1, _MODULUS)), n)
 
     cols = []
     for p in opening_points:

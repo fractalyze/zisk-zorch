@@ -14,7 +14,9 @@ from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
-from zisk_zorch.deep.opening import _cubic_powers, compute_lev, open_columns
+from zorch.poly.univariate import powers
+
+from zisk_zorch.deep.opening import compute_lev, open_columns
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 _N_BITS = 5
@@ -30,7 +32,7 @@ def _rand_cubic(n: int, seed: int) -> jnp.ndarray:
 
 def _poly_eval(coeffs: jnp.ndarray, point: jnp.ndarray) -> jnp.ndarray:
     """`Σ_d coeffs[d]·point^d` for a cubic scalar `point`."""
-    return jnp.sum(coeffs * _cubic_powers(point, coeffs.shape[0]))
+    return jnp.sum(coeffs * powers(point, coeffs.shape[0]))
 
 
 def _coset_evals(coeffs: jnp.ndarray, n_bits: int, blowup_bits: int) -> jnp.ndarray:

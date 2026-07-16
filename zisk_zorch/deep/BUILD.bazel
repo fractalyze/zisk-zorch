@@ -15,6 +15,7 @@ py_library(
         "//zisk_zorch/fri:seam",
         "//zisk_zorch/quotient:quotient",
         requirement("frx"),
+        requirement("zorch"),
         requirement("zk_dtypes"),
     ],
 )
@@ -28,6 +29,7 @@ py_test(
         "//zisk_zorch/quotient:quotient",
         requirement("absl_py"),
         requirement("frx"),
+        requirement("zorch"),
         requirement("numpy"),
         requirement("zk_dtypes"),
     ],
@@ -44,6 +46,7 @@ py_library(
         "//zisk_zorch/fri:seam",
         "//zisk_zorch/quotient:quotient",
         requirement("frx"),
+        requirement("zorch"),
         requirement("zk_dtypes"),
     ],
 )
@@ -59,6 +62,7 @@ py_test(
         "//zisk_zorch/quotient:quotient",
         requirement("absl_py"),
         requirement("frx"),
+        requirement("zorch"),
         requirement("numpy"),
         requirement("zk_dtypes"),
     ],
