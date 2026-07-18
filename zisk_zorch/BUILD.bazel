@@ -27,6 +27,7 @@ py_binary(
     srcs = ["bench_inner_proof.py"],
     deps = [
         "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/constraints:chip_loader",  # quotient --chip=<air> (#66)
         "//zisk_zorch/fri:prover",
         "//zisk_zorch/poseidon2:goldilocks",
         "//zisk_zorch/quotient",
@@ -53,6 +54,9 @@ py_test(
         requirement("absl_py"),
         requirement("frx"),
         requirement("numpy"),
+        # test_chip_mode_folds_a_real_air skips itself unless rw_constraints
+        # imports, so without this dep that test never runs under bazel.
+        requirement("rw_constraints"),
         requirement("zk_dtypes"),
     ],
 )

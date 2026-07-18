@@ -18,16 +18,24 @@ zkbench owns warmup, timed iterations, device-memory peak, statistics, and
 test-vector hashing. The jitted single-function stages also pass a `lower` thunk,
 so zkbench times `lowered.compile()` as `compile_time`.
 
-`quotient`'s `eval_fn` is a parametric proxy (`--n_constraints` degree-`--degree`
-column products over `--n_cols`) tunable to a target AIR — absolute is a proxy,
-size scaling is real. Inputs are plain `goldilocks` per the
-benchmark-field-standardization convention.
+`quotient`'s `eval_fn` has two modes. `--chip <name>` loads a real re-authored
+ZisK AIR from `rw_constraints` and folds its actual `eval_constraints` — the
+trustworthy number for #66, since a real constraint DAG reuses columns and fuses
+where the proxy cannot. Without `--chip`, `eval_fn` is a parametric proxy
+(`--n_constraints` degree-`--degree` products over `--n_cols`): it forms that
+many INDEPENDENT products, which materialize per-constraint intermediates and go
+HBM-bound — pessimistic on structure (#66), useful only for size scaling. Inputs
+are plain `goldilocks` per the benchmark-field-standardization convention.
 
 Run (on a GPU host, the PJRT plugin resolved via the venv):
 
     PYTHONPATH=<zisk-zorch>:<zorch> CUDA_VISIBLE_DEVICES=<free> \\
         python -m zisk_zorch.bench_inner_proof \\
         --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 --arity=2 -o report.json
+
+    # real Main-AIR quotient vs pil2 (#66); --chip forces JAX x64 (rw exports
+    # `.view(FIELD_DTYPE)` over u64), so run it with --stages=quotient alone.
+    ... --stages=quotient --chip=main --n_bits=22
 """
 
 from __future__ import annotations
@@ -99,6 +107,23 @@ def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
     return eval_fn
 
 
+def _chip_eval_fn(chip_name: str) -> tuple[Callable, int, int]:
+    """Real re-authored AIR: `(eval_fn, n_cols, n_constraints)` from a ZisK chip.
+
+    `eval_fn = chip.eval_constraints` folds the actual constraint DAG — the real
+    quotient #66 asks for, not the independent-product proxy. `n_constraints` is
+    the eval's trailing width (probed once on a stub trace); the caller sizes
+    `alpha` to it. Requires JAX x64 (rw's exports view u64 → `FIELD_DTYPE`),
+    enabled by the caller before any array op.
+    """
+    from zisk_zorch.constraints.chip_loader import load_zisk_chips
+
+    chip = load_zisk_chips(chip_names=[chip_name])[chip_name]
+    n_cols = chip.num_cols
+    k = int(chip.eval_constraints(jnp.zeros((2, n_cols), F)).shape[-1])
+    return (lambda t: chip.eval_constraints(t)), n_cols, k
+
+
 def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
     """Strictly-decreasing FRI layer schedule `nBitsExt -> ... -> final_bits`,
     folding by `fold_bits` per layer (the tail folds the remainder)."""
@@ -149,6 +174,12 @@ class InnerProofBenchmark(FrxBenchmark):
         )
         parser.add_argument("--n_constraints", type=int, default=64)
         parser.add_argument("--degree", type=int, default=3)
+        parser.add_argument(
+            "--chip", type=str, default=None,
+            help="quotient stage: fold a real rw_constraints ZisK AIR's "
+            "eval_constraints (e.g. main/arith/binary) instead of the proxy. "
+            "Forces JAX x64; use with --stages=quotient alone.",
+        )
         # Defaults match the production FRI schedule: the ZisK v1.0.0-alpha proving-key
         # starkStructs fold every inner-proof AIR by a uniform drop of 3 (factor 8)
         # down to nBits 5 (dominant [22,19,16,13,10,7,5] == _fold_steps(22, 3, 5)).
@@ -172,6 +203,12 @@ class InnerProofBenchmark(FrxBenchmark):
         unknown = set(stages) - set(_STAGES)
         if unknown:
             raise ValueError(f"unknown stage(s) {sorted(unknown)}; pick from {_STAGES}")
+        if args.chip is not None:
+            # rw's exported constraints view u64 → FIELD_DTYPE, which needs x64.
+            # Set before any array op; harmless for the field-typed quotient
+            # arrays, but it can perturb other stages' index dtypes — hence the
+            # docstring's "--stages=quotient alone".
+            frx.config.update("jax_enable_x64", True)
         for n_bits in args.n_bits or [20]:
             yield from self._stage_ops(n_bits, stages, args)
 
@@ -183,15 +220,18 @@ class InnerProofBenchmark(FrxBenchmark):
         n_ext = n * blowup
         meta = {"n_bits": n_bits, "n_cols": args.n_cols, "arity": args.arity}
 
-        def op(name: str, fn: Callable, arg, lower: bool = True, hash_arg=None):
+        def op(name: str, fn: Callable, arg, lower: bool = True, hash_arg=None,
+               meta_extra: dict | None = None):
             """Assemble a BenchmarkOp. The output hash is taken lazily (one fn call
             at hash time, after the runtime phase) so the op is NOT pre-compiled
             here — otherwise zkbench's compile phase would hit a warm cache and
-            report ~0. `lower` is attached only when `fn` is a single jitted fn."""
+            report ~0. `lower` is attached only when `fn` is a single jitted fn.
+            `meta_extra` overrides the shared meta per op (e.g. quotient's real
+            `n_cols`/`chip`, which differ from the proxy defaults)."""
             return BenchmarkOp(
                 name=f"{name}_2p{n_bits}",
                 fn=lambda fn=fn, arg=arg: fn(arg),
-                metadata={**meta, "stage": name},
+                metadata={**meta, "stage": name, **(meta_extra or {})},
                 throughput_unit="rows/s",
                 throughput_count=n_ext,
                 input_hash=_hash_array(arg if hash_arg is None else hash_arg),
@@ -215,15 +255,21 @@ class InnerProofBenchmark(FrxBenchmark):
                 yield op("full", frx.jit(lambda t: mt.commit(extend(t, blowup))), trace)
 
         if "quotient" in stages:
-            eval_fn = _make_eval_fn(args.n_cols, args.n_constraints, args.degree)
-            alpha = frx.block_until_ready(_rand_cubic(args.n_constraints, 1))
-            trace_ext = frx.block_until_ready(rand_field(0, (n_ext, args.n_cols), F))
+            if args.chip is not None:
+                eval_fn, n_cols, n_constraints = _chip_eval_fn(args.chip)
+            else:
+                n_cols, n_constraints = args.n_cols, args.n_constraints
+                eval_fn = _make_eval_fn(n_cols, n_constraints, args.degree)
+            alpha = frx.block_until_ready(_rand_cubic(n_constraints, 1))
+            trace_ext = frx.block_until_ready(rand_field(0, (n_ext, n_cols), F))
             qfn = frx.jit(
                 lambda t, eval_fn=eval_fn, alpha=alpha: quotient_from_constraints(
                     eval_fn, t, alpha, n_bits, args.blowup_bits
                 )
             )
-            yield op("quotient", qfn, trace_ext)
+            yield op("quotient", qfn, trace_ext,
+                     meta_extra={"n_cols": n_cols, "n_constraints": n_constraints,
+                                 "chip": args.chip})
 
         if "divide" in stages:
             composite = frx.block_until_ready(_rand_cubic(n_ext, 2))

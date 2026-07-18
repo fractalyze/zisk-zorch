@@ -19,6 +19,13 @@ from zk_dtypes import goldilocks as F
 from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark, _make_eval_fn
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 
+try:  # the chip-mode leg needs the rw_constraints wheel; the rest does not.
+    import rw_constraints  # noqa: F401
+
+    _HAS_RW = True
+except ImportError:
+    _HAS_RW = False
+
 
 def _parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -81,6 +88,33 @@ class BenchInnerProofTest(absltest.TestCase):
                 before = goldilocks_perm.cache_info().hits
                 goldilocks_perm(width)  # a hit iff get_ops already warmed it
                 self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
+
+    @absltest.skipUnless(_HAS_RW, "rw_constraints wheel not installed")
+    def test_chip_mode_folds_a_real_air(self) -> None:
+        # #66: the chip leg replaces the proxy's independent products with a real
+        # re-authored AIR's `eval_constraints`. Pin the wiring, not the timing:
+        # the eval yields K constraints in the trailing axis, and the quotient op
+        # records the AIR's real width — not the proxy's --n_cols/--n_constraints.
+        import frx
+
+        frx.config.update("jax_enable_x64", True)  # rw exports view u64→FIELD_DTYPE
+        from zisk_zorch.bench_inner_proof import _chip_eval_fn
+
+        eval_fn, n_cols, k = _chip_eval_fn("main")
+        self.assertGreater(n_cols, 0)
+        self.assertGreater(k, 0)
+        out = eval_fn(jnp.zeros((4, n_cols), F))
+        self.assertEqual(out.shape, (4, k))
+
+        ops = list(
+            InnerProofBenchmark().get_ops(
+                _parse(["--stages=quotient", "--chip=main", "--n_bits=3"])
+            )
+        )
+        self.assertLen(ops, 1)
+        self.assertEqual(ops[0].metadata["chip"], "main")
+        self.assertEqual(ops[0].metadata["n_cols"], n_cols)
+        self.assertEqual(ops[0].metadata["n_constraints"], k)
 
     def test_unknown_stage_is_rejected(self) -> None:
         # get_ops is a generator, so the guard only fires once it is advanced.

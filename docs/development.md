@@ -106,11 +106,11 @@ meaningful.
 
 - **"45 ms quotient"** — a proxy of 64 degree-3 constraints, 1/55th of Main's op
   density (#66).
-- **"~270 ms quotient"** — an extrapolation to a size the proxy cannot reach, not
-  a measurement. Do not re-quote it — and do not quote the ~370 ms that
-  extrapolating the *corrected* proxy would give either: 2^23 is two doublings
-  past the OOM boundary below. Quotient has no number at Main's size, in either
-  direction.
+- **"~270 ms quotient"** — an extrapolation to a size the *proxy* cannot reach,
+  not a measurement; likewise the ~370 ms the corrected proxy would extrapolate
+  to. Both are proxy artifacts. The real Main air, folded through
+  `constraint_eval`, does run at 2^23 and measures 8.1 ms (#66, below) — quote
+  that, never the proxy extrapolations.
 - **"77 ms quotient" / "0.58x"** — measured before `_make_eval_fn` drew distinct
   columns, so CSE folded 900 constraints down to 38: ~1/24th of the claimed
   density.
@@ -185,7 +185,7 @@ extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 | extend cm2 (24 col) | 20.4 ms | 15.0 ms | **0.73×** | ✅ |
 | commit stage1 (38 col) | 36.6 ms | 38.9 ms | **1.06×** | ✅ |
 | commit stage2 (24 col) | 19.9 ms | 21.0 ms | **1.05×** | ✅ |
-| quotient ⚠️ | 133 ms @2^23 | 92.5 ms @2^21 | — | sizes differ; see below |
+| quotient ⚠️ #66 | 133 ms @2^23 (synthetic mimic) | 8.1 ms @2^23 (real Main air) | — | ✅ |
 | LogUp grand-sum (I=8) | 2.45 ms | 7.91 ms | **3.23×** | ✅ (not in the spine) |
 | evals (`evmap`) | 3.72 ms | 15.8 ms | **4.25×** | ❌ #61 |
 | DEEP (`friExp`) | 8.88 ms | 15.6 ms | **1.76×** | ❌ #61 |
@@ -206,28 +206,45 @@ to 0.83× (its fold is 14.75 of the 19.7 ms). #69 is the evals/DEEP gap — our
 committed buffer embeds every base column to cubic, so it is 2.55× the native's
 reads.
 
-**⚠️ quotient has no ratio, and cannot yet.** At Main's density (900 degree-9
-constraints over 38 columns) the proxy measures 47.4 ms at 2^20 rows and 92.5 ms
-at 2^21 — a flat ~44 ns/row. **2^22 is its ceiling, and it is a hard one**: the
-proxy materializes ~900 full-height base-field intermediates, so it needs
-`900 × rows × 8 B`, and the model predicts the measurements closely.
+**⚠️ quotient — the real number, and why it still has no clean ratio (#66).** The
+re-authored Main air (`rw_constraints` `zisk/v1` `main`, 38 columns, 19
+constraints) folded through the production `quotient_from_constraints`
+(`constraint_eval` + zerofier) measures **8.1 ms at 2^23** on this card
+(0.99 ns/row, 4.3 GiB peak) — a direct measurement *at* Main's size, no
+extrapolation. Sibling airs on the same path, all at 2^23: `binary` (39 col, 14
+con) 4.0 ms, `arith` (44 col, 33 con) 14.4 ms. `keccak` (2137 col, 1602 con) is
+the one heavy air, ~55 ns/row and bandwidth-bound by its 17 KB/row trace, but
+ZisK runs it at small heights. Reproduce with `--stages=quotient --chip=main`
+(the flag forces x64 and folds the chip's actual `eval_constraints`).
 
-| rows | predicted | measured |
+**The real quotient fuses.** Peak memory is linear in size and single-digit GiB —
+the compiled DAG does *not* materialize per-constraint intermediates. That is
+what overturns the retracted "~270 ms": the **proxy** went HBM-bound because it
+forms 900 *independent* degree-9 products (the `900 × rows × 8 B` table below);
+a real air reuses columns, and `constraint_eval` fuses the shared-subexpression
+graph. The direction #66 left open — competitive or 2× behind — resolves to
+**single-digit ms, register/bandwidth-resident**, not the proxy's 2×.
+
+The proxy's own ceiling (why the retracted numbers came from extrapolation): at
+900 degree-9 constraints it measures ~44 ns/row flat and cannot reach 2^22.
+
+| rows | predicted (`900 × rows × 8 B`) | measured |
 |---|---|---|
 | 2^21 | 14.06 GiB | 13.65 GiB peak, 92.5 ms |
 | 2^22 | 28.1 GiB | **OOM** — a single 21.97 GiB allocation fails |
 | 2^23 | 56.2 GiB | unreachable |
 
-Against ~23.5 GiB usable (frx caps at ~75% of the card's 31.8), 2^22 is already
-out. The native's 133 ms exists only at 2^23 (`MAIN_EXPR_PATTERN` has Main's dims
-compiled in, no sweep), so there is no same-size pair to divide, and closing the
-gap by extrapolation would cross two doublings and the OOM boundary — which is
-how both "~270 ms" and "77 ms" came about.
-
-That memory gap is the finding: pil2's bytecode interpreter keeps operands
-register-resident where we materialize — the same shape as #69. The real number
-needs the re-authored Main constraints (#66), which reuse columns instead of
-forming 900 independent products.
+**But 133 ms is not the counterpart, so there is still no ratio to quote.** pil2's
+`MAIN_EXPR_PATTERN` is itself a synthetic mimic: `bench_main_proof_gpu.cu`
+hardcodes `EXPR_BASE_FMA_OPS = 7000` and `EXPR_FP3_OPS = 900` per row, "tuned so
+the bench runtime lands near" a target. The real Main air is ~19 field muls/row
+(mostly booleanity `x·(x−1)`) — the mimic over-states its density by ~370×. Both
+sides of the original comparison were proxies, wrong by ~two orders of magnitude
+in opposite directions. A true head-to-head needs pil2's per-air
+`STARK_CALCULATE_QUOTIENT_POLYNOMIAL` timer under a real witness (block
+24654300) — the same "no real block setup" wall as FRI #65. What is now settled:
+our real quotient is register-resident and single-digit ms, not the
+materialization-bound 2× the proxy implied.
 
 ### End-to-end (`prove_inner`)
 
