@@ -248,12 +248,23 @@ materialization-bound 2× the proxy implied.
 
 ### End-to-end (`prove_inner`)
 
-Proves at 2^18 × 38 in 101.1 s through the real DEEP combiner. **At 2^22 it does
-not fit**: DEEP's committed buffer is `2^23 × (M+1) × 24B` = **7.31 GiB** at 38
-columns, where native pil2 holds the same columns as 80 gl64 = **5.00 GiB**.
-Predicted and observed agree exactly at both 24 and 38 columns. So **#69 is a
-blocker on running at all**, not a perf item; #64 cannot help (`grand_sum` is not
-in the spine) and #70 targets the fold's speed, not DEEP's footprint.
+Proves at 2^18 × 38 in 101.1 s through the real DEEP combiner. Whole-proof peaks,
+real DEEP stage, this RTX 5090 (`XLA_PYTHON_CLIENT_MEM_FRACTION` raised to fit):
+
+| base | N_ext | full prove | peak |
+|---|---|---|---|
+| 2^20 | 2^21 | 69.7 s | 10.46 GiB |
+| 2^21 | 2^22 | 71.6 s | 20.98 GiB (pre-#69) → fits |
+| 2^22 | 2^23 | 74.2 s | **17.43 GiB** (post-#69; **OOM'd pre-#69**) |
+| 2^23 | 2^24 | — | OOM on the query grind (`queries.py`), not DEEP |
+
+**#69 lifted the ceiling one doubling.** DEEP used to embed every base column to
+cubic, so its committed buffer was `2^23 × (M+1) × 24B` = 7.31 GiB at 38 columns
+(pil2 holds the same columns as 80 gl64 = 5.00 GiB) — which OOM'd the whole proof
+at 2^22. Keeping base columns base (#69) drops the DEEP fold from 8.19 → 0.92 GiB
+and 26.6 → 11.3 ms at 2^21 (byte-identical), and 2^22 now proves at 17.43 GiB.
+The next ceiling at 2^23 is a *different* stage — a 9.5 GiB alloc in the
+proof-of-work grind — not DEEP.
 
 No whole-proof ratio appears above because none can: the only native total covers
 111 AIRs. And nothing verifies these proofs — there is no `verify_inner`, so "it

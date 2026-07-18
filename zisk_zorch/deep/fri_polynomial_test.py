@@ -26,13 +26,21 @@ from zisk_zorch.quotient.zerofier import _coset_points
 
 _N_BITS = 4
 _BLOWUP_BITS = 1
-_N_COLS = 5
+_N_BASE = 3  # base committed columns (the #69 8-byte path)
+_N_CUBIC = 2  # cubic committed columns (e.g. the quotient)
+_N_COLS = _N_BASE + _N_CUBIC
 
 
 def _rand_cubic(shape, seed: int) -> jnp.ndarray:
     n = int(np.prod(shape))
     flat = np.random.default_rng(seed).integers(0, 1 << 30, (n, 3)).astype(np.uint64)
     return jnp.array(flat.astype(F).view(F3).reshape(n)).reshape(shape)
+
+
+def _rand_base(shape, seed: int) -> jnp.ndarray:
+    return jnp.asarray(
+        np.random.default_rng(seed).integers(0, 1 << 30, shape).astype(np.uint64).view(F)
+    )
 
 
 def _coset_evals(coeffs: jnp.ndarray) -> jnp.ndarray:
@@ -63,20 +71,25 @@ def _high_coeffs(f: jnp.ndarray) -> np.ndarray:
 class DeepCompositionTest(absltest.TestCase):
     def setUp(self):
         n = 1 << _N_BITS
-        self.coeffs = _rand_cubic((_N_COLS, n), seed=1)  # deg < N
-        self.columns = _coset_evals(self.coeffs)  # (N_ext, M)
+        # Mixed committed columns, base then cubic (the DEEP batching order): base
+        # columns exercise #69's 8-byte path, cubic ones stand in for the quotient.
+        base_coeffs = _rand_base((_N_BASE, n), seed=1)  # deg < N, base
+        cubic_coeffs = _rand_cubic((_N_CUBIC, n), seed=4)  # deg < N, cubic
+        self.base_cols = _coset_evals(base_coeffs)  # (N_ext, B) base
+        self.cubic_cols = _coset_evals(cubic_coeffs)  # (N_ext, C) cubic
         self.z = _rand_cubic((1,), seed=2)[0]
         self.vf = _rand_cubic((1,), seed=3)[0]
         self.opening_pos = [0] * _N_COLS
         self.xis = _ood_points(_limbs(self.z), (0,), _N_BITS)  # (1,) = [z]
         self.evals = jnp.stack(
-            [_poly_eval(self.coeffs[m], self.z) for m in range(_N_COLS)]
+            [_poly_eval(base_coeffs[m], self.z) for m in range(_N_BASE)]
+            + [_poly_eval(cubic_coeffs[m], self.z) for m in range(_N_CUBIC)]
         )
 
     def _compose(self, evals):
         return deep_composition(
-            self.columns, evals, self.xis, self.opening_pos, self.vf,
-            n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS,
+            self.base_cols, self.cubic_cols, evals, self.xis, self.opening_pos,
+            self.vf, n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS,
         )
 
     def test_correct_opening_is_low_degree(self):

@@ -26,29 +26,34 @@ from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
 
 
 def open_columns(
-    columns_ext: Array,
+    base_cols: Array,
+    cubic_cols: Array,
     lev: Array,
     opening_pos: Sequence[int],
     *,
     n_bits: int,
     blowup_bits: int,
 ) -> Array:
-    """pil2 `evmap`: evaluate each cubic column of `columns_ext`
-    (`(2^nBitsExt, M)`) at its opening point. `opening_pos[m]` selects column `m`'s
-    `lev` column; the extended evals subsample to the base coset at stride
-    `2^blowup_bits` before the dot. Returns the `(M,)` cubic OOD openings."""
-    n = 1 << n_bits
+    """pil2 `evmap`: evaluate each committed column at its opening point. Columns
+    arrive split by field — `base_cols` (`(N_ext, B)` base) then `cubic_cols`
+    (`(N_ext, C)` cubic), matching the DEEP batching order (#69) — and the base
+    dot keeps its 8-byte reads (`lev·base` is scalar×cubic, exact). `opening_pos[m]`
+    selects column `m`'s `lev` column; the extended evals subsample to the base
+    coset at stride `2^blowup_bits` before the dot. Returns the `(M,)` cubic OOD
+    openings, base columns first."""
     stride = 1 << blowup_bits
-    if columns_ext.shape[0] != n << blowup_bits:
+    b, c = base_cols.shape[1], cubic_cols.shape[1]
+    if base_cols.shape[0] != 1 << (n_bits + blowup_bits):
         raise ValueError(
-            f"columns_ext must have 2^{n_bits + blowup_bits} rows, "
-            f"got {columns_ext.shape[0]}"
+            f"columns must have 2^{n_bits + blowup_bits} rows, "
+            f"got {base_cols.shape[0]}"
         )
-    if len(opening_pos) != columns_ext.shape[1]:
+    if len(opening_pos) != b + c:
         raise ValueError(
-            f"opening_pos length {len(opening_pos)} != column count "
-            f"{columns_ext.shape[1]}"
+            f"opening_pos length {len(opening_pos)} != column count {b + c} "
+            f"({b} base + {c} cubic)"
         )
-    base_coset = columns_ext[::stride]  # (N, M) — evals on shift·g^k
     lev_per_col = lev[:, jnp.array(opening_pos)]  # (N, M) cubic
-    return jnp.sum(lev_per_col * base_coset, axis=0)  # (M,) cubic
+    base_ev = jnp.sum(lev_per_col[:, :b] * base_cols[::stride], axis=0)  # (B,) cubic
+    cubic_ev = jnp.sum(lev_per_col[:, b:] * cubic_cols[::stride], axis=0)  # (C,) cubic
+    return jnp.concatenate([base_ev, cubic_ev])  # (M,) cubic

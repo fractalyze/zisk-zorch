@@ -53,6 +53,7 @@ class OpeningTest(absltest.TestCase):
         n = 1 << _N_BITS
         coeffs = _rand_cubic(n, seed=1)  # deg < N
         column = _coset_evals(coeffs, _N_BITS, _BLOWUP_BITS)[:, None]  # (N_ext, 1)
+        no_base = jnp.zeros((column.shape[0], 0), F3)  # this column is cubic
         z = _rand_cubic(1, seed=2)[0]
 
         # openingPoints [0, 1]: open at z and at z·g (the wrapped next-row point).
@@ -62,7 +63,7 @@ class OpeningTest(absltest.TestCase):
         for o, p in enumerate(opening_points):
             xi = z * jnp.power(g, p)
             evals = open_columns(
-                column, lev, [o], n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS
+                no_base, column, lev, [o], n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS
             )
             self.assertTrue(
                 _cubic_eq(evals[0], _poly_eval(coeffs, xi)),

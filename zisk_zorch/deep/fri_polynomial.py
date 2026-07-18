@@ -25,7 +25,6 @@ from collections.abc import Sequence
 
 import frx.numpy as jnp
 from frx import Array
-from zk_dtypes import goldilocksx3 as F3
 
 from zorch.poly.univariate import powers
 
@@ -44,7 +43,8 @@ def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
 
 
 def deep_composition(
-    columns_ext: Array,
+    base_cols: Array,
+    cubic_cols: Array,
     evals: Array,
     xis: Array,
     opening_pos: Sequence[int],
@@ -54,26 +54,49 @@ def deep_composition(
     blowup_bits: int,
 ) -> Array:
     """`f(x) = Σ_m vf^m·(col_m(x) − eval_m)/(x − ξ_{opening_pos[m]})` on the
-    extended coset. `columns_ext` is `(2^nBitsExt, M)` cubic, `evals`/`xis` cubic,
-    `vf` a cubic scalar. Returns the `(2^nBitsExt,)` cubic FRI codeword."""
-    m = columns_ext.shape[1]
+    extended coset. The committed columns arrive split by field: `base_cols`
+    (`(N_ext, B)` base) then `cubic_cols` (`(N_ext, C)` cubic), in that batching
+    order, so `vf^m`/`evals[m]` index base columns for `m < B` and cubic after.
+    Keeping base columns base is the point (#69): pil2 reads dim-1 columns as 8 B,
+    where embedding them to cubic up front would read (and materialize) 3×.
+
+    Two structural choices keep it off HBM: the summand is accumulated
+    column-by-column, so no `(N_ext, M)` cubic intermediate is ever built; and
+    `vf^m·(col_m − eval_m)` is grouped by opening point, so each distinct `ξ`
+    costs one cubic reciprocal (one in the wired flow — every column opens at
+    `z`). Field arithmetic is exact, so this is byte-identical to the per-column
+    `Σ (col−eval)/(x−ξ)` form. Returns the `(N_ext,)` cubic FRI codeword."""
+    b, c = base_cols.shape[1], cubic_cols.shape[1]
+    m = b + c
     if evals.shape[0] != m or len(opening_pos) != m:
         raise ValueError(
             f"evals ({evals.shape[0]}) and opening_pos ({len(opening_pos)}) must "
-            f"match the {m} columns"
+            f"match the {m} committed columns ({b} base + {c} cubic)"
         )
     x = _coset_points(n_bits, blowup_bits)  # (N_ext,) base — promotes below
-    xis_per_col = xis[jnp.array(opening_pos)]  # (M,) cubic
-    denom = x[:, None] - xis_per_col[None, :]  # (N_ext, M) cubic
-    numer = columns_ext - evals[None, :]  # (N_ext, M) cubic
-    return jnp.sum((numer / denom) * powers(vf, m)[None, :], axis=1)
+    vfp = powers(vf, m)  # (M,) cubic
+
+    numer_by_opening: dict[int, Array] = {}
+    for col_m in range(m):
+        col = base_cols[:, col_m] if col_m < b else cubic_cols[:, col_m - b]
+        term = vfp[col_m] * (col - evals[col_m])  # (N_ext,) cubic; base−cubic ok
+        o = opening_pos[col_m]
+        numer_by_opening[o] = (
+            term if o not in numer_by_opening else numer_by_opening[o] + term
+        )
+    f: Array | None = None
+    for o, numer in numer_by_opening.items():
+        term = numer / (x - xis[o])
+        f = term if f is None else f + term
+    return f
 
 
-def _committed_columns(trace_ext: Array, quotient: Array) -> Array:
-    """The committed cubic columns the DEEP opens: the extended trace embedded as
-    cubic (`b -> (b, 0, 0)`, the dtype's own value conversion), then the cubic
-    quotient. `(2^nBitsExt, n_cols + 1)`."""
-    return jnp.concatenate([trace_ext.astype(F3), quotient[:, None]], axis=1)
+def _committed_columns(trace_ext: Array, quotient: Array) -> tuple[Array, Array]:
+    """The committed columns the DEEP opens, split by field so DEEP reads base
+    columns as 8 B not 24 B (#69): the extended trace kept **base**
+    (`(N_ext, n_cols)`), and the cubic quotient (`(N_ext, 1)`). Batching order is
+    base-then-cubic — `deep_composition` and `open_columns` follow it."""
+    return trace_ext, quotient[:, None]
 
 
 def deep_fri_polynomial(
@@ -91,14 +114,18 @@ def deep_fri_polynomial(
     and `quotient` the cubic quotient codeword (the committed columns);
     `opening_points` are the AIR's wrapped opening shifts (default `(0,)` = open
     at `z` only)."""
-    columns = _committed_columns(trace_ext, quotient)
-    opening_pos = [0] * columns.shape[1]  # all at z; wrapped openings are AIR-specific
+    base_cols, cubic_cols = _committed_columns(trace_ext, quotient)
+    m = base_cols.shape[1] + cubic_cols.shape[1]
+    opening_pos = [0] * m  # all at z; wrapped openings are AIR-specific
     z = transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
     lev = compute_lev(_base_to_cubic(z).reshape(()), list(opening_points), n_bits)
-    evals = open_columns(columns, lev, opening_pos, n_bits=n_bits, blowup_bits=blowup_bits)
+    evals = open_columns(
+        base_cols, cubic_cols, lev, opening_pos, n_bits=n_bits, blowup_bits=blowup_bits
+    )
     transcript.put(_cubic_to_base(evals))  # absorb openings
     vf = _base_to_cubic(transcript.get_field()).reshape(())  # batching challenge
     xis = _ood_points(z, opening_points, n_bits)
     return deep_composition(
-        columns, evals, xis, opening_pos, vf, n_bits=n_bits, blowup_bits=blowup_bits
+        base_cols, cubic_cols, evals, xis, opening_pos, vf,
+        n_bits=n_bits, blowup_bits=blowup_bits,
     )
