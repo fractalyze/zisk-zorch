@@ -12,13 +12,13 @@ from __future__ import annotations
 import frx
 
 # rw's exported chip code materializes field constants via
-# `jnp.full(..., dtype=jnp.uint64).view(FIELD_DTYPE)`, which truncates (and then
+# `fnp.full(..., dtype=fnp.uint64).view(FIELD_DTYPE)`, which truncates (and then
 # fails the view) unless JAX x64 is on — the same u64 trap zisk-zorch's
 # golden path sidesteps by constructing in numpy first. Evaluating ingested
 # constraints therefore requires x64; set it before any array op.
 frx.config.update("jax_enable_x64", True)
 
-import frx.numpy as jnp  # noqa: E402
+import frx.numpy as fnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 from zk_dtypes import goldilocks  # noqa: E402
@@ -66,7 +66,7 @@ class ChipLoaderTest(absltest.TestCase):
                 if chip.has_pv:
                     # main ingests public inputs; skip the no-PV smoke path.
                     continue
-                trace = jnp.asarray(
+                trace = fnp.asarray(
                     np.zeros((2, chip.num_cols), dtype=np.uint64), dtype=goldilocks
                 )
                 violations = chip.eval_constraints(trace)
@@ -93,7 +93,7 @@ class ChipLoaderTest(absltest.TestCase):
         # binary's bus lookups are pure field arithmetic — eval_interactions
         # must run under the Goldilocks interaction dtype (not SP1's uint32).
         binary = self.chips["binary"]
-        trace = jnp.asarray(
+        trace = fnp.asarray(
             np.zeros((2, binary.num_cols), dtype=np.uint64), dtype=goldilocks
         )
         tuples = binary.eval_interactions(trace)

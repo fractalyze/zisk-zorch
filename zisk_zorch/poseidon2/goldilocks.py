@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import functools
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -278,7 +278,7 @@ _DIAG = {4: _DIAG_4, 8: _DIAG_8, 12: _DIAG_12, 16: _DIAG_16}
 def _u64_array(values: object) -> Array:
     # Round constants exceed int64; route through uint64 so the canonical
     # value, not a sign-wrapped one, converts into the field dtype.
-    return jnp.array(np.array(values, dtype=np.uint64), dtype=F)
+    return fnp.array(np.array(values, dtype=np.uint64), dtype=F)
 
 
 def goldilocks_params(width: int) -> Poseidon2Params:

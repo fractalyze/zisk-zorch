@@ -13,7 +13,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 
 from zorch.commit.merkle import MerkleTree, Opening
@@ -24,7 +24,7 @@ def group_proof(
 ) -> Array:
     """`getGroupProof`: serialize the opening at `index` to pil2's flat array."""
     opening = tree.open(matrix, digest_layers, index)
-    return jnp.concatenate([opening.row, *(jnp.ravel(s) for s in opening.path)])
+    return fnp.concatenate([opening.row, *(fnp.ravel(s) for s in opening.path)])
 
 
 def verify_group_proof(

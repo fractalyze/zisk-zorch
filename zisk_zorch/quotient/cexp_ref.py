@@ -27,7 +27,7 @@ the numpy level: the zkx CPU emitter crashes on cubic bitcast/`view`.
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 
 from zisk_zorch.golden import u64x3
@@ -118,7 +118,7 @@ def evaluate(fragment: dict, case: dict) -> Array:
     n_bits, blowup_bits = case["n_bits"], case["blowup_bits"]
     env = _load_inputs(case)
     q = _run_block(fragment["code"], env, 1 << blowup_bits)
-    return jnp.broadcast_to(q, (1 << (n_bits + blowup_bits),))
+    return fnp.broadcast_to(q, (1 << (n_bits + blowup_bits),))
 
 
 def evaluate_from_constraints(constraints: list[dict], case: dict) -> Array:

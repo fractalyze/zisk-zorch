@@ -75,7 +75,7 @@ legs of pil2's `GENERATING_INNER_PROOFS` — `extend`, `commit`, `full`,
 zkx-compiled path can be lined up against native ZisK. It wants a GPU host:
 
 ```sh
-JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
+FRX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
     bazel run //zisk_zorch:bench_inner_proof -- \
     --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 --arity=2 \
     -o "$PWD/report.json"

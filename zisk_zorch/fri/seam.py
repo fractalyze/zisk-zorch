@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
@@ -174,7 +174,7 @@ class Pil2FriCode:
         # collapses the bound to the zero polynomial.
         init = 0 if blowup_bits > last_bits else 1 << (last_bits - blowup_bits)
         coeffs = intt(_cubic_to_base(final).reshape(n, 3), last_bits)  # (n, 3) base
-        return jnp.all(coeffs[init:] == jnp.zeros((), F))
+        return fnp.all(coeffs[init:] == fnp.zeros((), F))
 
 
 @dataclass(frozen=True)
@@ -194,7 +194,7 @@ class Pil2SeamTranscript:
         challenges = [
             _base_to_cubic(self.inner.get_field()).reshape(()) for _ in range(n)
         ]
-        return self, challenges[0] if n == 1 else jnp.stack(challenges)
+        return self, challenges[0] if n == 1 else fnp.stack(challenges)
 
     def observe_and_sample(
         self, values: Array, n: int = 1

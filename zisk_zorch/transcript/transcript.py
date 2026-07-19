@@ -16,7 +16,7 @@ byte-match requires pil2's exact buffer discipline).
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 import zk_dtypes
 from frx import Array, lax
@@ -39,7 +39,7 @@ def _canonical(values: Array) -> np.ndarray:
     plain goldilocks storage (limb0 is the canonical value), bitcast to u32
     halves, and recombine on host."""
     std = values.astype(zk_dtypes.goldilocks)
-    halves = np.asarray(lax.bitcast_convert_type(std, jnp.uint32)).astype(np.uint64)
+    halves = np.asarray(lax.bitcast_convert_type(std, fnp.uint32)).astype(np.uint64)
     return halves[..., 0] | (halves[..., 1] << np.uint64(32))
 
 
@@ -49,15 +49,15 @@ class Transcript:
     def __init__(self, width: int = 12) -> None:
         self._perm: Poseidon2 = goldilocks_perm(width)
         self.width = width
-        self._state = jnp.zeros((width,), F)
-        self._out = jnp.zeros((width,), F)
+        self._state = fnp.zeros((width,), F)
+        self._out = fnp.zeros((width,), F)
         self._pending: list[Array] = []
         self._out_cursor = 0
 
     def _update_state(self) -> None:
-        pad = [jnp.zeros((), F)] * (self.width - 4 - len(self._pending))
-        inputs = jnp.concatenate(
-            [jnp.stack(self._pending + pad), self._state[:4]]
+        pad = [fnp.zeros((), F)] * (self.width - 4 - len(self._pending))
+        inputs = fnp.concatenate(
+            [fnp.stack(self._pending + pad), self._state[:4]]
         )
         self._state = self._perm.permute(inputs)
         self._out = self._state
@@ -88,14 +88,14 @@ class Transcript:
 
     def get_field(self) -> Array:
         """Squeeze one cubic-extension challenge as its 3 Goldilocks limbs."""
-        return jnp.stack([self.get_fields1() for _ in range(CHALLENGE_LIMBS)])
+        return fnp.stack([self.get_fields1() for _ in range(CHALLENGE_LIMBS)])
 
     def get_permutations(self, n: int, n_bits: int) -> np.ndarray:
         """Squeeze `n` query indices of `n_bits` bits — 63 bits per element,
         consumed LSB-first across element boundaries."""
         total_bits = n * n_bits
         n_fields = (total_bits - 1) // _BITS_PER_ELEMENT + 1
-        fields = _canonical(jnp.stack([self.get_fields1() for _ in range(n_fields)]))
+        fields = _canonical(fnp.stack([self.get_fields1() for _ in range(n_fields)]))
         out = np.zeros(n, dtype=np.uint64)
         cur_field, cur_bit = 0, 0
         for i in range(n):
