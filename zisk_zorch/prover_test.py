@@ -13,7 +13,7 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import QuotientEchoStage, prove_inner
+from zisk_zorch.prover import QuotientEchoStage, _fold_steps, prove_inner
 
 _N_BITS = 6
 _N_COLS = 8
@@ -59,6 +59,27 @@ def _prove(seed: int = 0, deep_stage=QuotientEchoStage()):
         n_queries=_N_QUERIES,
         deep_stage=deep_stage,
     )
+
+
+class FoldStepsTest(absltest.TestCase):
+    """The FRI schedule's two degenerate shapes, which nothing downstream
+    catches: `Pil2FriCode` accepts a one-step schedule, so both would run and
+    produce a proof that folds nothing."""
+
+    def test_rejects_a_final_at_or_above_the_extended_domain(self) -> None:
+        for final_bits in (7, 8):
+            with self.subTest(final_bits=final_bits):
+                with self.assertRaisesRegex(ValueError, "final_bits"):
+                    _fold_steps(7, 3, final_bits)
+
+    def test_rejects_a_non_positive_fold(self) -> None:
+        for fold_bits in (0, -1):
+            with self.subTest(fold_bits=fold_bits):
+                with self.assertRaisesRegex(ValueError, "fold_bits"):
+                    _fold_steps(7, fold_bits, 5)
+
+    def test_accepts_a_schedule_that_folds(self) -> None:
+        self.assertEqual(_fold_steps(11, 3, 5), [11, 8, 5])
 
 
 class ProveInnerTest(absltest.TestCase):

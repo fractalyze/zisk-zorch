@@ -48,7 +48,21 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
     """Strictly-decreasing FRI layer schedule `n_bits_ext -> ... -> final_bits`,
     folding by `fold_bits` per layer (the tail folds the remainder). Same schedule
     `bench_inner_proof._fold_steps` builds; kept here so the prover owns its FRI
-    shape without importing a benchmark private."""
+    shape without importing a benchmark private.
+
+    The two degenerate schedules are rejected here rather than downstream:
+    `Pil2FriCode` accepts a one-step schedule, so a `final_bits` at or above the
+    extended domain would fold zero layers and prove nothing, and a non-positive
+    `fold_bits` reaches `range` as a zero or inverted step. Everything else the
+    schedule needs is checked where it is used — `arity` by `merkle_tree`,
+    `blowup_bits` by the zerofier, and the step sequence by `Pil2FriCode`."""
+    if fold_bits < 1:
+        raise ValueError(f"fold_bits must be >= 1, got {fold_bits}")
+    if final_bits >= n_bits_ext:
+        raise ValueError(
+            f"final_bits must be below the extended domain size {n_bits_ext} "
+            f"or FRI folds no layers, got {final_bits}"
+        )
     steps = list(range(n_bits_ext, final_bits, -fold_bits))
     if not steps or steps[-1] != final_bits:
         steps.append(final_bits)
