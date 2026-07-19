@@ -74,6 +74,10 @@ class InnerBridge:
     quotient_layers: list[Array] | None = None
     # Written by DeepStage; read by FriStage as its codeword.
     fri_pol: Array | None = None
+    # Written by DeepStage; read by proof assembly. The out-of-domain column
+    # openings the transcript absorbed — the verifier needs them to reach `vf`.
+    # None under QuotientEchoStage, which opens nothing.
+    deep_evals: Array | None = None
     # Written by FriStage; read by QueryStage (the layer trees it opens).
     fri: FriProof | None = None
     # Written by QueryStage; read by proof assembly.
@@ -173,7 +177,7 @@ class DeepStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, Array]:
-        fri_pol = deep_fri_polynomial(
+        fri_pol, evals = deep_fri_polynomial(
             bridge.trace_commit.extended,
             bridge.quotient,
             transcript,
@@ -181,7 +185,7 @@ class DeepStage(Round):
             blowup_bits=self._blowup_bits,
             opening_points=self._opening_points,
         )
-        return replace(bridge, fri_pol=fri_pol), transcript, fri_pol
+        return replace(bridge, fri_pol=fri_pol, deep_evals=evals), transcript, fri_pol
 
 
 class QuotientEchoStage(Round):
@@ -284,6 +288,9 @@ class InnerProof:
 
     trace_root: Array
     quotient_root: Array
+    # pil2's `evals` section: the committed columns opened at the OOD point.
+    # None when the DEEP slot is QuotientEchoStage (no openings to send).
+    evals: Array | None
     fri: FriProof
     final_pol: Array
     nonce: int
@@ -380,6 +387,7 @@ def prove_inner(
     return InnerProof(
         trace_root=bridge.trace_commit.root,
         quotient_root=bridge.quotient_root,
+        evals=bridge.deep_evals,
         fri=bridge.fri,
         final_pol=bridge.fri.final_pol,
         nonce=bridge.nonce,

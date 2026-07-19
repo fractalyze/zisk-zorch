@@ -107,13 +107,19 @@ def deep_fri_polynomial(
     n_bits: int,
     blowup_bits: int,
     opening_points: Sequence[int] = (0,),
-) -> Array:
+) -> tuple[Array, Array]:
     """The real DEEP flow, threading the transcript exactly as pil2's `genProof`:
     squeeze the OOD `z`, open the committed columns, absorb the openings, squeeze
     the batching challenge `vf`, and build `f`. `trace_ext` is the extended trace
     and `quotient` the cubic quotient codeword (the committed columns);
     `opening_points` are the AIR's wrapped opening shifts (default `(0,)` = open
-    at `z` only)."""
+    at `z` only).
+
+    Returns `(f, evals)`. The openings travel in the proof (pil2's `evals`
+    section) because the transcript absorbs them before squeezing `vf`: a
+    verifier replaying the transcript cannot recompute them — it has no trace —
+    so without them every later challenge diverges. `z` is not returned; it is
+    squeezed, so the verifier re-derives it."""
     base_cols, cubic_cols = _committed_columns(trace_ext, quotient)
     m = base_cols.shape[1] + cubic_cols.shape[1]
     opening_pos = [0] * m  # all at z; wrapped openings are AIR-specific
@@ -125,7 +131,8 @@ def deep_fri_polynomial(
     transcript.put(_cubic_to_base(evals))  # absorb openings
     vf = _base_to_cubic(transcript.get_field()).reshape(())  # batching challenge
     xis = _ood_points(z, opening_points, n_bits)
-    return deep_composition(
+    f = deep_composition(
         base_cols, cubic_cols, evals, xis, opening_pos, vf,
         n_bits=n_bits, blowup_bits=blowup_bits,
     )
+    return f, evals
