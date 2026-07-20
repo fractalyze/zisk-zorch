@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from frx import Array
@@ -63,7 +63,7 @@ def _low_degree_codeword(n_bits: int, n_bits_ext: int, seed: int) -> Array:
                 acc = (acc * x + int(coeffs[k, c])) % _GOLDILOCKS_P
             out[i, c] = acc
     base = out.astype(np.uint64).astype(F)  # (n_ext, 3) base limbs -> plain field
-    return jnp.array(base.view(F3).reshape(n_ext))
+    return fnp.array(base.view(F3).reshape(n_ext))
 
 
 class FriVerifierTest(absltest.TestCase):
@@ -135,7 +135,7 @@ class FriVerifierTest(absltest.TestCase):
 
                 # Tamper the final polynomial: cascades through the re-derived
                 # query positions and the last fold's consistency check.
-                bad_final = proof.final_pol.at[0].set(proof.final_pol[0] + jnp.ones((), F3))
+                bad_final = proof.final_pol.at[0].set(proof.final_pol[0] + fnp.ones((), F3))
                 self.assertFalse(
                     self._verify(case, proof.roots, bad_final, openings, nonce),
                     msg="accepted a tampered final polynomial",
@@ -144,7 +144,7 @@ class FriVerifierTest(absltest.TestCase):
                 # Tamper an opened value: breaks that layer's Merkle opening.
                 bad_openings = [list(per_q) for per_q in openings]
                 first = bad_openings[0][0]
-                bad_openings[0][0] = first.at[0].set(first[0] + jnp.ones((), first.dtype))
+                bad_openings[0][0] = first.at[0].set(first[0] + fnp.ones((), first.dtype))
                 self.assertFalse(
                     self._verify(case, proof.roots, proof.final_pol, bad_openings, nonce),
                     msg="accepted a tampered Merkle opening",

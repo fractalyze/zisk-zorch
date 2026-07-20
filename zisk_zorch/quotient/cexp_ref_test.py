@@ -20,7 +20,7 @@ frx.config.update("jax_enable_x64", True)
 
 import pathlib  # noqa: E402
 
-import frx.numpy as jnp  # noqa: E402
+import frx.numpy as fnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.golden import load, u64x3  # noqa: E402
@@ -56,7 +56,7 @@ class CExpRefTest(absltest.TestCase):
         for case in self.golden["cases"]:
             with self.subTest(air=case["air"], n_bits=case["n_bits"]):
                 got = evaluate(self.fragments[case["air"]], case)
-                self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64x3(case["q"]))))
 
     def test_generic_constraint_fold_matches_golden_q(self) -> None:
         # The AIR-agnostic constraints[] fold reassembles the same q as pil2's
@@ -64,7 +64,7 @@ class CExpRefTest(absltest.TestCase):
         for case in self.golden["cases"]:
             with self.subTest(air=case["air"], n_bits=case["n_bits"]):
                 got = evaluate_from_constraints(self.constraints[case["air"]], case)
-                self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64x3(case["q"]))))
 
 
 if __name__ == "__main__":

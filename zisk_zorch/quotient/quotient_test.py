@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -31,17 +31,17 @@ _COSET_SHIFT = 7
 _TWO_ADIC_ROOT = 7277203076849721926
 
 
-def _base(values: list[int]) -> jnp.ndarray:
-    return jnp.array(np.array([v % _MODULUS for v in values], dtype=np.uint64), dtype=F)
+def _base(values: list[int]) -> fnp.ndarray:
+    return fnp.array(np.array([v % _MODULUS for v in values], dtype=np.uint64), dtype=F)
 
 
-def _cubic(limbs: list[int]) -> jnp.ndarray:
+def _cubic(limbs: list[int]) -> fnp.ndarray:
     """Flat canonical limbs (3 per element) -> a goldilocksx3 array."""
     flat = np.array([v % _MODULUS for v in limbs], dtype=np.uint64).reshape(-1, 3)
-    return jnp.array(flat.astype(F).view(F3).reshape(flat.shape[0]))
+    return fnp.array(flat.astype(F).view(F3).reshape(flat.shape[0]))
 
 
-def _zh_evals(n_bits: int, blowup_bits: int) -> jnp.ndarray:
+def _zh_evals(n_bits: int, blowup_bits: int) -> fnp.ndarray:
     """`Z_H(x) = x^N - 1` on the coset, built independently of the impl."""
     extend = 1 << blowup_bits
     n_ext = 1 << (n_bits + blowup_bits)
@@ -68,7 +68,7 @@ class ZerofierTest(absltest.TestCase):
         for case in self.golden["every_row"]:
             with self.subTest(n_bits=case["n_bits"], blowup_bits=case["blowup_bits"]):
                 got = inv_zerofier(case["n_bits"], case["blowup_bits"])
-                self.assertTrue(bool(jnp.array_equal(got, u64(case["zi"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64(case["zi"]))))
 
     def test_one_row_matches_pil2_build_one_row_zerofier_inv(self) -> None:
         for case in self.golden["one_row"]:
@@ -76,7 +76,7 @@ class ZerofierTest(absltest.TestCase):
                 got = inv_one_row_zerofier(
                     case["n_bits"], case["blowup_bits"], case["row_index"]
                 )
-                self.assertTrue(bool(jnp.array_equal(got, u64(case["zi"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64(case["zi"]))))
 
     def test_frame_matches_pil2_build_frame_zerofier_inv(self) -> None:
         for case in self.golden["frame"]:
@@ -85,7 +85,7 @@ class ZerofierTest(absltest.TestCase):
                     case["n_bits"], case["blowup_bits"],
                     case["offset_min"], case["offset_max"],
                 )
-                self.assertTrue(bool(jnp.array_equal(got, u64(case["zi"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64(case["zi"]))))
 
 
 class QuotientTest(absltest.TestCase):
@@ -96,7 +96,7 @@ class QuotientTest(absltest.TestCase):
         q = _cubic([(7 * i + 3) % _MODULUS for i in range(3 * n_ext)])
         composite = q * _zh_evals(n_bits, blowup_bits)
         got = compute_quotient(composite, n_bits, blowup_bits)
-        self.assertTrue(bool(jnp.array_equal(got, q)))
+        self.assertTrue(bool(fnp.array_equal(got, q)))
 
     def test_quotient_from_constraints_folds_then_divides(self) -> None:
         # The composed path equals constraint_eval (via compute_quotient) — the
@@ -109,11 +109,11 @@ class QuotientTest(absltest.TestCase):
         alpha = _cubic([2, 0, 0, 5, 0, 0])  # K=2 cubic fold weights
 
         def eval_fn(t):  # two constraints in the trailing axis
-            return jnp.concatenate([t, t * t], axis=-1)
+            return fnp.concatenate([t, t * t], axis=-1)
 
         got = quotient_from_constraints(eval_fn, trace, alpha, n_bits, blowup_bits)
         want = compute_quotient(constraint_eval(eval_fn, trace, alpha), n_bits, blowup_bits)
-        self.assertTrue(bool(jnp.array_equal(got, want)))
+        self.assertTrue(bool(fnp.array_equal(got, want)))
 
 
 if __name__ == "__main__":

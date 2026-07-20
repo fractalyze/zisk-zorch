@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -18,7 +18,7 @@ def load(path: pathlib.Path) -> dict:
 
 def u64(values: list[str]) -> Array:
     """Decimal-string canonical u64s -> a 1-D goldilocks array."""
-    return jnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
+    return fnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
 
 
 def u64x3(values: list[str]) -> Array:
@@ -27,4 +27,4 @@ def u64x3(values: list[str]) -> Array:
     in the base field, then the contiguous limb triples view as one cubic."""
     flat = np.array([int(v) for v in values], dtype=np.uint64).reshape(-1, 3)
     base = flat.astype(F)
-    return jnp.array(base.view(F3).reshape(flat.shape[0]))
+    return fnp.array(base.view(F3).reshape(flat.shape[0]))

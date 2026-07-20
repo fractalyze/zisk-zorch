@@ -22,7 +22,7 @@ gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alp
 from __future__ import annotations
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
 
@@ -58,7 +58,7 @@ def grand_sum(numerators: Array, denominators: Array) -> Array:
     local = numerators[:, 0] / denominators[:, 0]
     for i in range(1, numerators.shape[1]):
         local = local + numerators[:, i] / denominators[:, i]
-    return jnp.cumsum(local)
+    return fnp.cumsum(local)
 
 
 def _scalar(value) -> Array:
@@ -66,7 +66,7 @@ def _scalar(value) -> Array:
     trace column. The coefficient is a canonical field element in [0, p) (rw stores
     −1 as p−1), so it value-converts straight to `F` with no reduction — like
     `embed`'s decimals."""
-    return jnp.array(int(value), dtype=F)
+    return fnp.array(int(value), dtype=F)
 
 
 def eval_pair_col(vpc, trace: Array) -> Array:
@@ -80,7 +80,7 @@ def eval_pair_col(vpc, trace: Array) -> Array:
     read at the current row (the `is_pre` next-row flag is unused; no exported ZisK
     tuple sets it)."""
     n = trace.shape[0]
-    acc = jnp.broadcast_to(_scalar(vpc.constant), (n,))
+    acc = fnp.broadcast_to(_scalar(vpc.constant), (n,))
     for col, _is_pre, weight in vpc.column_weights:
         acc = acc + _scalar(weight) * trace[:, col]
     for col_a, _pre_a, col_b, _pre_b, weight in getattr(vpc, "column_products", ()):

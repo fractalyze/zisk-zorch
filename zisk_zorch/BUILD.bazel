@@ -20,7 +20,7 @@ py_library(
 # plugin so the stages can be timed on the GPU bar, which is the comparison
 # against native ZisK this bench exists for. Run:
 #   CPU: bazel run //zisk_zorch:bench_inner_proof -- --n_bits=20
-#   GPU: JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
+#   GPU: FRX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
 #        bazel run //zisk_zorch:bench_inner_proof -- --n_bits=20 -o report.json
 py_binary(
     name = "bench_inner_proof",

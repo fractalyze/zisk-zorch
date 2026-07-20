@@ -15,7 +15,7 @@ frx.config.update("jax_enable_x64", True)
 
 import pathlib  # noqa: E402
 
-import frx.numpy as jnp  # noqa: E402
+import frx.numpy as fnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
@@ -40,7 +40,7 @@ class ReauthorBinaryTest(absltest.TestCase):
         for case in self.cases:
             with self.subTest(n_bits=case["n_bits"], blowup_bits=case["blowup_bits"]):
                 got = reauthor_binary_quotient(self.chip, case)
-                self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64x3(case["q"]))))
 
 
 class ReauthorArithTest(absltest.TestCase):
@@ -55,7 +55,7 @@ class ReauthorArithTest(absltest.TestCase):
         for case in self.cases:
             with self.subTest(n_bits=case["n_bits"], blowup_bits=case["blowup_bits"]):
                 got = reauthor_arith_quotient(self.chip, case, self.constraints)
-                self.assertTrue(bool(jnp.array_equal(got, u64x3(case["q"]))))
+                self.assertTrue(bool(fnp.array_equal(got, u64x3(case["q"]))))
 
 
 if __name__ == "__main__":

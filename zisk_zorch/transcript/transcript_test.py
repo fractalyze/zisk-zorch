@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 
@@ -28,13 +28,13 @@ class TranscriptTest(absltest.TestCase):
                 elif op == "get_field":
                     out = t.get_field()
                     self.assertTrue(
-                        bool(jnp.array_equal(out, u64(step["output"]))),
+                        bool(fnp.array_equal(out, u64(step["output"]))),
                         msg=f"width {width} get_field",
                     )
                 elif op == "get_fields1_x5":
-                    out = jnp.stack([t.get_fields1() for _ in range(5)])
+                    out = fnp.stack([t.get_fields1() for _ in range(5)])
                     self.assertTrue(
-                        bool(jnp.array_equal(out, u64(step["output"]))),
+                        bool(fnp.array_equal(out, u64(step["output"]))),
                         msg=f"width {width} get_fields1",
                     )
                 elif op == "get_permutations":
@@ -49,7 +49,7 @@ class TranscriptTest(absltest.TestCase):
                 elif op == "get_state":
                     out = t.get_state()
                     self.assertTrue(
-                        bool(jnp.array_equal(out, u64(step["output"]))),
+                        bool(fnp.array_equal(out, u64(step["output"]))),
                         msg=f"width {width} get_state",
                     )
                 else:

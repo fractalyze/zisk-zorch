@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
 
@@ -61,7 +61,7 @@ def extend(trace: Array, blowup: int) -> Array:
         trace.shape[0],
         blowup,
         F,
-        coset_shift=jnp.asarray(COSET_SHIFT, F),
+        coset_shift=fnp.asarray(COSET_SHIFT, F),
         generator=_PIL2_GENERATOR,
     )
     return rs.extend(trace.T).T

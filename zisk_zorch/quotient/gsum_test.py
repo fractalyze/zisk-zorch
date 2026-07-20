@@ -12,7 +12,7 @@ frx.config.update("jax_enable_x64", True)
 import pathlib  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
-import frx.numpy as jnp  # noqa: E402
+import frx.numpy as fnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 from zk_dtypes import goldilocks as F  # noqa: E402
@@ -40,7 +40,7 @@ class GsumTest(absltest.TestCase):
                 gamma = u64x3(case["gamma"]).reshape(())
                 got = bus_denominator(tup, alpha, gamma)
                 want = u64x3(case["den"]).reshape(())
-                self.assertTrue(bool(jnp.array_equal(got, want)))
+                self.assertTrue(bool(fnp.array_equal(got, want)))
 
     def test_grand_sum_matches_pil2(self) -> None:
         for case in self.golden["grand_sum"]:
@@ -50,12 +50,12 @@ class GsumTest(absltest.TestCase):
                 den = u64x3(case["denominators"]).reshape(n, i)
                 got = grand_sum(num, den)
                 want = u64x3(case["gsum"])  # (N,) cubic
-                self.assertTrue(bool(jnp.array_equal(got, want)))
+                self.assertTrue(bool(fnp.array_equal(got, want)))
 
     def test_eval_pair_col_evaluates_column_products(self) -> None:
         # const + Σ wᵢ·colᵢ + Σ wₖ·colₐ·col_b, the bilinear part a non-affine bus
         # tuple (e.g. arith's operation bus) needs. Weights are rw's decimal strings.
-        trace = jnp.array(np.array([[2, 3], [4, 5]], dtype=np.uint64), dtype=F)
+        trace = fnp.array(np.array([[2, 3], [4, 5]], dtype=np.uint64), dtype=F)
         vpc = SimpleNamespace(
             constant="7",
             column_weights=[(0, False, "3")],  # 3·col0
@@ -63,8 +63,8 @@ class GsumTest(absltest.TestCase):
         )
         got = eval_pair_col(vpc, trace)
         # row0: 7 + 3·2 + 5·2·3 = 43 ; row1: 7 + 3·4 + 5·4·5 = 119
-        want = embed_base(jnp.array(np.array([43, 119], dtype=np.uint64), dtype=F))
-        self.assertTrue(bool(jnp.array_equal(got, want)))
+        want = embed_base(fnp.array(np.array([43, 119], dtype=np.uint64), dtype=F))
+        self.assertTrue(bool(fnp.array_equal(got, want)))
 
     def test_arith_operation_bus_reconstructs_pil2_gsum_e(self) -> None:
         # rw's arith `proves_operation` interaction is non-affine — its operation-bus
@@ -89,7 +89,7 @@ class GsumTest(absltest.TestCase):
                 cm = {c["id"]: (embed if c["dim"] == 1 else u64x3)(c["values"]) for c in case["cm"]}
                 authored = cm[57] * (gsum_e(op, base_trace(case, 44), alpha) + gamma) - cm[41]
                 target = cexp_ref._run_block(constraints[61]["code"], env, 1 << case["blowup_bits"])
-                self.assertTrue(bool(jnp.array_equal(authored, target)))
+                self.assertTrue(bool(fnp.array_equal(authored, target)))
 
 
 if __name__ == "__main__":

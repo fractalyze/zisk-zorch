@@ -34,7 +34,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 
@@ -125,12 +125,12 @@ def verify(
             rows.append(_base_to_cubic(proof[:n_cols]))  # (n_x,) cubic
         # The seam folds the opened cubic group, so feed it cubic-viewed rows
         # (the linear-hash leaf stays base-limb above, in verify_group_proof).
-        openings_seam.append(Opening(row=jnp.stack(rows), path=[]))  # (Q, n_x)
+        openings_seam.append(Opening(row=fnp.stack(rows), path=[]))  # (Q, n_x)
 
     # Each layer's opened group folds to the next layer's opening, or the final
     # polynomial at the last layer — the shared k-ary fold-chain check. The leaf
     # indices cross to JAX only here, for the device-side fold arithmetic.
-    leaf_indices_jax = [jnp.asarray(idx) for idx in leaf_indices]
+    leaf_indices_jax = [fnp.asarray(idx) for idx in leaf_indices]
     ok = verify_group_fold_chain(code, openings_seam, betas, leaf_indices_jax, final_pol)
 
     # The terminal low-degree test on the in-clear final polynomial: the fold

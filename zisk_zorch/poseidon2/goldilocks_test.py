@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -20,8 +20,8 @@ from zisk_zorch.poseidon2.goldilocks import WIDTHS, goldilocks_perm
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "permutation.json"
 
 
-def _u64(values: list[str]) -> jnp.ndarray:
-    return jnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
+def _u64(values: list[str]) -> fnp.ndarray:
+    return fnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
 
 
 class GoldilocksPoseidon2Test(absltest.TestCase):
@@ -36,7 +36,7 @@ class GoldilocksPoseidon2Test(absltest.TestCase):
                 out = perm.permute(_u64(case["input"]))
                 expected = _u64(case["output"])
                 self.assertTrue(
-                    bool(jnp.array_equal(out, expected)),
+                    bool(fnp.array_equal(out, expected)),
                     msg=f"width {width}: {out} != {expected}",
                 )
         self.assertCountEqual(widths_seen, WIDTHS)
