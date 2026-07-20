@@ -39,7 +39,7 @@ from zisk_zorch.commit.trace_commit import TraceCommitment, commit_trace, merkle
 from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
 from zisk_zorch.fri.prover import FriProof, prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
-from zorch.utils.field import to_limb_rows
+from zorch.utils.field import split_coeffs
 
 from zisk_zorch.fri.seam import base_to_cubic
 from zisk_zorch.quotient.quotient import quotient_from_constraints
@@ -157,7 +157,7 @@ class QuotientStage(Round):
             self._n_bits,
             self._blowup_bits,
         )
-        matrix = to_limb_rows(quotient)
+        matrix = split_coeffs(quotient)
         root, layers = merkle_tree(self._arity).commit(matrix)
         transcript.put(root)
         return (

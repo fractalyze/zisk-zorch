@@ -30,7 +30,7 @@ from zorch.poly.univariate import powers
 
 from zisk_zorch.deep.opening import open_columns
 from zisk_zorch.evals.lev import compute_lev
-from zorch.utils.field import to_limb_rows
+from zorch.utils.field import split_coeffs
 
 from zisk_zorch.fri.seam import base_to_cubic
 from zisk_zorch.quotient.zerofier import _coset_points, _root
@@ -130,7 +130,7 @@ def deep_fri_polynomial(
     evals = open_columns(
         base_cols, cubic_cols, lev, opening_pos, n_bits=n_bits, blowup_bits=blowup_bits
     )
-    transcript.put(to_limb_rows(evals).reshape(-1))  # absorb openings
+    transcript.put(split_coeffs(evals).reshape(-1))  # absorb openings
     vf = base_to_cubic(transcript.get_field()).reshape(())  # batching challenge
     xis = _ood_points(z, opening_points, n_bits)
     f = deep_composition(

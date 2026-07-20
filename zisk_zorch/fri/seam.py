@@ -31,23 +31,23 @@ from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
-from zorch.utils.field import from_limb_rows, to_limb_rows
+from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.fri.fold import fold, intt, verify_fold
 from zisk_zorch.transcript.transcript import Transcript
 
 
 def base_to_cubic(values: Array) -> Array:
-    """Contiguous Goldilocks limbs -> cubic elements, the 3 limbs being that
-    element's coefficients (cf. golden `u64x3`).
+    """Contiguous Goldilocks coefficients -> cubic elements, each 3 of them being
+    one element's coefficients (cf. golden `u64x3`).
 
-    `zorch.utils.field.from_limb_rows` takes one row per element and needs the
-    target dtype, since limbs carry no record of what they were. This groups
-    pil2's contiguous-limb wire layout into rows and binds `FIELD_EXTENSION` = 3
-    once for the repo. The other direction needs no binding — call `to_limb_rows`
-    directly and reshape to whatever the consumer wants."""
+    `zorch.utils.field.join_coeffs` wants them one row per element and needs the
+    target dtype, since coefficients carry no record of what they were. This
+    groups pil2's contiguous wire layout into rows and binds `FIELD_EXTENSION` =
+    3 once for the repo. The other direction needs no binding — call
+    `split_coeffs` directly and reshape to what the consumer wants."""
     rows = values.reshape(*values.shape[:-1], -1, 3)
-    return from_limb_rows(rows, F3)
+    return join_coeffs(rows, F3)
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,7 @@ class Pil2FriCode:
         # expands each entry to its 3 limbs -> (cur_n, n_x*3).
         rows = codeword.reshape(n_x, cur_n).T
         # leaf layout: each cubic row's limbs contiguous in the trailing axis
-        return to_limb_rows(rows).reshape(*rows.shape[:-1], -1)
+        return split_coeffs(rows).reshape(*rows.shape[:-1], -1)
 
     def group_indices(self, positions: Array, level: int) -> tuple[Array, ...]:
         """The `2^(steps[level]-steps[level+1])` leaf indices of layer `level`'s
@@ -168,7 +168,7 @@ class Pil2FriCode:
         # (pil2 stark_verify.hpp L684). A blowup wider than the final layer
         # collapses the bound to the zero polynomial.
         init = 0 if blowup_bits > last_bits else 1 << (last_bits - blowup_bits)
-        coeffs = intt(to_limb_rows(final), last_bits)  # (n, 3) base
+        coeffs = intt(split_coeffs(final), last_bits)  # (n, 3) base
         return fnp.all(coeffs[init:] == fnp.zeros((), F))
 
 
