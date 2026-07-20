@@ -31,8 +31,8 @@ jobs:
     steps:
       - id: set
         run: |
-          cpu='{"backend":"cpu","runs_on":["self-hosted","cpu"],"jax_platforms":"cpu","tag_filters":"-gpu"}'
-          gpu='{"backend":"gpu","runs_on":["self-hosted","gpu"],"jax_platforms":"cuda","tag_filters":""}'
+          cpu='{"backend":"cpu","runs_on":["self-hosted","cpu"],"frx_platforms":"cpu","tag_filters":"-gpu"}'
+          gpu='{"backend":"gpu","runs_on":["self-hosted","gpu"],"frx_platforms":"cuda","tag_filters":""}'
           include="${cpu}"
           if [ "${{ vars.HAS_GPU_RUNNER }}" = "true" ]; then
             include="${cpu},${gpu}"
@@ -59,7 +59,7 @@ jobs:
       - name: bazel test
         run: |
           bazel test \
-            --test_env=JAX_PLATFORMS=${{ matrix.jax_platforms }} \
+            --test_env=FRX_PLATFORMS=${{ matrix.frx_platforms }} \
             --test_tag_filters=${{ matrix.tag_filters }} \
             -- //...
 

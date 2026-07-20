@@ -8,7 +8,7 @@ Cubic loading from decimal limbs is `zisk_zorch.golden.u64x3`; use that directly
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -23,14 +23,14 @@ def embed(values: list[str]) -> Array:
     plain field — no explicit reduction needed (already canonical). Numpy-level:
     the zkx CPU emitter crashes on cubic bitcast/`view`."""
     limbs = np.array([[int(v), 0, 0] for v in values], dtype=np.uint64)
-    return jnp.array(limbs.astype(F).view(F3).reshape(limbs.shape[0]))
+    return fnp.array(limbs.astype(F).view(F3).reshape(limbs.shape[0]))
 
 
 def embed_base(base: Array) -> Array:
     """An `F` base array -> `F3` `(b, 0, 0)` (numpy-level, like `embed`)."""
-    u = np.asarray(base.astype(jnp.uint64))
+    u = np.asarray(base.astype(fnp.uint64))
     z = np.zeros_like(u)
-    return jnp.array(np.stack([u, z, z], axis=1).astype(F).view(F3).reshape(u.shape[0]))
+    return fnp.array(np.stack([u, z, z], axis=1).astype(F).view(F3).reshape(u.shape[0]))
 
 
 def base_trace(case: dict, n_cols: int) -> Array:
@@ -42,13 +42,13 @@ def base_trace(case: dict, n_cols: int) -> Array:
         [np.array([int(v) for v in cols[j]], dtype=np.uint64) for j in range(n_cols)],
         axis=1,
     )
-    return jnp.array(trace, dtype=F)
+    return fnp.array(trace, dtype=F)
 
 
 def rotate(col: Array, shift: int) -> Array:
     """`out[i] = col[(i + shift) mod n]` — the extended-domain image of a
-    next/previous-row opening. Built from slice+concat (no `jnp.roll` in the
+    next/previous-row opening. Built from slice+concat (no `fnp.roll` in the
     zkx jax fork)."""
     n = col.shape[0]
     s = shift % n
-    return col if s == 0 else jnp.concatenate([col[s:], col[:s]])
+    return col if s == 0 else fnp.concatenate([col[s:], col[:s]])

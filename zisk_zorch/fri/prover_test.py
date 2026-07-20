@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from absl.testing import absltest
 
 from zisk_zorch.fri.prover import prove, prove_queries
@@ -34,13 +34,13 @@ class FriProveTest(absltest.TestCase):
                 )
 
                 self.assertTrue(
-                    bool(jnp.array_equal(proof.final_pol, u64x3(case["final_pol"]))),
+                    bool(fnp.array_equal(proof.final_pol, u64x3(case["final_pol"]))),
                     msg="final polynomial",
                 )
                 self.assertEqual(len(proof.roots), len(case["roots"]))
                 for layer, (got, want) in enumerate(zip(proof.roots, case["roots"])):
                     self.assertTrue(
-                        bool(jnp.array_equal(got, u64(want))), msg=f"root {layer}"
+                        bool(fnp.array_equal(got, u64(want))), msg=f"root {layer}"
                     )
 
                 openings = prove_queries(proof, [q["query"] for q in case["queries"]])
@@ -48,7 +48,7 @@ class FriProveTest(absltest.TestCase):
                     self.assertEqual(len(per_layer), len(q["layers"]))
                     for layer, (got, want) in enumerate(zip(per_layer, q["layers"])):
                         self.assertTrue(
-                            bool(jnp.array_equal(got, u64(want["proof"]))),
+                            bool(fnp.array_equal(got, u64(want["proof"]))),
                             msg=f"query {q['query']} layer {layer}",
                         )
 

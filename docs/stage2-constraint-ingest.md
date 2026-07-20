@@ -36,12 +36,12 @@ stage-2 uses, so a chip is addressed by its manifest name directly.
 - **Field dtype — both constraints and interactions are Goldilocks.** The chip
   modules reference an unbound `FIELD_DTYPE` that the registry injects per dtype.
   Constraints get `goldilocks_mont`; interactions **also** get `goldilocks_mont`
-  — the registry default `jnp.uint32` is SP1-specific (SP1 interaction code is
+  — the registry default `fnp.uint32` is SP1-specific (SP1 interaction code is
   bitwise), whereas ZisK's `*_interaction` functions are pure field arithmetic,
   so the bus tuples are Goldilocks-valued.
 - **JAX x64 must be enabled to evaluate chip code.** rw's exported code
-  materializes field constants via `jnp.full(..., dtype=jnp.uint64).view(
-  FIELD_DTYPE)`. With x64 off, `jnp.uint64` truncates to 4 bytes and the view
+  materializes field constants via `fnp.full(..., dtype=fnp.uint64).view(
+  FIELD_DTYPE)`. With x64 off, `fnp.uint64` truncates to 4 bytes and the view
   fails — the same u64 trap the trace-commit path sidesteps by constructing in
   numpy first (see [`conventions.md`](conventions.md)). Constraint/interaction
   *evaluation* therefore runs under `jax_enable_x64`.

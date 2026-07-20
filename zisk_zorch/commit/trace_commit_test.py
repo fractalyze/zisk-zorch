@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from absl.testing import absltest
 
 from zisk_zorch.commit.trace_commit import commit_trace, extend, merkle_tree
@@ -31,7 +31,7 @@ class MerkleRootTest(absltest.TestCase):
             rows = u64(case["rows"]).reshape(case["height"], case["n_cols"])
             root, _ = merkle_tree(case["arity"]).commit(rows)
             self.assertTrue(
-                bool(jnp.array_equal(root, u64(case["root"]))),
+                bool(fnp.array_equal(root, u64(case["root"]))),
                 msg=f"arity {case['arity']}, height {case['height']}",
             )
 
@@ -44,7 +44,7 @@ class LdeTest(absltest.TestCase):
             extended = extend(evals, blowup=1 << case["blowup_bits"])
             expected = u64(case["extended"]).reshape(-1, n_cols)
             self.assertTrue(
-                bool(jnp.array_equal(extended, expected)),
+                bool(fnp.array_equal(extended, expected)),
                 msg=f"n_bits {case['n_bits']}, blowup_bits {case['blowup_bits']}",
             )
 
@@ -60,7 +60,7 @@ class Stage1CommitTest(absltest.TestCase):
             )
             self.assertTrue(
                 bool(
-                    jnp.array_equal(
+                    fnp.array_equal(
                         commitment.extended,
                         u64(lde["extended"]).reshape(-1, n_cols),
                     )
@@ -68,7 +68,7 @@ class Stage1CommitTest(absltest.TestCase):
                 msg=f"extended mismatch (arity {case['arity']})",
             )
             self.assertTrue(
-                bool(jnp.array_equal(commitment.root, u64(case["root"]))),
+                bool(fnp.array_equal(commitment.root, u64(case["root"]))),
                 msg=f"root mismatch (arity {case['arity']})",
             )
 

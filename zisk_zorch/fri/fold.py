@@ -25,7 +25,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 from __future__ import annotations
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -67,7 +67,7 @@ def _coset_domain(n_bits_ext: int, prev_bits: int, current_bits: int) -> Array:
     col = _powers(w, cur_n)
     row = _powers(pow(w, cur_n, _GOLDILOCKS_P), n_x)
     canonical = (shift_eff * col[:, None] * row[None, :]) % _GOLDILOCKS_P
-    return jnp.array(canonical.astype(np.uint64), dtype=F)
+    return fnp.array(canonical.astype(np.uint64), dtype=F)
 
 
 def fold(
@@ -130,9 +130,9 @@ def intt(evals: Array, n_bits: int) -> Array:
     exps = (np.arange(n)[:, None] * np.arange(n)[None, :]) % n
     powers = _powers(w_inv, n)
     mat = (n_inv * powers[exps]) % _GOLDILOCKS_P
-    m = jnp.array(mat.astype(np.uint64), dtype=F)
+    m = fnp.array(mat.astype(np.uint64), dtype=F)
     # coeff[k, c] = sum_j mat[k, j] * evals[j, c].
-    return jnp.sum(m[:, :, None] * evals[None, :, :], axis=1)
+    return fnp.sum(m[:, :, None] * evals[None, :, :], axis=1)
 
 
 def verify_fold(

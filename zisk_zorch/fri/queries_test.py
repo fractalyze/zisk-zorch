@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 
@@ -45,13 +45,13 @@ class QuerySampleTest(absltest.TestCase):
 
             pre = t.get_field()  # fold-loop tail challenge, discarded by the prover
             self.assertTrue(
-                bool(jnp.array_equal(pre, u64(case["pre_challenge"]))),
+                bool(fnp.array_equal(pre, u64(case["pre_challenge"]))),
                 msg=f"width {width} pre_challenge",
             )
 
             challenge = grinding_seed_challenge(t, u64x3(case["final_pol"]))
             self.assertTrue(
-                bool(jnp.array_equal(challenge, u64(case["challenge"]))),
+                bool(fnp.array_equal(challenge, u64(case["challenge"]))),
                 msg=f"width {width} challenge",
             )
 

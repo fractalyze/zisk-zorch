@@ -72,10 +72,10 @@ def load_zisk_chips(
     """Load the ZisK chip definitions with the Goldilocks field dtype bound.
 
     Both constraints and interactions get ``goldilocks``. The registry's
-    ``interaction_field_dtype`` default is ``jnp.uint32`` — right for SP1, whose
+    ``interaction_field_dtype`` default is ``fnp.uint32`` — right for SP1, whose
     interaction code is bitwise, but wrong here: ZisK's exported ``*_interaction``
     functions are pure field arithmetic over ``FIELD_DTYPE`` (e.g.
-    ``jnp.full(..., dtype=jnp.uint64).view(FIELD_DTYPE)`` + field adds), so the
+    ``fnp.full(..., dtype=fnp.uint64).view(FIELD_DTYPE)`` + field adds), so the
     bus tuples are Goldilocks-valued and the field dtype must be bound for
     ``eval_interactions`` to produce them.
     """

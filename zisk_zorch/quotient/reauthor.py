@@ -22,7 +22,7 @@ The two AIR paths differ in how they source the row-local constraints:
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 
@@ -90,7 +90,7 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
     c[11] = ((cm[_GSUM] - gsum_prev * (one - l1)) - sum_im) * (ge[_TRANSITION_IACT] + gamma) + one
     # im_direct (12): a constant operation-bus descriptor (10·α + 5000).
     direct = embed(["10"]) * alpha + embed(["5000"])
-    c[12] = airvalues[1] * (direct + gamma) - (jnp.zeros(n, F3) - airvalues[0])
+    c[12] = airvalues[1] * (direct + gamma) - (fnp.zeros(n, F3) - airvalues[0])
     # boundary (13): __L1__'·(gsum_result − gsum − im_direct).
     c[13] = rotate(l1, extend) * (gsum_result - cm[_GSUM] - airvalues[1])
 

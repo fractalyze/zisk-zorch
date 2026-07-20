@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from absl.testing import absltest
 
 from zisk_zorch.evals.lev import compute_lev
@@ -28,7 +28,7 @@ class ComputeLevTest(absltest.TestCase):
                     case["n_bits"],
                 )
                 want = u64x3(case["lev"])  # row-major (k*nOpen + i)
-                self.assertTrue(bool(jnp.array_equal(lev.reshape(-1), want)))
+                self.assertTrue(bool(fnp.array_equal(lev.reshape(-1), want)))
 
 
 if __name__ == "__main__":

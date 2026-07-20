@@ -25,7 +25,7 @@ reference's own `fields` crate by [`../golden/`](../golden/). Conventions:
 
 - Goldens live in `testdata/golden/*.json` next to the test that consumes
   them, are small (KBs), and are committed.
-- A golden test compares with exact equality (`jnp.array_equal`), never a
+- A golden test compares with exact equality (`fnp.array_equal`), never a
   tolerance — field elements either match or they don't.
 - Regenerate with `cd golden && cargo run --release`; the harness is
   deterministic (fixed seeds), so a regeneration must be a no-op unless the

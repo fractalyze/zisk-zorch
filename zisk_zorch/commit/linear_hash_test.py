@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from absl.testing import absltest
 
 from zisk_zorch.commit.linear_hash import LinearHash
@@ -27,7 +27,7 @@ class LinearHashTest(absltest.TestCase):
                 # the tree consumes) is its first 4 lanes.
                 expected = u64(case["output"])[:4]
                 self.assertTrue(
-                    bool(jnp.array_equal(out, expected)),
+                    bool(fnp.array_equal(out, expected)),
                     msg=f"width {entry['width']}, len {len(case['input'])}",
                 )
 

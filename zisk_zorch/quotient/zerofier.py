@@ -14,7 +14,7 @@ zero, since a nonzero coset shift keeps `x^N != 1`. The firstRow / lastRow
 divisors build on the same coset points.
 
 All arithmetic stays in the `goldilocks` field — the dtype reduces mod p on
-every op, so there is no manual modulus juggling; `jnp.power` is the field-native
+every op, so there is no manual modulus juggling; `fnp.power` is the field-native
 exponentiation (`lax.pow` needs a float dtype).
 
 buildZHInv:   https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/setup_ctx.hpp#L127-L146
@@ -24,7 +24,7 @@ buildFrameZerofierInv:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -32,14 +32,14 @@ from zk_dtypes import goldilocks as F
 # pil2's coset shift and the 2^32-order generator `Goldilocks::W[32]`, as field
 # scalars (cf. zisk_zorch.evals.lev / zisk_zorch.fri.fold, which share them —
 # the field dtype carries the modulus but not the generator or the shift).
-_SHIFT = jnp.array(np.array(7, dtype=np.uint64), dtype=F)
-_TWO_ADIC_ROOT = jnp.array(np.array(7277203076849721926, dtype=np.uint64), dtype=F)
-_ONE = jnp.ones((), F)
+_SHIFT = fnp.array(np.array(7, dtype=np.uint64), dtype=F)
+_TWO_ADIC_ROOT = fnp.array(np.array(7277203076849721926, dtype=np.uint64), dtype=F)
+_ONE = fnp.ones((), F)
 
 
 def _root(bits: int) -> Array:
     """The order-`2^bits` root of unity `Goldilocks::W[bits]`, a field scalar."""
-    return jnp.power(_TWO_ADIC_ROOT, 1 << (32 - bits))
+    return fnp.power(_TWO_ADIC_ROOT, 1 << (32 - bits))
 
 
 def _powers(base: Array, count: int) -> Array:
@@ -49,7 +49,7 @@ def _powers(base: Array, count: int) -> Array:
     out = [_ONE]
     for _ in range(count - 1):
         out.append(out[-1] * base)
-    return jnp.stack(out)
+    return fnp.stack(out)
 
 
 def _check(n_bits: int, blowup_bits: int) -> None:
@@ -79,9 +79,9 @@ def inv_zerofier(n_bits: int, blowup_bits: int) -> Array:
     _check(n_bits, blowup_bits)
     extend = 1 << blowup_bits
     n_ext = 1 << (n_bits + blowup_bits)
-    sn = jnp.power(_SHIFT, 1 << n_bits)  # shift^N
+    sn = fnp.power(_SHIFT, 1 << n_bits)  # shift^N
     period = _ONE / (sn * _powers(_root(blowup_bits), extend) - _ONE)
-    return jnp.tile(period, n_ext // extend)
+    return fnp.tile(period, n_ext // extend)
 
 
 def inv_one_row_zerofier(n_bits: int, blowup_bits: int, row_index: int) -> Array:
@@ -93,7 +93,7 @@ def inv_one_row_zerofier(n_bits: int, blowup_bits: int, row_index: int) -> Array
     _check(n_bits, blowup_bits)
     x = _coset_points(n_bits, blowup_bits)
     zi_h = inv_zerofier(n_bits, blowup_bits)
-    root = jnp.power(_root(n_bits), row_index)
+    root = fnp.power(_root(n_bits), row_index)
     return _ONE / ((x - root) * zi_h)
 
 
@@ -109,10 +109,10 @@ def inv_frame_zerofier(
     n = 1 << n_bits
     w_n = _root(n_bits)
     x = _coset_points(n_bits, blowup_bits)
-    roots = [jnp.power(w_n, i) for i in range(offset_min)]
-    roots += [jnp.power(w_n, n - i - 1) for i in range(offset_max)]
+    roots = [fnp.power(w_n, i) for i in range(offset_min)]
+    roots += [fnp.power(w_n, n - i - 1) for i in range(offset_max)]
 
-    acc = jnp.tile(_ONE, x.shape[0])
+    acc = fnp.tile(_ONE, x.shape[0])
     for r in roots:
         acc = acc * (x - r)
     return acc

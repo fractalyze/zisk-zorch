@@ -21,7 +21,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 from __future__ import annotations
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -52,9 +52,9 @@ def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
 
     `nonce` rides the last input slot as `Goldilocks::fromU64(nonce)`; the value
     cast to `F` reduces mod p, so callers must pass canonical nonces."""
-    nonce_fe = jnp.asarray(nonces, dtype=F)  # (C,) canonical -> plain field
-    chal = jnp.broadcast_to(challenge, (nonce_fe.shape[0], _GRIND_WIDTH - 1))
-    states = jnp.concatenate([chal, nonce_fe[:, None]], axis=1)  # (C, 4)
+    nonce_fe = fnp.asarray(nonces, dtype=F)  # (C,) canonical -> plain field
+    chal = fnp.broadcast_to(challenge, (nonce_fe.shape[0], _GRIND_WIDTH - 1))
+    states = fnp.concatenate([chal, nonce_fe[:, None]], axis=1)  # (C, 4)
     out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
     return _canonical(out0)  # decode to canonical u64 (transcript's path)
 
@@ -101,7 +101,7 @@ def query_positions_for(
     positions — pil2's `getPermutations` off the grinding-seeded transcript."""
     permutation = Transcript(width)
     permutation.put(challenge)  # addTranscriptGL(challenge, FIELD_EXTENSION)
-    nonce_fe = jnp.array(np.array([nonce], dtype=np.uint64), dtype=F)
+    nonce_fe = fnp.array(np.array([nonce], dtype=np.uint64), dtype=F)
     permutation.put(nonce_fe)  # addTranscriptGL((Goldilocks::Element *)&nonce, 1)
     return permutation.get_permutations(n_queries, n_bits_ext)
 

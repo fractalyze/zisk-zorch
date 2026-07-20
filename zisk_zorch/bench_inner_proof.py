@@ -39,7 +39,7 @@ import argparse
 from collections.abc import Callable, Iterable
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
@@ -58,12 +58,12 @@ _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
 def _rand_cubic(length: int, seed: int) -> frx.Array:
     """Canonical Goldilocks-cubic evals; 3 base limbs view as one cubic element.
 
-    Built via numpy then `jnp.asarray`, NOT zorch's `rand_ext_field`: that bitcasts
+    Built via numpy then `fnp.asarray`, NOT zorch's `rand_ext_field`: that bitcasts
     a jax array (`jnp_array.view(F3)`), which aborts on the zkx jax fork
     (`Check failed: IsArray()`); the numpy `.view` path is fork-safe.
     """
     ints = np.random.default_rng(seed).integers(0, 1 << 30, (length, 3), np.int64)
-    return jnp.asarray(ints.astype(F).view(F3).reshape(length))
+    return fnp.asarray(ints.astype(F).view(F3).reshape(length))
 
 
 def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
@@ -83,7 +83,7 @@ def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
             for d in range(1, degree):
                 c = c * t[:, (k * degree + d) % n_cols]
             cols.append(c)
-        return jnp.stack(cols, axis=-1)  # (rows, n_constraints)
+        return fnp.stack(cols, axis=-1)  # (rows, n_constraints)
 
     return eval_fn
 
@@ -233,7 +233,7 @@ class InnerProofBenchmark(FrxBenchmark):
                 # deterministic; return the arrays so block_until_ready waits on
                 # the fold/commit chain (FriProof is not a pytree).
                 t = Transcript()  # width 12 == pil2 transcriptArity 3
-                t.put(jnp.zeros((1,), F))  # stand-in for the pre-FRI proof state
+                t.put(fnp.zeros((1,), F))  # stand-in for the pre-FRI proof state
                 proof = prove(pol, steps, arity=arity, transcript=t)
                 return (proof.final_pol, *proof.roots)
 

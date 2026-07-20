@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pathlib
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
@@ -38,13 +38,13 @@ class GroupProofTest(absltest.TestCase):
             tree = merkle_tree(case["arity"])
             root, digest_layers = tree.commit(rows)
             self.assertTrue(
-                bool(jnp.array_equal(root, u64(case["root"]))),
+                bool(fnp.array_equal(root, u64(case["root"]))),
                 msg=f"root mismatch (arity {case['arity']}, height {case['height']})",
             )
             for query in case["queries"]:
                 proof = group_proof(tree, rows, digest_layers, query["index"])
                 self.assertTrue(
-                    bool(jnp.array_equal(proof, u64(query["proof"]))),
+                    bool(fnp.array_equal(proof, u64(query["proof"]))),
                     msg=f"arity {case['arity']}, height {case['height']}, "
                     f"index {query['index']}",
                 )
@@ -62,7 +62,7 @@ class GroupProofTest(absltest.TestCase):
                     msg=f"arity {case['arity']}, height {case['height']}, "
                     f"index {query['index']}",
                 )
-                tampered = proof.at[0].set(proof[0] + jnp.array(1, F))
+                tampered = proof.at[0].set(proof[0] + fnp.array(1, F))
                 self.assertFalse(
                     verify_group_proof(
                         tree, root, query["index"], tampered, case["n_cols"]
