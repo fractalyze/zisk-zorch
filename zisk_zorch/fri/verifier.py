@@ -45,7 +45,7 @@ from zisk_zorch.fri.queries import (
     grinding_seed_challenge,
     query_positions_for,
 )
-from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript, _base_to_cubic
+from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript, base_to_cubic
 from zisk_zorch.transcript.transcript import Transcript
 from zorch.commit.merkle import Opening
 from zorch.pcs.fold import verify_group_fold_chain
@@ -122,7 +122,7 @@ def verify(
             open_idx = int(leaf_indices[layer][q])
             if not verify_group_proof(tree, roots[layer], open_idx, proof, n_cols):
                 return False
-            rows.append(_base_to_cubic(proof[:n_cols]))  # (n_x,) cubic
+            rows.append(base_to_cubic(proof[:n_cols]))  # (n_x,) cubic
         # The seam folds the opened cubic group, so feed it cubic-viewed rows
         # (the linear-hash leaf stays base-limb above, in verify_group_proof).
         openings_seam.append(Opening(row=fnp.stack(rows), path=[]))  # (Q, n_x)

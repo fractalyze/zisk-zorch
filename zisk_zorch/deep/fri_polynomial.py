@@ -30,14 +30,16 @@ from zorch.poly.univariate import powers
 
 from zisk_zorch.deep.opening import open_columns
 from zisk_zorch.evals.lev import compute_lev
-from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
+from zorch.utils.field import to_base_limbs
+
+from zisk_zorch.fri.seam import base_to_cubic
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 
 def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
     """`ξ_o = z·g^{opening}` (`g = W[nBits]`, negative openings invert) — the OOD
     points the composition divides by. No coset shift (that is LEv's, not this)."""
-    zc = _base_to_cubic(z).reshape(())
+    zc = base_to_cubic(z).reshape(())
     g = _root(n_bits)
     return jnp.stack([zc * jnp.power(g, p) for p in opening_points])
 
@@ -124,12 +126,12 @@ def deep_fri_polynomial(
     m = base_cols.shape[1] + cubic_cols.shape[1]
     opening_pos = [0] * m  # all at z; wrapped openings are AIR-specific
     z = transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
-    lev = compute_lev(_base_to_cubic(z).reshape(()), list(opening_points), n_bits)
+    lev = compute_lev(base_to_cubic(z).reshape(()), list(opening_points), n_bits)
     evals = open_columns(
         base_cols, cubic_cols, lev, opening_pos, n_bits=n_bits, blowup_bits=blowup_bits
     )
-    transcript.put(_cubic_to_base(evals))  # absorb openings
-    vf = _base_to_cubic(transcript.get_field()).reshape(())  # batching challenge
+    transcript.put(to_base_limbs(evals))  # absorb openings
+    vf = base_to_cubic(transcript.get_field()).reshape(())  # batching challenge
     xis = _ood_points(z, opening_points, n_bits)
     f = deep_composition(
         base_cols, cubic_cols, evals, xis, opening_pos, vf,

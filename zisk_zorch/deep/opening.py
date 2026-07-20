@@ -22,7 +22,6 @@ import frx
 import frx.numpy as jnp
 from frx import Array
 
-from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
 
 
 def open_columns(

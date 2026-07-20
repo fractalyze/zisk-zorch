@@ -31,29 +31,21 @@ from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
+from zorch.utils.field import from_base_limbs, to_base_limbs, to_limb_rows
+
 from zisk_zorch.fri.fold import fold, intt, verify_fold
 from zisk_zorch.transcript.transcript import Transcript
 
 
-def _cubic_to_base(values: Array) -> Array:
-    """View a cubic array as its Goldilocks limbs, the cubic axis expanded in
-    place (`[c0, c1, c2]` -> three contiguous base lanes) — pil2's
-    `FIELD_EXTENSION`-contiguous memory layout the linear hash leaves see.
+def base_to_cubic(values: Array) -> Array:
+    """Contiguous Goldilocks limbs -> cubic elements, the 3 limbs being that
+    element's coefficients (cf. golden `u64x3`).
 
-    Device-native `bitcast_convert` keeps the reinterpret on-device so the FRI
-    fold loop traces as one jitted function; the prior `np.asarray(...).view`
-    host round-trip forced eager execution (re-compiling per `prove` call).
-    `bitcast_convert` appends the size-3 limb axis, which the reshape folds back
-    into the trailing axis to recover the contiguous limb layout."""
-    base = frx.lax.bitcast_convert_type(values, F)
-    return base.reshape(*values.shape[:-1], values.shape[-1] * 3)
-
-
-def _base_to_cubic(values: Array) -> Array:
-    """The inverse view: contiguous base limbs -> cubic elements (the 3 limbs are
-    that element's coefficients, cf. golden `u64x3`)."""
-    triples = values.reshape(*values.shape[:-1], -1, 3)
-    return frx.lax.bitcast_convert_type(triples, F3)
+    `zorch.utils.field.from_base_limbs` needs the target dtype, since limbs carry
+    no record of what they were; this binds pil2's `FIELD_EXTENSION` = 3 once for
+    the repo. The other direction needs no binding — call `to_base_limbs` or
+    `to_limb_rows` directly."""
+    return from_base_limbs(values, F3)
 
 
 @dataclass(frozen=True)
@@ -116,7 +108,7 @@ class Pil2FriCode:
         # reshape(n_x, cur_n).T[g, j] = pol[j*cur_n + g]; the cubic view then
         # expands each entry to its 3 limbs -> (cur_n, n_x*3).
         rows = codeword.reshape(n_x, cur_n).T
-        return _cubic_to_base(rows)
+        return to_base_limbs(rows)
 
     def group_indices(self, positions: Array, level: int) -> tuple[Array, ...]:
         """The `2^(steps[level]-steps[level+1])` leaf indices of layer `level`'s
@@ -173,7 +165,7 @@ class Pil2FriCode:
         # (pil2 stark_verify.hpp L684). A blowup wider than the final layer
         # collapses the bound to the zero polynomial.
         init = 0 if blowup_bits > last_bits else 1 << (last_bits - blowup_bits)
-        coeffs = intt(_cubic_to_base(final).reshape(n, 3), last_bits)  # (n, 3) base
+        coeffs = intt(to_limb_rows(final), last_bits)  # (n, 3) base
         return fnp.all(coeffs[init:] == fnp.zeros((), F))
 
 
@@ -192,7 +184,7 @@ class Pil2SeamTranscript:
 
     def sample(self, n: int = 1) -> tuple["Pil2SeamTranscript", Array]:
         challenges = [
-            _base_to_cubic(self.inner.get_field()).reshape(()) for _ in range(n)
+            base_to_cubic(self.inner.get_field()).reshape(()) for _ in range(n)
         ]
         return self, challenges[0] if n == 1 else fnp.stack(challenges)
 

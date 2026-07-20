@@ -26,7 +26,7 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.fri.seam import _cubic_to_base
+from zorch.utils.field import to_base_limbs
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.transcript.transcript import Transcript, _canonical
 
@@ -90,7 +90,7 @@ def grinding_seed_challenge(transcript: Transcript, final_pol: Array) -> Array:
     """Absorb `final_pol` into the running transcript and squeeze the cubic
     grinding-seed challenge (3 base limbs) — pil2's pre-grinding discipline.
     Mutates `transcript`."""
-    transcript.put(_cubic_to_base(final_pol))  # addTranscriptGL(friPol, len*3)
+    transcript.put(to_base_limbs(final_pol))  # addTranscriptGL(friPol, len*3)
     return transcript.get_field()  # cubic grinding seed (3 base limbs)
 
 
