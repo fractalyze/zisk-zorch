@@ -31,7 +31,7 @@ from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 
-from zorch.utils.field import from_base_limbs, to_base_limbs, to_limb_rows
+from zorch.utils.field import from_limb_rows, to_limb_rows
 
 from zisk_zorch.fri.fold import fold, intt, verify_fold
 from zisk_zorch.transcript.transcript import Transcript
@@ -41,11 +41,13 @@ def base_to_cubic(values: Array) -> Array:
     """Contiguous Goldilocks limbs -> cubic elements, the 3 limbs being that
     element's coefficients (cf. golden `u64x3`).
 
-    `zorch.utils.field.from_base_limbs` needs the target dtype, since limbs carry
-    no record of what they were; this binds pil2's `FIELD_EXTENSION` = 3 once for
-    the repo. The other direction needs no binding — call `to_base_limbs` or
-    `to_limb_rows` directly."""
-    return from_base_limbs(values, F3)
+    `zorch.utils.field.from_limb_rows` takes one row per element and needs the
+    target dtype, since limbs carry no record of what they were. This groups
+    pil2's contiguous-limb wire layout into rows and binds `FIELD_EXTENSION` = 3
+    once for the repo. The other direction needs no binding — call `to_limb_rows`
+    directly and reshape to whatever the consumer wants."""
+    rows = values.reshape(*values.shape[:-1], -1, 3)
+    return from_limb_rows(rows, F3)
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,8 @@ class Pil2FriCode:
         # reshape(n_x, cur_n).T[g, j] = pol[j*cur_n + g]; the cubic view then
         # expands each entry to its 3 limbs -> (cur_n, n_x*3).
         rows = codeword.reshape(n_x, cur_n).T
-        return to_base_limbs(rows)
+        # leaf layout: each cubic row's limbs contiguous in the trailing axis
+        return to_limb_rows(rows).reshape(*rows.shape[:-1], -1)
 
     def group_indices(self, positions: Array, level: int) -> tuple[Array, ...]:
         """The `2^(steps[level]-steps[level+1])` leaf indices of layer `level`'s
