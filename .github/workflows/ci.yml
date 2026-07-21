@@ -8,22 +8,13 @@ on:
   pull_request:
     branches: ["main"]
 
-# Cancel in-progress runs for PRs (same ref), but never cancel pushes to main so
-# every merge gets a full CI run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# Build the test matrix dynamically: always a CPU leg, plus a GPU leg only when
-# the `HAS_GPU_RUNNER` repo variable is `true` (a job-level `if` can't read
-# `matrix`, so the leg is added here rather than skipped later — without GPU
-# hardware it's absent, not queued forever). Runners are labelled by capability:
-# a CPU-only box is `[self-hosted, cpu]`, a GPU box `[self-hosted, gpu]`.
-#
-# The CPU leg's `-gpu` filter matches nothing today — the pil2 byte-match tests
-# all run on the CPU emitter. It stays as the seam for re-tagging a test the CPU
-# emitter can't run.
 jobs:
+  # The GPU leg is added here rather than skipped by a job-level `if`, which
+  # cannot read `matrix`.
   setup:
     runs-on: ubuntu-latest
     outputs:
@@ -48,11 +39,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No setup-bazel: it's for ephemeral runners and clobbers the box's
-      # ~/.bazelrc; on self-hosted runners bazel and its caches already persist.
+      # No setup-bazel: it clobbers the runner's persistent ~/.bazelrc.
 
-      # Build every target unfiltered so a build break fails fast on every leg,
-      # including in anything the per-leg test filter would skip.
       - name: bazel build
         run: bazel build -- //...
 
@@ -63,8 +51,6 @@ jobs:
             --test_tag_filters=${{ matrix.tag_filters }} \
             -- //...
 
-      # The CI stream only carries the FAIL summary, not the per-test output —
-      # capture the runner-local test.log a failed test leaves behind.
       - name: Upload bazel test logs
         if: ${{ failure() }}
         uses: fractalyze/.github/.github/actions/upload-bazel-testlogs@main
