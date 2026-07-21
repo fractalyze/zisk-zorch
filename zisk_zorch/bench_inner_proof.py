@@ -44,7 +44,7 @@ import argparse
 from collections.abc import Callable, Iterable
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
@@ -63,11 +63,11 @@ _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
 def _rand_cubic(length: int, seed: int) -> frx.Array:
     """Canonical Goldilocks-cubic evals; 3 base limbs view as one cubic element.
 
-    Built via numpy then `jnp.asarray`; zorch's `rand_ext_field` is equivalent
+    Built via numpy then `fnp.asarray`; zorch's `rand_ext_field` is equivalent
     here.
     """
     ints = np.random.default_rng(seed).integers(0, 1 << 30, (length, 3), np.int64)
-    return jnp.asarray(ints.astype(F).view(F3).reshape(length))
+    return fnp.asarray(ints.astype(F).view(F3).reshape(length))
 
 
 def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
@@ -102,7 +102,7 @@ def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
             for j in pick[1:]:
                 c = c * t[:, j]
             cols.append(c)
-        return jnp.stack(cols, axis=-1)  # (rows, n_constraints)
+        return fnp.stack(cols, axis=-1)  # (rows, n_constraints)
 
     return eval_fn
 
@@ -120,7 +120,7 @@ def _chip_eval_fn(chip_name: str) -> tuple[Callable, int, int]:
 
     chip = load_zisk_chips(chip_names=[chip_name])[chip_name]
     n_cols = chip.num_cols
-    k = int(chip.eval_constraints(jnp.zeros((2, n_cols), F)).shape[-1])
+    k = int(chip.eval_constraints(fnp.zeros((2, n_cols), F)).shape[-1])
     return (lambda t: chip.eval_constraints(t)), n_cols, k
 
 
@@ -292,7 +292,7 @@ class InnerProofBenchmark(FrxBenchmark):
                 # deterministic; return the arrays so block_until_ready waits on
                 # the fold/commit chain (FriProof is not a pytree).
                 t = Transcript()  # width 12 == pil2 transcriptArity 3
-                t.put(jnp.zeros((1,), F))  # stand-in for the pre-FRI proof state
+                t.put(fnp.zeros((1,), F))  # stand-in for the pre-FRI proof state
                 proof = prove(pol, steps, arity=arity, transcript=t)
                 return (proof.final_pol, *proof.roots)
 

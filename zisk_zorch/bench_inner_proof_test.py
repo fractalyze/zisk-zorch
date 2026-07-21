@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -64,7 +64,7 @@ class BenchInnerProofTest(absltest.TestCase):
         # CSE: duplicate column tuples fold into one, so the stage would measure
         # a fraction of --n_constraints. Main's density is 900 over 38 columns.
         fn = _make_eval_fn(n_cols=38, n_constraints=900, degree=9)
-        trace = jnp.array(
+        trace = fnp.array(
             np.random.default_rng(0).integers(1, 1 << 30, (8, 38)).astype(np.uint64),
             dtype=F,
         )
@@ -103,7 +103,7 @@ class BenchInnerProofTest(absltest.TestCase):
         eval_fn, n_cols, k = _chip_eval_fn("main")
         self.assertGreater(n_cols, 0)
         self.assertGreater(k, 0)
-        out = eval_fn(jnp.zeros((4, n_cols), F))
+        out = eval_fn(fnp.zeros((4, n_cols), F))
         self.assertEqual(out.shape, (4, k))
 
         ops = list(

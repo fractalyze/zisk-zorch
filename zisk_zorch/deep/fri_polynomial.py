@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 
 from zorch.poly.univariate import powers
@@ -39,7 +39,7 @@ def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
     points the composition divides by. No coset shift (that is LEv's, not this)."""
     zc = _base_to_cubic(z).reshape(())
     g = _root(n_bits)
-    return jnp.stack([zc * jnp.power(g, p) for p in opening_points])
+    return fnp.stack([zc * fnp.power(g, p) for p in opening_points])
 
 
 def deep_composition(

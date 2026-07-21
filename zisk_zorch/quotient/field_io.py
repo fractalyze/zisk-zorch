@@ -7,7 +7,7 @@ Cubic loading from decimal limbs is `zisk_zorch.golden.u64x3`; use that directly
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -20,7 +20,7 @@ def embed(values: list[str]) -> Array:
     The decimals are already canonical (`< p`, the golden's `as_canonical_u64` /
     pil2's field literals), so `astype(F)` value-converts each straight into the
     plain field, then `astype(F3)` is the dtype's own base→cubic embedding."""
-    base = jnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
+    base = fnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
     return base.astype(F3)
 
 
@@ -38,7 +38,7 @@ def base_trace(case: dict, n_cols: int) -> Array:
         [np.array([int(v) for v in cols[j]], dtype=np.uint64) for j in range(n_cols)],
         axis=1,
     )
-    return jnp.array(trace, dtype=F)
+    return fnp.array(trace, dtype=F)
 
 
 def rotate(col: Array, shift: int) -> Array:
@@ -46,4 +46,4 @@ def rotate(col: Array, shift: int) -> Array:
     next/previous-row opening."""
     n = col.shape[0]
     s = shift % n
-    return col if s == 0 else jnp.concatenate([col[s:], col[:s]])
+    return col if s == 0 else fnp.concatenate([col[s:], col[:s]])

@@ -8,7 +8,7 @@ and the whole thing is deterministic in the Fiat-Shamir transcript.
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -27,14 +27,14 @@ _POW_BITS = 8
 _N_QUERIES = 4
 
 
-def _trace(seed: int) -> jnp.ndarray:
+def _trace(seed: int) -> fnp.ndarray:
     """A random `(2^_N_BITS, _N_COLS)` base-field trace (canonical u64 -> F, the
     `golden.u64` construction)."""
     ints = np.random.default_rng(seed).integers(0, 1 << 30, (1 << _N_BITS, _N_COLS))
-    return jnp.array(ints.astype(np.uint64), dtype=F)
+    return fnp.array(ints.astype(np.uint64), dtype=F)
 
 
-def _eval_fn(trace: jnp.ndarray) -> jnp.ndarray:
+def _eval_fn(trace: fnp.ndarray) -> fnp.ndarray:
     """`_N_CONSTRAINTS` degree-`_DEGREE` column products in the trailing axis — a
     field-mul proxy for an AIR's constraint expression (`bench_inner_proof`'s)."""
     cols = []
@@ -43,7 +43,7 @@ def _eval_fn(trace: jnp.ndarray) -> jnp.ndarray:
         for d in range(1, _DEGREE):
             c = c * trace[:, (k * _DEGREE + d) % _N_COLS]
         cols.append(c)
-    return jnp.stack(cols, axis=-1)
+    return fnp.stack(cols, axis=-1)
 
 
 def _prove(seed: int = 0, deep_stage=QuotientEchoStage()):

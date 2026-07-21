@@ -9,7 +9,7 @@ evaluation at each opening point `ξ = z·g^p`.
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
@@ -25,27 +25,27 @@ _N_BITS = 5
 _BLOWUP_BITS = 1
 
 
-def _rand_cubic(n: int, seed: int) -> jnp.ndarray:
+def _rand_cubic(n: int, seed: int) -> fnp.ndarray:
     """`n` random cubic elements (golden `u64x3` numpy path — the fork-safe
     `.view`)."""
     flat = np.random.default_rng(seed).integers(0, 1 << 30, (n, 3)).astype(np.uint64)
-    return jnp.array(flat.astype(F).view(F3).reshape(n))
+    return fnp.array(flat.astype(F).view(F3).reshape(n))
 
 
-def _poly_eval(coeffs: jnp.ndarray, point: jnp.ndarray) -> jnp.ndarray:
+def _poly_eval(coeffs: fnp.ndarray, point: fnp.ndarray) -> fnp.ndarray:
     """`Σ_d coeffs[d]·point^d` for a cubic scalar `point`."""
-    return jnp.sum(coeffs * powers(point, coeffs.shape[0]))
+    return fnp.sum(coeffs * powers(point, coeffs.shape[0]))
 
 
-def _coset_evals(coeffs: jnp.ndarray, n_bits: int, blowup_bits: int) -> jnp.ndarray:
+def _coset_evals(coeffs: fnp.ndarray, n_bits: int, blowup_bits: int) -> fnp.ndarray:
     """The polynomial evaluated on the extended coset `x_i = shift·w(nBitsExt)^i`
     — the committed column the opening reads."""
     x = _coset_points(n_bits, blowup_bits)  # (N_ext,) base
-    mat = [jnp.ones_like(x)]
+    mat = [fnp.ones_like(x)]
     for _ in range(coeffs.shape[0] - 1):
         mat.append(mat[-1] * x)
-    xpow = jnp.stack(mat, axis=1)  # (N_ext, N) base
-    return jnp.sum(coeffs[None, :] * xpow, axis=1)  # (N_ext,) cubic
+    xpow = fnp.stack(mat, axis=1)  # (N_ext, N) base
+    return fnp.sum(coeffs[None, :] * xpow, axis=1)  # (N_ext,) cubic
 
 
 class OpeningTest(absltest.TestCase):
@@ -53,7 +53,7 @@ class OpeningTest(absltest.TestCase):
         n = 1 << _N_BITS
         coeffs = _rand_cubic(n, seed=1)  # deg < N
         column = _coset_evals(coeffs, _N_BITS, _BLOWUP_BITS)[:, None]  # (N_ext, 1)
-        no_base = jnp.zeros((column.shape[0], 0), F3)  # this column is cubic
+        no_base = fnp.zeros((column.shape[0], 0), F3)  # this column is cubic
         z = _rand_cubic(1, seed=2)[0]
 
         # openingPoints [0, 1]: open at z and at z·g (the wrapped next-row point).
@@ -61,7 +61,7 @@ class OpeningTest(absltest.TestCase):
         lev = compute_lev(z, list(opening_points), _N_BITS)
         g = _root(_N_BITS)
         for o, p in enumerate(opening_points):
-            xi = z * jnp.power(g, p)
+            xi = z * fnp.power(g, p)
             evals = open_columns(
                 no_base, column, lev, [o], n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS
             )
@@ -72,7 +72,7 @@ class OpeningTest(absltest.TestCase):
 
 
 
-def _cubic_eq(a: jnp.ndarray, b: jnp.ndarray) -> bool:
+def _cubic_eq(a: fnp.ndarray, b: fnp.ndarray) -> bool:
     import frx
 
     la = np.asarray(frx.lax.bitcast_convert_type(a, F).reshape(3))

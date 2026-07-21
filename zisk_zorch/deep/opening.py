@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 
 from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
@@ -53,7 +53,7 @@ def open_columns(
             f"opening_pos length {len(opening_pos)} != column count {b + c} "
             f"({b} base + {c} cubic)"
         )
-    lev_per_col = lev[:, jnp.array(opening_pos)]  # (N, M) cubic
-    base_ev = jnp.sum(lev_per_col[:, :b] * base_cols[::stride], axis=0)  # (B,) cubic
-    cubic_ev = jnp.sum(lev_per_col[:, b:] * cubic_cols[::stride], axis=0)  # (C,) cubic
-    return jnp.concatenate([base_ev, cubic_ev])  # (M,) cubic
+    lev_per_col = lev[:, fnp.array(opening_pos)]  # (N, M) cubic
+    base_ev = fnp.sum(lev_per_col[:, :b] * base_cols[::stride], axis=0)  # (B,) cubic
+    cubic_ev = fnp.sum(lev_per_col[:, b:] * cubic_cols[::stride], axis=0)  # (C,) cubic
+    return fnp.concatenate([base_ev, cubic_ev])  # (M,) cubic

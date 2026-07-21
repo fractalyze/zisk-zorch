@@ -25,7 +25,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 from __future__ import annotations
 
 import frx
-import frx.numpy as jnp
+import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
 
@@ -45,7 +45,7 @@ def _coset_domain(n_bits_ext: int, prev_bits: int, current_bits: int) -> Array:
     them out as the groups the fold reads (index `j*cur_n + g` at `[g, j]`)."""
     cur_n = 1 << current_bits
     n_x = 1 << (prev_bits - current_bits)
-    shift_eff = jnp.power(_SHIFT, 1 << (n_bits_ext - prev_bits))
+    shift_eff = fnp.power(_SHIFT, 1 << (n_bits_ext - prev_bits))
     domain = eval_domain(
         F, 1 << prev_bits, shift=shift_eff, generator=_PIL2_GENERATOR
     )

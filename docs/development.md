@@ -17,7 +17,7 @@ there.
 python3.11 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.in \
     --extra-index-url https://fractalyze.github.io/pypi/simple/
-bazel test //...                 # hermetic, sandboxed; JAX_PLATFORMS=cpu default
+bazel test //...                 # hermetic, sandboxed; FRX_PLATFORMS=cpu default
 ```
 
 For iterative dev outside Bazel: `export PYTHONPATH="$PWD"`.
@@ -36,10 +36,10 @@ python -c 'import frx; print(frx.devices())'   # must show CudaDevice, not CpuDe
 ## Testing
 
 ```sh
-bazel test //...     # hermetic, sandboxed; JAX_PLATFORMS=cpu by default
+bazel test //...     # hermetic, sandboxed; FRX_PLATFORMS=cpu by default
 ```
 
-[`.bazelrc`](../.bazelrc) pins `JAX_PLATFORMS=cpu` so a plain `bazel test` is
+[`.bazelrc`](../.bazelrc) pins `FRX_PLATFORMS=cpu` so a plain `bazel test` is
 deterministic on any machine — CPU is the default, not a requirement. CI
 overrides it per matrix leg. `//...` is the whole suite on either backend; the
 `-gpu` tag filter currently matches nothing.
@@ -191,7 +191,7 @@ extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 | DEEP (`friExp`) | 8.88 ms | 15.6 ms | **1.76×** | ❌ #61 |
 | FRI total (queries excl.) | 7.84 ms | 19.7 ms | **2.49×** | ✅ |
 
-The LogUp row reflects #64 (the `@frx.jit` + `jnp.cumsum` fold fusion, now
+The LogUp row reflects #64 (the `@frx.jit` + `fnp.cumsum` fold fusion, now
 merged). Its win is the fusion: the pre-#64 path — a Hillis-Steele scan
 materializing the `[N, I]` ratio to HBM — measures ~22 ms (9.0×) at this pin;
 #64 fuses div + fold + scan into one pass and lands at 7.91 ms (3.23×), matching

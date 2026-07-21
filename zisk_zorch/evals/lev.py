@@ -27,7 +27,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
-import frx.numpy as jnp
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -46,7 +46,7 @@ _TWO_ADIC_ROOT = 7277203076849721926
 
 def _base(value: int) -> Array:
     """A canonical Goldilocks int -> a plain goldilocks scalar (value-converted)."""
-    return jnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
+    return fnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
 
 
 def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> Array:
@@ -58,7 +58,7 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
         raise ValueError("opening_points must be non-empty")
 
     n = 1 << n_bits
-    one = jnp.ones((), F3)
+    one = fnp.ones((), F3)
     inv_n = _base(pow(n, -1, _MODULUS))
     w = pow(_TWO_ADIC_ROOT, 1 << (32 - n_bits), _MODULUS)
     shift_inv = pow(_COSET_SHIFT, -1, _MODULUS)
@@ -68,7 +68,7 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
     cols = []
     for p in opening_points:
         g = xi_challenge * _base(pow(w, p, _MODULUS) * shift_inv)
-        num = jnp.power(g, n) - one
+        num = fnp.power(g, n) - one
         # c_j = N^-1 * (g^N - 1) / (g * w^-j - 1), vectorized over j.
         cols.append(inv_n * num * (one / (g * wj_inv - one)))
-    return jnp.stack(cols, axis=1)
+    return fnp.stack(cols, axis=1)
