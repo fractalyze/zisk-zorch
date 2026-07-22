@@ -259,17 +259,19 @@ real DEEP stage, this RTX 5090 (`XLA_PYTHON_CLIENT_MEM_FRACTION` raised to fit):
 
 | base | N_ext | full prove | peak |
 |---|---|---|---|
-| 2^20 | 2^21 | 69.0 s | 2.69 GiB |
-| 2^21 | 2^22 | 35.9 s | 5.38 GiB |
-| 2^22 | 2^23 | **38.2 s** | **10.75 GiB** |
+| 2^20 | 2^21 | 68.8 s | 2.69 GiB |
+| 2^21 | 2^22 | 70.7 s | 5.38 GiB |
+| 2^22 | 2^23 | 73.2 s | **10.75 GiB** |
 | 2^23 | 2^24 | — | OOM: the stage-1 LDE NTT's 9.50 GiB scratch (see below) |
 
 Re-measured 2026-07-22 on this branch's final pins, after the `zorch.pcs.deep`
-swap. Against the pre-swap state (74.2 s / 17.43 GiB at 2^22): wall time halves
-at 2^21+ and the peak drops ~6.7 GiB — the eager evmap used to gather LEv per
-committed column and materialize the `lev·col` products (`(N, M)` cubic each);
-zorch's per-column form builds neither. 2^20 barely moves: that size is
-compile-dominated.
+swap; one fresh process per row (the protocol every earlier row used — a warm
+continuation in one process runs 2^22 in ~38 s, so ~35 s of each wall is
+tracing/compile, which is why the wall barely scales with size). Against the
+pre-swap state, wall time is unchanged within noise; **the swap's e2e win is
+memory** — 17.43 → 10.75 GiB at 2^22 — because the eager evmap used to gather
+LEv per committed column and materialize the `lev·col` products (`(N, M)` cubic
+each), and zorch's per-column form builds neither.
 
 **History: #69 lifted the first ceiling.** DEEP used to embed every base column
 to cubic, so its committed buffer was `2^23 × (M+1) × 24B` = 7.31 GiB at 38
