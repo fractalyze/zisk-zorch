@@ -6,11 +6,11 @@
 absl-py
 numpy
 zorch==0.1.0.dev20260722004339
-frx==0.10.0.dev20260716113241
+frx==0.10.0.dev20260722043129
 zk-dtypes==0.0.10
-frxlib==0.10.0.dev20260716113241
-frx-cuda12-plugin==0.10.0.dev20260716113241
-frx-cuda12-pjrt==0.10.0.dev20260716113241
+frxlib==0.10.0.dev20260722043129
+frx-cuda12-plugin==0.10.0.dev20260722043129
+frx-cuda12-pjrt==0.10.0.dev20260722043129
 
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl
 
