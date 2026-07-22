@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import frx
 import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
@@ -35,6 +36,14 @@ from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.quotient.zerofier import _coset_points, _root
+
+# Jitted here, not run eager: per-column dispatch is ~85% of both stages' wall
+# (opening 28.2 → 3.6 ms, composition 58.0 → 9.2 ms at the wired 2^22 shape).
+# This does not re-trip #67 — its trigger is a coset *built inside* the trace,
+# and both cosets here (`lev`, `domain`) enter as inputs. `opening_pos` must be
+# a tuple: static args are hashed.
+_open_columns = frx.jit(open_columns, static_argnames=("opening_pos", "stride"))
+_deep_composition = frx.jit(deep_composition, static_argnames=("opening_pos",))
 
 
 def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
@@ -76,11 +85,11 @@ def deep_fri_polynomial(
     squeezed, so the verifier re-derives it."""
     base_cols, cubic_cols = _committed_columns(trace_ext, quotient)
     m = base_cols.shape[1] + cubic_cols.shape[1]
-    opening_pos = [0] * m  # all at z; wrapped openings are AIR-specific
+    opening_pos = (0,) * m  # all at z; wrapped openings are AIR-specific
     z = transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
     zc = join_coeffs(z.reshape(-1, 3), F3).reshape(())
     lev = compute_lev(zc, list(opening_points), n_bits)
-    evals = open_columns(
+    evals = _open_columns(
         base_cols, cubic_cols, lev, opening_pos, stride=1 << blowup_bits
     )
     transcript.put(split_coeffs(evals).reshape(-1))  # absorb openings
@@ -88,5 +97,5 @@ def deep_fri_polynomial(
     vf = join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(())
     xis = _ood_points(z, opening_points, n_bits)
     domain = _coset_points(n_bits, blowup_bits)  # (N_ext,) base — DEEP divides on it
-    f = deep_composition(base_cols, cubic_cols, evals, xis, opening_pos, vf, domain)
+    f = _deep_composition(base_cols, cubic_cols, evals, xis, opening_pos, vf, domain)
     return f, evals

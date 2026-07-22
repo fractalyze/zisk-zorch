@@ -189,8 +189,8 @@ Merkle), so rows do not sum.
 | commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | ✅ |
 | quotient ⚠️ #66 | 134 ms @2^23 (synthetic mimic) | 12.0 ms @2^23 (real Main air) | — | ✅ |
 | LogUp grand-sum (I=8) | 2.45 ms ⚠️ carried | 3.56 ms | **1.45×** | ✅ (not in the spine) |
-| evals (`evmap`) | 3.73 ms | 28.3 ms | **7.6×** | this branch |
-| DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 103.1 ms (58.2 wired M=39) | **~11.6×** | this branch |
+| evals (`evmap`) | 3.73 ms (M=68) | 7.8 ms (4.1 wired M=39) | **2.1×** | this branch |
+| DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 15.3 ms (9.2 wired M=39) | **1.72×** | this branch |
 | FRI total (queries excl.) | 7.88 ms | 19.0 ms | **2.41×** | ✅ |
 
 The LogUp row reflects #64's fold fusion *and* the Fermat extension reciprocal:
@@ -202,11 +202,16 @@ scan stopped being the bottleneck at #64; the inverse stopped at #398.
 The evals/DEEP rows are **direct measurements of code that runs at production
 size** — the first this doc has had. The old 15.8 / 15.6 ms were extrapolations
 from ≤2^21 of the pre-#69 embed-everything code, which OOM'd the whole prove at
-2^22; they were never real at these heights. The zorch `pcs.deep` per-column
-forms hold peak memory linear (no `(N, M)` LEv gather, no product matrix) at the
-cost of per-column kernel launches — the whole-prove table below shows the trade
-nets out strongly positive end-to-end. Closing the per-column launch cost is
-zorch#512 + xla#306 (evals measured 4.14 ms on those branches).
+2^22; they were never real at these heights. The zorch `pcs.deep` forms hold
+peak memory linear (no `(N, M)` LEv gather, no product matrix), and both calls
+are jitted in `deep/fri_polynomial.py`: eager per-column dispatch was ~85% of
+both stages' wall (evals 51.0 / 28.2 wired, DEEP 103.3 / 58.0 wired). The jit
+does not re-trip #67 — its trigger is a coset built *inside* the trace, and
+both cosets here (`lev`, `domain`) enter as inputs. The evals ratio pairs
+like-for-like shapes: native's 3.73 ms opens M=68 columns, so its counterpart
+is the 62+6 run, not the wired M=39 one. The residual is the extension-typed
+reduce and the AoS cubic arithmetic: zorch#512 + xla#306 (in review) measure
+evals at 4.12 ms / **1.11×** at M=68, and xla_fork#258 holds DEEP's remainder.
 
 Open PRs move two more: #63 takes extend to 0.58×, and #70 + zorch#456 take FRI
 to 0.83× (its fold is 14.75 of the 19.0 ms).
