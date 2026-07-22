@@ -17,7 +17,7 @@ from zk_dtypes import goldilocksx3 as F3
 
 from zorch.poly.univariate import powers
 
-from zisk_zorch.deep.opening import open_columns
+from zorch.pcs.deep import open_columns
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
@@ -63,7 +63,7 @@ class OpeningTest(absltest.TestCase):
         for o, p in enumerate(opening_points):
             xi = z * fnp.power(g, p)
             evals = open_columns(
-                no_base, column, lev, [o], n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS
+                no_base, column, lev, [o], stride=1 << _BLOWUP_BITS
             )
             self.assertTrue(
                 _cubic_eq(evals[0], _poly_eval(coeffs, xi)),

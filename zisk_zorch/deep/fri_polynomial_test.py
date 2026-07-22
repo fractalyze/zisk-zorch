@@ -19,7 +19,9 @@ from zk_dtypes import goldilocksx3 as F3
 
 from zorch.poly.univariate import powers
 
-from zisk_zorch.deep.fri_polynomial import _ood_points, deep_composition
+from zorch.pcs.deep import deep_composition
+
+from zisk_zorch.deep.fri_polynomial import _ood_points
 from zisk_zorch.fri.fold import intt
 from zorch.utils.field import split_coeffs
 from zisk_zorch.quotient.zerofier import _coset_points
@@ -87,9 +89,10 @@ class DeepCompositionTest(absltest.TestCase):
         )
 
     def _compose(self, evals):
+        domain = _coset_points(_N_BITS, _BLOWUP_BITS)
         return deep_composition(
             self.base_cols, self.cubic_cols, evals, self.xis, self.opening_pos,
-            self.vf, n_bits=_N_BITS, blowup_bits=_BLOWUP_BITS,
+            self.vf, domain,
         )
 
     def test_correct_opening_is_low_degree(self):
