@@ -109,7 +109,7 @@ meaningful.
 - **"~270 ms quotient"** — an extrapolation to a size the *proxy* cannot reach,
   not a measurement; likewise the ~370 ms the corrected proxy would extrapolate
   to. Both are proxy artifacts. The real Main air, folded through
-  `constraint_eval`, does run at 2^23 and measures 8.1 ms (#66, below) — quote
+  `constraint_eval`, does run at 2^23 and measures 12.0 ms (#66, below) — quote
   that, never the proxy extrapolations.
 - **"77 ms quotient" / "0.58x"** — measured before `_make_eval_fn` drew distinct
   columns, so CSE folded 900 constraints down to 38: ~1/24th of the claimed
