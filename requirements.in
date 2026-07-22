@@ -5,7 +5,7 @@
 #     --extra-index-url https://fractalyze.github.io/pypi/simple/
 absl-py
 numpy
-zorch==0.1.0.dev20260714055619
+zorch==0.1.0.dev20260720092050
 frx==0.10.0.dev20260716113241
 zk-dtypes==0.0.10
 frxlib==0.10.0.dev20260716113241
@@ -15,5 +15,6 @@ frx-cuda12-pjrt==0.10.0.dev20260716113241
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl
 
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
-# (warm-GPU inner-proof microbench, zisk-zorch#30). Same pin as zorch.
-zkbench==0.5.0
+# (warm-GPU inner-proof microbench, zisk-zorch#30). Direct wheel URL: the pypi
+# index rebuild dropped zkbench's /simple/ page; the release asset remains.
+zkbench @ https://github.com/fractalyze/pypi/releases/download/zkbench-py-v0.5.0/zkbench-0.5.0-py3-none-any.whl

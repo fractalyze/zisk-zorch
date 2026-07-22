@@ -21,7 +21,7 @@ from zorch.poly.univariate import powers
 
 from zisk_zorch.deep.fri_polynomial import _ood_points, deep_composition
 from zisk_zorch.fri.fold import intt
-from zisk_zorch.fri.seam import _cubic_to_base
+from zorch.utils.field import split_coeffs
 from zisk_zorch.quotient.zerofier import _coset_points
 
 _N_BITS = 4
@@ -63,7 +63,7 @@ def _high_coeffs(f: fnp.ndarray) -> np.ndarray:
     """The extended-coset INTT coefficients of cubic `f` at index >= N-1 (the
     degrees a valid DEEP polynomial must not reach), as canonical limbs."""
     n_ext = f.shape[0]
-    base = _cubic_to_base(f).reshape(n_ext, 3)
+    base = split_coeffs(f)
     coeffs = intt(base, _N_BITS + _BLOWUP_BITS)  # (N_ext, 3) base
     return np.asarray(coeffs[(1 << _N_BITS) - 1:])
 

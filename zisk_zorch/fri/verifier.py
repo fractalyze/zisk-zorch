@@ -37,6 +37,7 @@ from __future__ import annotations
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
+from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.commit.openings import verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
@@ -45,10 +46,11 @@ from zisk_zorch.fri.queries import (
     grinding_seed_challenge,
     query_positions_for,
 )
-from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript, _base_to_cubic
+from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
 from zorch.commit.merkle import Opening
 from zorch.pcs.fold import verify_group_fold_chain
+from zorch.utils.field import join_coeffs
 
 
 def verify(
@@ -122,7 +124,7 @@ def verify(
             open_idx = int(leaf_indices[layer][q])
             if not verify_group_proof(tree, roots[layer], open_idx, proof, n_cols):
                 return False
-            rows.append(_base_to_cubic(proof[:n_cols]))  # (n_x,) cubic
+            rows.append(join_coeffs(proof[:n_cols].reshape(-1, 3), F3))  # (n_x,)
         # The seam folds the opened cubic group, so feed it cubic-viewed rows
         # (the linear-hash leaf stays base-limb above, in verify_group_proof).
         openings_seam.append(Opening(row=fnp.stack(rows), path=[]))  # (Q, n_x)

@@ -236,9 +236,9 @@ zk-dtypes==0.0.10 \
     # via
     #   -r requirements.in
     #   frx
-zkbench==0.5.0 \
+zkbench @ https://github.com/fractalyze/pypi/releases/download/zkbench-py-v0.5.0/zkbench-0.5.0-py3-none-any.whl \
     --hash=sha256:1c6020d02504f43aa6b7cfa62e7ba300cf6305abab771ff83626cae912352bb3
     # via -r requirements.in
-zorch==0.1.0.dev20260714055619 \
-    --hash=sha256:e7737279339e4954bdbac6dbdea11f9ede8249073a046f76f6537e45dae21ee0
+zorch==0.1.0.dev20260720092050 \
+    --hash=sha256:785a5321e73df577e619670194ba3b694e08fde76226d648ce3cb6403328ab69
     # via -r requirements.in

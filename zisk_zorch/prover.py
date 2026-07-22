@@ -15,7 +15,7 @@ drives.
   `eval_fn`) lives on the Stage, not the Bridge.
 
 The quotient-commit leaf layout mirrors the FRI seam's cubic convention (each
-cubic row -> its 3 contiguous Goldilocks limbs, cf. `seam._cubic_to_base`), which
+cubic row -> its 3 contiguous Goldilocks limbs, cf. `zorch.utils.field`), which
 is pil2's `FIELD_EXTENSION`-contiguous memory order.
 
 See `docs/architecture.md` for the DEEP seam and its byte-match boundary.
@@ -30,16 +30,17 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 from frx import Array
+from zk_dtypes import goldilocksx3 as F3
 
 from zorch.poly.univariate import powers
 from zorch.round import ProveChain, Round
+from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import TraceCommitment, commit_trace, merkle_tree
 from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
 from zisk_zorch.fri.prover import FriProof, prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
-from zisk_zorch.fri.seam import _base_to_cubic, _cubic_to_base
 from zisk_zorch.quotient.quotient import quotient_from_constraints
 from zisk_zorch.transcript.transcript import Transcript
 
@@ -146,7 +147,8 @@ class QuotientStage(Round):
         # pil2 folds the K constraints by powers of the stage-`nStages+1`
         # challenge — exactly the coefficient vector `zorch.constraint_eval` takes.
         alpha = powers(
-            _base_to_cubic(transcript.get_field()).reshape(()), self._n_constraints
+            join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(()),
+            self._n_constraints,
         )
         quotient = quotient_from_constraints(
             self._eval_fn,
@@ -155,7 +157,7 @@ class QuotientStage(Round):
             self._n_bits,
             self._blowup_bits,
         )
-        matrix = _cubic_to_base(quotient).reshape(quotient.shape[0], 3)
+        matrix = split_coeffs(quotient)
         root, layers = merkle_tree(self._arity).commit(matrix)
         transcript.put(root)
         return (
