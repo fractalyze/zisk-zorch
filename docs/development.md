@@ -297,8 +297,18 @@ grind's `_canonical` is the first host sync in the whole chain — every earlier
 stage's async failure surfaces there. Splitting the LDE into column blocks
 (exact: the transform is per-column) is the known fix, currently parked.
 
-No whole-proof ratio appears above because none can: the only native total covers
-111 AIRs. And nothing verifies these proofs — there is no `verify_inner`, so "it
+No *measured* whole-proof ratio appears above because none can: the only native
+total covers 111 AIRs, and a single-AIR native run needs a proving key + block
+witness this box does not have. But the bracket is tight from two independent
+directions — the same-day native per-stage sum for one Main-sized AIR
+(extend 52.9 + commit 57.8 + quotient ~135 + evals 3.7 + friExp 8.9 + FRI 7.9 ≈
+**~0.27 s** plus glue) and the block-level average (24.6 s / 111 instances ≈
+0.22 s, Main above average) — so native is **~0.2–0.3 s per proof where our
+warm prove is 30.6 s**: a ~100× e2e gap. Read against the warm-flatness
+finding above, the entire gap is the host-bound spine; per-stage, our kernels
+already sum to ~0.2 s — native's compute, matched — with ~30 s of eager
+dispatch and Python sequencing on top. Derived, not measured — do not quote as
+a benchmark row. And nothing verifies these proofs — there is no `verify_inner`, so "it
 proved" means the spine ran, not that the output is correct.
 
 ### Measure shipped code
