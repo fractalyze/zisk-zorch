@@ -1,0 +1,20 @@
+{
+  "chip": "input_data",
+  "case": "fullprogram",
+  "source_elf": "/home/ryan/Workspace/riscv-witness/testdata/zisk/v1/fullprogram/go-program-hello-world.elf",
+  "air": "InputData (air_id 16)",
+  "segment_id": 0,
+  "total_segments": 1,
+  "input_count": 7,
+  "trace_rows": 2097152,
+  "trace_cols": 9,
+  "field": "goldilocks_canonical_u64",
+  "golden_sha256": "b0a06aad871635e52608e69b809cff616b8a2f1a2a3b00a2838415838901db6a",
+  "record_layout": "repr(C) { addr:u64, step:u64, value:u64, is_write:u64 } (native word addr; is_write 0/1)",
+  "previous_segment": {
+    "addr": 134217728,
+    "step": 0,
+    "value": 0
+  },
+  "num_rows": 2097152
+}
