@@ -175,44 +175,50 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 
 ### Per-stage comparison
 
-RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-16. Each
-row brackets a different span (FRI excludes the query phase; commit excludes its
-extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
+RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured **2026-07-22 on
+this branch's final pins** (frx `dev20260722043129`, zorch `dev20260722004339`
+with the `pcs.deep` swap). Each row brackets a different span (FRI excludes the
+query phase; commit excludes its extend; `MAIN_EXPR` excludes the INTT-back and
+Merkle), so rows do not sum.
 
 | stage | native pil2 | zisk-zorch | ratio | on main? |
 |---|---|---|---|---|
-| extend cm1 (38 col) | 32.5 ms | 23.6 ms | **0.73×** | ✅ |
-| extend cm2 (24 col) | 20.4 ms | 15.0 ms | **0.73×** | ✅ |
-| commit stage1 (38 col) | 36.6 ms | 38.9 ms | **1.06×** | ✅ |
-| commit stage2 (24 col) | 19.9 ms | 21.0 ms | **1.05×** | ✅ |
-| quotient ⚠️ #66 | 133 ms @2^23 (synthetic mimic) | 8.1 ms @2^23 (real Main air) | — | ✅ |
-| LogUp grand-sum (I=8) | 2.45 ms | 7.91 ms | **3.23×** | ✅ (not in the spine) |
-| evals (`evmap`) | 3.72 ms | 15.8 ms | **4.25×** | ❌ #61 |
-| DEEP (`friExp`) | 8.88 ms | 15.6 ms | **1.76×** | ❌ #61 |
-| FRI total (queries excl.) | 7.84 ms | 19.7 ms | **2.49×** | ✅ |
+| extend cm1 (38 col) | 32.5 ms | 23.6 ms | **0.72×** | ✅ |
+| extend cm2 (24 col) | 20.4 ms | 14.8 ms | **0.73×** | ✅ |
+| commit stage1 (38 col) | 37.5 ms | 39.0 ms | **1.04×** | ✅ |
+| commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | ✅ |
+| quotient ⚠️ #66 | 134 ms @2^23 (synthetic mimic) | 12.0 ms @2^23 (real Main air) | — | ✅ |
+| LogUp grand-sum (I=8) | 2.45 ms ⚠️ carried | 3.56 ms | **1.45×** | ✅ (not in the spine) |
+| evals (`evmap`) | 3.73 ms | 28.3 ms | **7.6×** | this branch |
+| DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 103.1 ms (58.2 wired M=39) | **~11.6×** | this branch |
+| FRI total (queries excl.) | 7.88 ms | 19.0 ms | **2.41×** | ✅ |
 
-The LogUp row reflects #64 (the `@frx.jit` + `fnp.cumsum` fold fusion, now
-merged). Its win is the fusion: the pre-#64 path — a Hillis-Steele scan
-materializing the `[N, I]` ratio to HBM — measures ~22 ms (9.0×) at this pin;
-#64 fuses div + fold + scan into one pass and lands at 7.91 ms (3.23×), matching
-the PR's own pre-Fermat figure (25.1 → 7.85 ms). The residual is the cubic
-inverse — `num/den` over 33.5 M cubic elements is ~7 of the 7.91 ms, so the fold
-and scan are no longer the bottleneck. #64's headline 1.43× is on the
-Fermat-inverse plugin; closing this pin's 3.23× to it needs that extension base
-reciprocal (prime-ir #398), not more fold work.
+The LogUp row reflects #64's fold fusion *and* the Fermat extension reciprocal:
+prime-ir #398 merged upstream hours before the frx `dev20260716113241` build, so
+every pin since carries it — the 3.23× this doc used to quote (7.91 ms, ~7 of
+them the cubic inverse) collapses to **1.45×** with no repo change. The fold and
+scan stopped being the bottleneck at #64; the inverse stopped at #398.
+
+The evals/DEEP rows are **direct measurements of code that runs at production
+size** — the first this doc has had. The old 15.8 / 15.6 ms were extrapolations
+from ≤2^21 of the pre-#69 embed-everything code, which OOM'd the whole prove at
+2^22; they were never real at these heights. The zorch `pcs.deep` per-column
+forms hold peak memory linear (no `(N, M)` LEv gather, no product matrix) at the
+cost of per-column kernel launches — the whole-prove table below shows the trade
+nets out strongly positive end-to-end. Closing the per-column launch cost is
+zorch#512 + xla#306 (evals measured 4.14 ms on those branches).
 
 Open PRs move two more: #63 takes extend to 0.58×, and #70 + zorch#456 take FRI
-to 0.83× (its fold is 14.75 of the 19.7 ms). #69 is the evals/DEEP gap — our
-committed buffer embeds every base column to cubic, so it is 2.55× the native's
-reads.
+to 0.83× (its fold is 14.75 of the 19.0 ms).
 
 **⚠️ quotient — the real number, and why it still has no clean ratio (#66).** The
 re-authored Main air (`rw_constraints` `zisk/v1` `main`, 38 columns, 19
 constraints) folded through the production `quotient_from_constraints`
-(`constraint_eval` + zerofier) measures **8.1 ms at 2^23** on this card
-(0.99 ns/row, 4.3 GiB peak) — a direct measurement *at* Main's size, no
-extrapolation. Sibling airs on the same path, all at 2^23: `binary` (39 col, 14
-con) 4.0 ms, `arith` (44 col, 33 con) 14.4 ms. `keccak` (2137 col, 1602 con) is
+(`constraint_eval` + zerofier) measures **12.0 ms at 2^23** on this card — a
+direct measurement *at* Main's size, no extrapolation (8.1 ms on the 07-19
+stack; the delta arrived with the 07-22 frx bump, siblings unmoved — unchased).
+Sibling airs on the same path, all at 2^23: `binary` (39 col, 14 con) 4.0 ms,
+`arith` (44 col, 33 con) 14.4 ms. `keccak` (2137 col, 1602 con) is
 the one heavy air, ~55 ns/row and bandwidth-bound by its 17 KB/row trace, but
 ZisK runs it at small heights. Reproduce with `--stages=quotient --chip=main`
 (the flag forces x64 and folds the chip's actual `eval_constraints`).
@@ -253,18 +259,32 @@ real DEEP stage, this RTX 5090 (`XLA_PYTHON_CLIENT_MEM_FRACTION` raised to fit):
 
 | base | N_ext | full prove | peak |
 |---|---|---|---|
-| 2^20 | 2^21 | 69.7 s | 10.46 GiB |
-| 2^21 | 2^22 | 71.6 s | 20.98 GiB (pre-#69) → fits |
-| 2^22 | 2^23 | 74.2 s | **17.43 GiB** (post-#69; **OOM'd pre-#69**) |
-| 2^23 | 2^24 | — | OOM on the query grind (`queries.py`), not DEEP |
+| 2^20 | 2^21 | 69.0 s | 2.69 GiB |
+| 2^21 | 2^22 | 35.9 s | 5.38 GiB |
+| 2^22 | 2^23 | **38.2 s** | **10.75 GiB** |
+| 2^23 | 2^24 | — | OOM: the stage-1 LDE NTT's 9.50 GiB scratch (see below) |
 
-**#69 lifted the ceiling one doubling.** DEEP used to embed every base column to
-cubic, so its committed buffer was `2^23 × (M+1) × 24B` = 7.31 GiB at 38 columns
-(pil2 holds the same columns as 80 gl64 = 5.00 GiB) — which OOM'd the whole proof
-at 2^22. Keeping base columns base (#69) drops the DEEP fold from 8.19 → 0.92 GiB
-and 26.6 → 11.3 ms at 2^21 (byte-identical), and 2^22 now proves at 17.43 GiB.
-The next ceiling at 2^23 is a *different* stage — a 9.5 GiB alloc in the
-proof-of-work grind — not DEEP.
+Re-measured 2026-07-22 on this branch's final pins, after the `zorch.pcs.deep`
+swap. Against the pre-swap state (74.2 s / 17.43 GiB at 2^22): wall time halves
+at 2^21+ and the peak drops ~6.7 GiB — the eager evmap used to gather LEv per
+committed column and materialize the `lev·col` products (`(N, M)` cubic each);
+zorch's per-column form builds neither. 2^20 barely moves: that size is
+compile-dominated.
+
+**History: #69 lifted the first ceiling.** DEEP used to embed every base column
+to cubic, so its committed buffer was `2^23 × (M+1) × 24B` = 7.31 GiB at 38
+columns — which OOM'd the whole proof at 2^22. Keeping base columns base (#69)
+made 2^22 prove at all.
+
+**The 2^23 ceiling is the stage-1 LDE forward NTT, not where the traceback
+points.** The GPU NTT lowering holds two full ping-pong copies of the
+`(38, 2^24)` matrix as scratch — one 9.50 GiB allocation
+(`2 × 38 × 2^24 × 8 B`, exact, confirmed via `compiled.memory_analysis()`) that
+fragmentation cannot place. The traceback blames the query grind only because
+the transcript is device-resident (`put`/`get_field` never read back), so the
+grind's `_canonical` is the first host sync in the whole chain — every earlier
+stage's async failure surfaces there. Splitting the LDE into column blocks
+(exact: the transform is per-column) is the known fix, currently parked.
 
 No whole-proof ratio appears above because none can: the only native total covers
 111 AIRs. And nothing verifies these proofs — there is no `verify_inner`, so "it
