@@ -257,21 +257,30 @@ materialization-bound 2× the proxy implied.
 Proves at 2^18 × 38 in 101.1 s through the real DEEP combiner. Whole-proof peaks,
 real DEEP stage, this RTX 5090 (`XLA_PYTHON_CLIENT_MEM_FRACTION` raised to fit):
 
-| base | N_ext | full prove | peak |
-|---|---|---|---|
-| 2^20 | 2^21 | 68.8 s | 2.69 GiB |
-| 2^21 | 2^22 | 70.7 s | 5.38 GiB |
-| 2^22 | 2^23 | 73.2 s | **10.75 GiB** |
-| 2^23 | 2^24 | — | OOM: the stage-1 LDE NTT's 9.50 GiB scratch (see below) |
+| base | N_ext | full prove (cold) | warm re-prove | peak |
+|---|---|---|---|---|
+| 2^20 | 2^21 | 68.8 s | 28.4 s | 2.69 GiB |
+| 2^21 | 2^22 | 70.7 s | 28.6 s | 5.38 GiB |
+| 2^22 | 2^23 | 73.2 s | **30.6 s** | **10.75 GiB** |
+| 2^23 | 2^24 | — | — | OOM: the stage-1 LDE NTT's 9.50 GiB scratch (see below) |
 
 Re-measured 2026-07-22 on this branch's final pins, after the `zorch.pcs.deep`
-swap; one fresh process per row (the protocol every earlier row used — a warm
-continuation in one process runs 2^22 in ~38 s, so ~35 s of each wall is
-tracing/compile, which is why the wall barely scales with size). Against the
-pre-swap state, wall time is unchanged within noise; **the swap's e2e win is
-memory** — 17.43 → 10.75 GiB at 2^22 — because the eager evmap used to gather
-LEv per committed column and materialize the `lev·col` products (`(N, M)` cubic
-each), and zorch's per-column form builds neither.
+swap; one fresh process per row (the protocol every earlier row used). "Warm
+re-prove" is the second prove of the same size in that process — every shape
+already compiled — i.e. the marginal per-proof cost in a compile-once,
+prove-many server, which is production's actual shape (111 AIR instances per
+block). Two readings:
+
+- Cold vs pre-swap: wall unchanged within noise; **the swap's e2e win is
+  memory** — 17.43 → 10.75 GiB at 2^22 — because the eager evmap used to
+  gather LEv per committed column and materialize the `lev·col` products
+  (`(N, M)` cubic each), and zorch's per-column form builds neither.
+- **The warm wall is host-bound, and that is the e2e story.** ~30 s and nearly
+  flat from 2^20 to 2^22 (a 4× size range costs +2.2 s), while the per-stage
+  GPU table above sums to ~0.2 s at production size. The warm prove is ~99%
+  eager per-op dispatch and Python sequencing (transcript loops, per-query
+  opening loops), not kernels. Per-stage kernel ratios are second-order until
+  the spine itself is batched/jitted or moved off Python.
 
 **History: #69 lifted the first ceiling.** DEEP used to embed every base column
 to cubic, so its committed buffer was `2^23 × (M+1) × 24B` = 7.31 GiB at 38
