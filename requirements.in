@@ -5,7 +5,7 @@
 #     --extra-index-url https://fractalyze.github.io/pypi/simple/
 absl-py
 numpy
-zorch==0.1.0.dev20260720092050
+zorch==0.1.0.dev20260722004339
 frx==0.10.0.dev20260716113241
 zk-dtypes==0.0.10
 frxlib==0.10.0.dev20260716113241
