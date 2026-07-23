@@ -175,19 +175,17 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 
 ### Per-stage comparison
 
-RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured **2026-07-22/23
+RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured **2026-07-23
 on this branch** (zorch `dev20260722235316` with the `pcs.deep` swap and
-`fri_fold_k`; frx `dev20260722043129` — see the warning below). Each row
-brackets a different span (FRI excludes the query phase; commit excludes its
-extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
+`fri_fold_k`; frx `dev20260723085209`). Each row brackets a different span (FRI
+excludes the query phase; commit excludes its extend; `MAIN_EXPR` excludes the
+INTT-back and Merkle), so rows do not sum.
 
-**⚠️ frx `dev20260722083811` (the pinned build) miscomputes the FRI fold on
-GPU.** `fold_test` is red on GPU under it — `fold()`'s `fri_fold_k` coset path
-returns wrong values while `verify_fold` and the CPU path stay correct, so CI
-(CPU-only) does not see it. The same code and zorch wheel pass on GPU under frx
-`dev20260722043129`; zorch's own `fri_fold_k` suite passes under both. Until
-the frx regression is fixed upstream, GPU numbers here are taken on
-`dev20260722043129`.
+The GPU fold now byte-matches on the pinned build: frx `dev20260723085209`
+carries prime-ir's fix for a compile-time-constant field divide that was off by
+`2^63` for high-odd operands — the fold's `k^-1` and the small-NTT `n_inv` both
+hit it, silently, since the pil2 golden inputs never landed on a triggering
+value. `fold_test` is green on GPU and CPU under it.
 
 | stage | native pil2 | zisk-zorch | ratio | on main? |
 |---|---|---|---|---|
@@ -199,7 +197,7 @@ the frx regression is fixed upstream, GPU numbers here are taken on
 | LogUp grand-sum (I=8) | 2.45 ms ⚠️ carried | 3.56 ms | **1.45×** | ✅ (not in the spine) |
 | evals (`evmap`) | 3.73 ms (M=68) | 7.8 ms (4.1 wired M=39) | **2.1×** | this branch |
 | DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 15.3 ms (9.2 wired M=39) | **1.72×** | this branch |
-| FRI total (queries excl.) | 7.88 ms | 8.2 ms | **1.04×** | ✅ |
+| FRI total (queries excl.) | 7.88 ms | 6.5 ms | **0.83×** | ✅ |
 
 The LogUp row reflects #64's fold fusion *and* the Fermat extension reciprocal:
 prime-ir #398 merged upstream hours before the frx `dev20260716113241` build, so
@@ -221,8 +219,9 @@ is the 62+6 run, not the wired M=39 one. The residual is the extension-typed
 reduce and the AoS cubic arithmetic: zorch#512 + xla#306 (in review) measure
 evals at 4.12 ms / **1.11×** at M=68, and xla_fork#258 holds DEEP's remainder.
 
-The FRI row is #70 landed (fold via zorch's `fri_fold_k`): 19.0 → 8.2 ms, the
-fold's 14.75 ms collapsing to ~1.4. Open PR #63 takes extend to 0.58×.
+The FRI row is #70 landed (fold via zorch's `fri_fold_k` on the native NTT):
+19.0 → 6.5 ms, the fold's 14.75 ms collapsing to ~1.7 — merkle is now ~75% of
+the stage and the next lever, not the fold. Open PR #63 takes extend to 0.58×.
 
 **⚠️ quotient — the real number, and why it still has no clean ratio (#66).** The
 re-authored Main air (`rw_constraints` `zisk/v1` `main`, 38 columns, 19
