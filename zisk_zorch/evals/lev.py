@@ -49,6 +49,14 @@ def _base(value: int) -> Array:
     return fnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
 
 
+# Cubic one from explicit limbs: `fnp.ones` on an extension dtype lowers to an
+# i64 constant the field type rejects under jit (same reason `fnp.power`'s
+# integer exponent cannot trace — see compute_lev's squaring loop).
+_CUBIC_ONE = fnp.array(
+    np.array([1, 0, 0], dtype=np.uint64).astype(F).view(F3).reshape(())
+)
+
+
 def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> Array:
     """The `(N, len(opening_points))` cubic LEv coefficient matrix for opening at
     the cubic `xi_challenge`, `N = 2^n_bits` the base-domain size."""
@@ -58,7 +66,7 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
         raise ValueError("opening_points must be non-empty")
 
     n = 1 << n_bits
-    one = fnp.ones((), F3)
+    one = _CUBIC_ONE
     inv_n = _base(pow(n, -1, _MODULUS))
     w = pow(_TWO_ADIC_ROOT, 1 << (32 - n_bits), _MODULUS)
     shift_inv = pow(_COSET_SHIFT, -1, _MODULUS)
@@ -68,7 +76,12 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
     cols = []
     for p in opening_points:
         g = xi_challenge * _base(pow(w, p, _MODULUS) * shift_inv)
-        num = fnp.power(g, n) - one
+        # g^N by n_bits squarings: `fnp.power`'s integer exponent does not
+        # lower for extension dtypes under jit, and N is a power of two.
+        g_n = g
+        for _ in range(n_bits):
+            g_n = g_n * g_n
+        num = g_n - one
         # c_j = N^-1 * (g^N - 1) / (g * w^-j - 1), vectorized over j.
         cols.append(inv_n * num * (one / (g * wj_inv - one)))
     return fnp.stack(cols, axis=1)
