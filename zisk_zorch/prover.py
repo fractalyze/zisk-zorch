@@ -27,7 +27,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from functools import partial
 
+import frx
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
@@ -269,30 +272,25 @@ class QueryStage(Round):
             n_bits_ext=self._n_bits_ext,
         )
         ext_mask = (1 << self._n_bits_ext) - 1
-        trace_tree = merkle_tree(self._arity)
-        quotient_tree = merkle_tree(self._arity)
-        trace_openings = [
-            [
-                group_proof(
-                    trace_tree,
-                    bridge.trace_commit.extended,
-                    bridge.trace_commit.digest_layers,
-                    int(idx) & ext_mask,
-                )
-            ]
-            for idx in positions
-        ]
-        quotient_openings = [
-            [
-                group_proof(
-                    quotient_tree,
-                    bridge.quotient.matrix,
-                    bridge.quotient.layers,
-                    int(idx) & ext_mask,
-                )
-            ]
-            for idx in positions
-        ]
+        idx_ext = fnp.asarray(np.asarray(positions)) & ext_mask
+        trace_batched = frx.vmap(
+            partial(
+                group_proof,
+                merkle_tree(self._arity),
+                bridge.trace_commit.extended,
+                bridge.trace_commit.digest_layers,
+            )
+        )(idx_ext)
+        quotient_batched = frx.vmap(
+            partial(
+                group_proof,
+                merkle_tree(self._arity),
+                bridge.quotient.matrix,
+                bridge.quotient.layers,
+            )
+        )(idx_ext)
+        trace_openings = [[trace_batched[q]] for q in range(len(positions))]
+        quotient_openings = [[quotient_batched[q]] for q in range(len(positions))]
         fri_openings = prove_queries(bridge.fri, positions)
         openings = QueryOpenings(
             nonce=nonce,

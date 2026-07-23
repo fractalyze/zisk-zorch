@@ -28,7 +28,10 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 
+import frx
+import frx.numpy as fnp
 import numpy as np
 from frx import Array
 
@@ -101,16 +104,15 @@ def prove(
 def prove_queries(proof: FriProof, query_indices: np.ndarray | list[int]) -> list[list[Array]]:
     """`FRI::proveFRIQueries`: open every committed layer at each query. Layer
     `s` opens at `query_index mod 2^(leaf_bits)`, the regrouped height."""
-    out: list[list[Array]] = []
-    for idx in query_indices:
-        per_layer = [
-            group_proof(
-                layer.tree,
-                layer.matrix,
-                layer.digest_layers,
-                int(idx) % (1 << layer.leaf_bits),
-            )
-            for layer in proof.layers
-        ]
-        out.append(per_layer)
-    return out
+    qi = fnp.asarray(np.asarray(query_indices))
+    per_layer = [
+        frx.vmap(partial(group_proof, layer.tree, layer.matrix, layer.digest_layers))(
+            qi % (1 << layer.leaf_bits)
+        )
+        for layer in proof.layers
+    ]
+    n_q = int(qi.shape[0])
+    return [
+        [per_layer[li][q] for li in range(len(proof.layers))]
+        for q in range(n_q)
+    ]
