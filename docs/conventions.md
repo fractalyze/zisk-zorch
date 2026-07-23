@@ -36,6 +36,18 @@ reference's own `fields` crate by [`../golden/`](../golden/). Conventions:
   `BTreeMap` / sorted keys. The drift hides from tests (they reload the file
   they just wrote) — verify with a regen-of-regen diff, not "the test passes".
 
+## Cubic ⇄ base limbs cross host, not device
+
+JAX has no device-side view from the `goldilocksx3_mont` cubic dtype to its
+three `goldilocks_mont` base limbs (a `(N,)` cubic array cannot `reshape` to
+`(N, 3)` base — the dtype is opaque, and `x64` is off). So any cubic→base or
+base→cubic step (absorbing a cubic codeword into the transcript, decoding a
+squeezed challenge, regrouping a FRI layer for Merkle leaves) round-trips
+through host NumPy `.view`, never an on-device `bitcast`/`reshape`. This is
+fine because the code that needs it — transcript, FRI prover orchestration — is
+host-driven by design; the jitted hot path (LDE/NTT/hash) stays base-field.
+See `transcript._canonical` and `fri/prover._cubic_to_base`.
+
 ## What lives here vs in zorch
 
 ZisK / pil2-stark glue lives here: Poseidon2-Goldilocks round constants, the
