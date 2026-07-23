@@ -16,12 +16,17 @@ import frx.numpy as fnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 from zk_dtypes import goldilocks as F  # noqa: E402
+from zk_dtypes import goldilocksx3 as F3  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
-from zisk_zorch.golden import load, u64x3  # noqa: E402
+from zisk_zorch.golden import base_trace, embed, load, u64x3  # noqa: E402  # noqa: E402
 from zisk_zorch.quotient import cexp_ref  # noqa: E402
-from zisk_zorch.quotient.field_io import base_trace, embed, embed_base  # noqa: E402
-from zisk_zorch.quotient.gsum import bus_denominator, eval_pair_col, grand_sum, gsum_e  # noqa: E402
+from zisk_zorch.quotient.gsum import (  # noqa: E402
+    bus_denominator,
+    eval_pair_col,
+    grand_sum,
+    gsum_e,
+)
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata"
 _GOLDEN = _TESTDATA / "golden"
@@ -63,7 +68,7 @@ class GsumTest(absltest.TestCase):
         )
         got = eval_pair_col(vpc, trace)
         # row0: 7 + 3·2 + 5·2·3 = 43 ; row1: 7 + 3·4 + 5·4·5 = 119
-        want = embed_base(fnp.array(np.array([43, 119], dtype=np.uint64), dtype=F))
+        want = fnp.array(np.array([43, 119], dtype=np.uint64), dtype=F).astype(F3)
         self.assertTrue(bool(fnp.array_equal(got, want)))
 
     def test_arith_operation_bus_reconstructs_pil2_gsum_e(self) -> None:
@@ -78,17 +83,28 @@ class GsumTest(absltest.TestCase):
         #   im_single(cm57)·(gsum_e[0] + std_gamma) − multiplicity(cm41).
         op = load_zisk_chips("v1", ["arith"])["arith"].get_receives()[0].interaction
         self.assertEqual(op.kind, 5000)  # OPERATION_BUS
-        self.assertTrue(any(v.column_products for v in op.values), "expected a non-affine tuple")
+        self.assertTrue(
+            any(v.column_products for v in op.values), "expected a non-affine tuple"
+        )
         constraints = load(_TESTDATA / "arith_constraints.json")["constraints"]
-        cases = [c for c in load(_GOLDEN / "cexp_eval.json")["cases"] if c["air"] == "Arith"]
+        cases = [
+            c for c in load(_GOLDEN / "cexp_eval.json")["cases"] if c["air"] == "Arith"
+        ]
         self.assertTrue(cases, "no Arith cases in the cexp_eval golden")
         for case in cases:
             with self.subTest(n_bits=case["n_bits"]):
                 env = cexp_ref._load_inputs(case)
                 alpha, gamma = env["challenges"][0], env["challenges"][1]
-                cm = {c["id"]: (embed if c["dim"] == 1 else u64x3)(c["values"]) for c in case["cm"]}
-                authored = cm[57] * (gsum_e(op, base_trace(case, 44), alpha) + gamma) - cm[41]
-                target = cexp_ref._run_block(constraints[61]["code"], env, 1 << case["blowup_bits"])
+                cm = {
+                    c["id"]: (embed if c["dim"] == 1 else u64x3)(c["values"])
+                    for c in case["cm"]
+                }
+                authored = (
+                    cm[57] * (gsum_e(op, base_trace(case, 44), alpha) + gamma) - cm[41]
+                )
+                target = cexp_ref._run_block(
+                    constraints[61]["code"], env, 1 << case["blowup_bits"]
+                )
                 self.assertTrue(bool(fnp.array_equal(authored, target)))
 
 

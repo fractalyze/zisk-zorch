@@ -26,9 +26,8 @@ import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 
-from zisk_zorch.golden import u64x3
+from zisk_zorch.golden import base_trace, embed, u64x3
 from zisk_zorch.quotient.cexp_ref import _load_inputs, _run_block
-from zisk_zorch.quotient.field_io import base_trace, embed, rotate
 from zisk_zorch.quotient.gsum import _P, eval_pair_col, gsum_e
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
@@ -39,7 +38,12 @@ _GSUM = 39
 _IM_CLUSTER = (40, 41, 42, 43)
 # Each std_sum cluster is the pair of interactions whose LogUp denominators it
 # combines; the 4th pairs byte-table send 7 with the operation receive.
-_CLUSTERS = ((0, 1, 2), (1, 3, 4), (2, 5, 6), (3, 7, 8))  # (im_cluster_slot, iact_i, iact_j)
+_CLUSTERS = (
+    (0, 1, 2),
+    (1, 3, 4),
+    (2, 5, 6),
+    (3, 7, 8),
+)  # (im_cluster_slot, iact_i, iact_j)
 _TRANSITION_IACT = 0  # gsum_e[0] (byte-table send 0) gates the gsum transition
 
 
@@ -77,7 +81,9 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
     c[2] = cm[34] * (one - cm[34])  # result_is_a
     c[3] = cm[35] * (one - cm[35])  # use_first_byte
     c[4] = cm[36] * (one - cm[36])  # c_is_signed
-    c[5] = cm[37] - (cm[33] * ((cm[36] + embed(["512"])) - cm[0]) + cm[0])  # b_op_or_sext
+    c[5] = cm[37] - (
+        cm[33] * ((cm[36] + embed(["512"])) - cm[0]) + cm[0]
+    )  # b_op_or_sext
     c[6] = cm[38] - cm[33] * cm[36]  # mode32_and_c_is_signed
 
     # std_sum im_cluster (7..10): im·∏(gsum_e+γ) − Σ mult·∏_{k≠·}(gsum_e+γ).
@@ -85,14 +91,16 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
         di, dj = ge[i] + gamma, ge[j] + gamma
         c[ci] = cm[_IM_CLUSTER[slot]] * (di * dj) - (mult[i] * dj + mult[j] * di)
     # gsum transition (11): ((gsum − 'gsum·(1−L1)) − Σ im_cluster)·(gsum_e[0]+γ) + 1.
-    gsum_prev = rotate(cm[_GSUM], -extend)
+    gsum_prev = fnp.roll(cm[_GSUM], extend)
     sum_im = cm[40] + cm[41] + cm[42] + cm[43]
-    c[11] = ((cm[_GSUM] - gsum_prev * (one - l1)) - sum_im) * (ge[_TRANSITION_IACT] + gamma) + one
+    c[11] = ((cm[_GSUM] - gsum_prev * (one - l1)) - sum_im) * (
+        ge[_TRANSITION_IACT] + gamma
+    ) + one
     # im_direct (12): a constant operation-bus descriptor (10·α + 5000).
     direct = embed(["10"]) * alpha + embed(["5000"])
     c[12] = airvalues[1] * (direct + gamma) - (fnp.zeros(n, F3) - airvalues[0])
     # boundary (13): __L1__'·(gsum_result − gsum − im_direct).
-    c[13] = rotate(l1, extend) * (gsum_result - cm[_GSUM] - airvalues[1])
+    c[13] = fnp.roll(l1, -extend) * (gsum_result - cm[_GSUM] - airvalues[1])
 
     composite = c[0]
     for i in range(1, 14):
@@ -109,10 +117,20 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
 _ARITH_N_STAGE1 = 44
 _ARITH_GSUM = 44
 _ARITH_IM = {
-    49: (45, (2, 3)), 50: (46, (4, 5)), 51: (47, (6, 7)), 52: (48, (0, 16)),
-    53: (49, (17, 18)), 54: (50, (19, 20)), 55: (51, (21, 22)), 56: (52, (8, 23)),
-    57: (53, (10, 12)), 58: (54, (9, 14)), 59: (55, (11, 13)),
-    60: (56, (15,)), 61: (57, (25,)), 62: (58, (24,)),
+    49: (45, (2, 3)),
+    50: (46, (4, 5)),
+    51: (47, (6, 7)),
+    52: (48, (0, 16)),
+    53: (49, (17, 18)),
+    54: (50, (19, 20)),
+    55: (51, (21, 22)),
+    56: (52, (8, 23)),
+    57: (53, (10, 12)),
+    58: (54, (9, 14)),
+    59: (55, (11, 13)),
+    60: (56, (15,)),
+    61: (57, (25,)),
+    62: (58, (24,)),
 }
 _ARITH_TRANSITION_GATE = 1  # gsum_e of this interaction gates the gsum transition
 
@@ -124,13 +142,17 @@ def _signed_multiplicity(interaction, trace: Array) -> Array:
     the multiplicity for *every* arith bus interaction, so the lookups are forced
     to 1 to match pil2's cExp (which uses the literal constant there). `send` →
     −mul, `receive` → +mul."""
-    mul = embed(["1"]) if interaction.kind in (330, 331) else eval_pair_col(
-        interaction.multiplicity, trace
+    mul = (
+        embed(["1"])
+        if interaction.kind in (330, 331)
+        else eval_pair_col(interaction.multiplicity, trace)
     )
     return (embed([str(_P - 1)]) * mul) if interaction.is_send else mul
 
 
-def _im_constraint(im: Array, group: tuple[int, ...], d: list[Array], m: list[Array]) -> Array:
+def _im_constraint(
+    im: Array, group: tuple[int, ...], d: list[Array], m: list[Array]
+) -> Array:
     """One cExp std_sum im constraint, cleared of denominators:
     `im·∏_k d_k − Σ_k m_k·∏_{j≠k} d_j` (im is defined as Σ_k m_k/d_k)."""
     prod_all = d[group[0]]
@@ -146,7 +168,9 @@ def _im_constraint(im: Array, group: tuple[int, ...], d: list[Array], m: list[Ar
     return im * prod_all - s
 
 
-def reauthor_arith_quotient(chip, case: dict, row_local_constraints: list[dict]) -> Array:
+def reauthor_arith_quotient(
+    chip, case: dict, row_local_constraints: list[dict]
+) -> Array:
     """Re-author Arith's stage-2 quotient `q` on a `cexp_eval` golden case.
 
     Row-local (cExp constraints 0..48) is sourced from the proving-key
@@ -174,20 +198,22 @@ def reauthor_arith_quotient(chip, case: dict, row_local_constraints: list[dict])
     d = [gsum_e(it, trace, alpha) + gamma for it in iacts]
     m = [_signed_multiplicity(it, trace) for it in iacts]
 
-    cols = [_run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)]
+    cols = [
+        _run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)
+    ]
     for ci in range(49, 63):
         slot, group = _ARITH_IM[ci]
         cols.append(_im_constraint(cm[slot], group, d, m))
     # gsum transition (63): ((gsum − 'gsum·(1−L1)) − Σ im)·(gsum_e[gate]+γ) + 1.
     one = embed(["1"])
-    gsum_prev = rotate(cm[_ARITH_GSUM], -extend)
+    gsum_prev = fnp.roll(cm[_ARITH_GSUM], extend)
     sum_im = cm[45]
     for col in range(46, 59):
         sum_im = sum_im + cm[col]
     base = (cm[_ARITH_GSUM] - gsum_prev * (one - l1)) - sum_im
     cols.append(base * d[_ARITH_TRANSITION_GATE] + one)
     # boundary (64): __L1__'·(gsum_result − gsum).
-    cols.append(rotate(l1, extend) * (gsum_result - cm[_ARITH_GSUM]))
+    cols.append(fnp.roll(l1, -extend) * (gsum_result - cm[_ARITH_GSUM]))
 
     composite = cols[0]
     for col in cols[1:]:

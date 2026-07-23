@@ -25,8 +25,9 @@ import frx
 import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
+from zk_dtypes import goldilocksx3 as F3
 
-from zisk_zorch.quotient.field_io import embed, embed_base
+from zisk_zorch.golden import embed
 
 _P = 0xFFFFFFFF00000001
 
@@ -85,7 +86,7 @@ def eval_pair_col(vpc, trace: Array) -> Array:
         acc = acc + _scalar(weight) * trace[:, col]
     for col_a, _pre_a, col_b, _pre_b, weight in getattr(vpc, "column_products", ()):
         acc = acc + _scalar(weight) * trace[:, col_a] * trace[:, col_b]
-    return embed_base(acc)
+    return acc.astype(F3)
 
 
 def gsum_e(interaction, trace: Array, alpha: Array) -> Array:
