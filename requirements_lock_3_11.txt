@@ -12,21 +12,21 @@ absl-py==2.5.0 \
     # via
     #   -r requirements.in
     #   zorch
-frx==0.10.0.dev20260722043129 \
-    --hash=sha256:1600e158a3c2b4599ea47a1b010c7c34bc1f21e1604b9df37c00ed4d3c54a63d
+frx==0.10.0.dev20260722083811 \
+    --hash=sha256:7595cf012a7099cd6b873f73086c372327b009ab4b811d0c050faf96d9d34e1a
     # via
     #   -r requirements.in
     #   rw-constraints
-frx-cuda12-pjrt==0.10.0.dev20260722043129 \
-    --hash=sha256:81cf03563368d48ba51e2788b8bb4e95f9916a02e153c609395b475081bff637
+frx-cuda12-pjrt==0.10.0.dev20260722083811 \
+    --hash=sha256:2480ae15d1c9852f7f2539d105b902cfa2679d370bb86e14e3b32bc8c1e7ad62
     # via
     #   -r requirements.in
     #   frx-cuda12-plugin
-frx-cuda12-plugin==0.10.0.dev20260722043129 \
-    --hash=sha256:4edd6e4621c2d86a0b248e0d3faa3249946f980fee7e4417f337b5fe6694bf38
+frx-cuda12-plugin==0.10.0.dev20260722083811 \
+    --hash=sha256:110b9ce647ddf12ad6942e290d413e9781bcbc7c74029aa67d3ecc7770114c5d
     # via -r requirements.in
-frxlib==0.10.0.dev20260722043129 \
-    --hash=sha256:ebf0d392baf11b6744f0d8bafa4eb5c4ea27b367c481c2ba062e911a064736a7
+frxlib==0.10.0.dev20260722083811 \
+    --hash=sha256:65faf3f03e979508c5d584cb2777f7601e30fa115c4512f81022b4b65281d7c7
     # via
     #   -r requirements.in
     #   frx
@@ -239,6 +239,6 @@ zk-dtypes==0.0.10 \
 zkbench @ https://github.com/fractalyze/pypi/releases/download/zkbench-py-v0.5.0/zkbench-0.5.0-py3-none-any.whl \
     --hash=sha256:1c6020d02504f43aa6b7cfa62e7ba300cf6305abab771ff83626cae912352bb3
     # via -r requirements.in
-zorch==0.1.0.dev20260722004339 \
-    --hash=sha256:c8b32b2745fc7847c23e07e28fac5d84dcffa25d8503e3ee8ac517ca52f0d328
+zorch==0.1.0.dev20260722235316 \
+    --hash=sha256:759d451b5cdd73c8a367a222d0a2ee5c87b0f234ce1dd1eb1763be6ef1840232
     # via -r requirements.in

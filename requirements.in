@@ -5,12 +5,12 @@
 #     --extra-index-url https://fractalyze.github.io/pypi/simple/
 absl-py
 numpy
-zorch==0.1.0.dev20260722004339
-frx==0.10.0.dev20260722043129
+zorch==0.1.0.dev20260722235316
+frx==0.10.0.dev20260722083811
 zk-dtypes==0.0.10
-frxlib==0.10.0.dev20260722043129
-frx-cuda12-plugin==0.10.0.dev20260722043129
-frx-cuda12-pjrt==0.10.0.dev20260722043129
+frxlib==0.10.0.dev20260722083811
+frx-cuda12-plugin==0.10.0.dev20260722083811
+frx-cuda12-pjrt==0.10.0.dev20260722083811
 
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl
 
