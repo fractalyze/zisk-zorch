@@ -32,21 +32,26 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-from zk_dtypes import pfinfo
 
 from zorch.poly.univariate import powers
 
-# The Goldilocks modulus, the LDE coset generator, and pil2's 2^32-order
-# generator `Goldilocks::W[32]` (cf. zisk_zorch.fri.fold, which folds on the
-# same root — pfinfo carries the modulus but not the generator or the shift).
-_MODULUS = int(pfinfo(F).modulus)
+# The LDE coset generator and pil2's 2^32-order generator `Goldilocks::W[32]`
+# (cf. zisk_zorch.fri.fold, which folds on the same root).
 _COSET_SHIFT = 7
 _TWO_ADIC_ROOT = 7277203076849721926
 
+# Host Goldilocks scalars for the compile-time-constant LEv arithmetic: the
+# field type carries its own modulus, so the roots and inverses below are field
+# ops on numpy scalars (host, hence constant-folded into the graph) rather than
+# `pow(x, k, modulus)` restating the modulus.
+_ONE = np.array(1, dtype=F)
 
-def _base(value: int) -> Array:
-    """A canonical Goldilocks int -> a plain goldilocks scalar (value-converted)."""
-    return fnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
+
+def _fpow(base: Array, exp: int) -> Array:
+    """`base ** exp` in Goldilocks on the host, `exp` possibly negative — the
+    field type has no negative integer power, so `exp < 0` is `1 / base**|exp|`
+    (a field inverse). Positive powers use its fast (square-and-multiply) `**`."""
+    return base**exp if exp >= 0 else _ONE / base ** (-exp)
 
 
 # Cubic one from explicit limbs: `fnp.ones` on an extension dtype lowers to an
@@ -67,15 +72,15 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
 
     n = 1 << n_bits
     one = _CUBIC_ONE
-    inv_n = _base(pow(n, -1, _MODULUS))
-    w = pow(_TWO_ADIC_ROOT, 1 << (32 - n_bits), _MODULUS)
-    shift_inv = pow(_COSET_SHIFT, -1, _MODULUS)
+    inv_n = _ONE / np.array(n, dtype=F)
+    w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
+    shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
     # w^-j over the base domain — the per-coefficient evaluation points.
-    wj_inv = powers(_base(pow(w, -1, _MODULUS)), n)
+    wj_inv = powers(fnp.array(_fpow(w, -1)), n)
 
     cols = []
     for p in opening_points:
-        g = xi_challenge * _base(pow(w, p, _MODULUS) * shift_inv)
+        g = xi_challenge * fnp.array(_fpow(w, p) * shift_inv)
         # g^N by n_bits squarings: `fnp.power`'s integer exponent does not
         # lower for extension dtypes under jit, and N is a power of two.
         g_n = g
