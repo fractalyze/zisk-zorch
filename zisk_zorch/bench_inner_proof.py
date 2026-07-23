@@ -55,19 +55,9 @@ from zisk_zorch.fri.prover import prove
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
 from zisk_zorch.transcript.transcript import Transcript
-from zorch.testkit.random_field import rand_field
+from zorch.testkit.random_field import rand_ext_field, rand_field
 
 _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
-
-
-def _rand_cubic(length: int, seed: int) -> frx.Array:
-    """Canonical Goldilocks-cubic evals; 3 base limbs view as one cubic element.
-
-    Built via numpy then `fnp.asarray`; zorch's `rand_ext_field` is equivalent
-    here.
-    """
-    ints = np.random.default_rng(seed).integers(0, 1 << 30, (length, 3), np.int64)
-    return fnp.asarray(ints.astype(F).view(F3).reshape(length))
 
 
 def _make_eval_fn(n_cols: int, n_constraints: int, degree: int) -> Callable:
@@ -260,7 +250,7 @@ class InnerProofBenchmark(FrxBenchmark):
             else:
                 n_cols, n_constraints = args.n_cols, args.n_constraints
                 eval_fn = _make_eval_fn(n_cols, n_constraints, args.degree)
-            alpha = frx.block_until_ready(_rand_cubic(n_constraints, 1))
+            alpha = frx.block_until_ready(rand_ext_field(1, (n_constraints,), F, F3))
             trace_ext = frx.block_until_ready(rand_field(0, (n_ext, n_cols), F))
             qfn = frx.jit(
                 lambda t, eval_fn=eval_fn, alpha=alpha: quotient_from_constraints(
@@ -272,7 +262,7 @@ class InnerProofBenchmark(FrxBenchmark):
                                  "chip": args.chip})
 
         if "divide" in stages:
-            composite = frx.block_until_ready(_rand_cubic(n_ext, 2))
+            composite = frx.block_until_ready(rand_ext_field(2, (n_ext,), F, F3))
             dfn = frx.jit(lambda c: compute_quotient(c, n_bits, args.blowup_bits))
             yield op("divide", dfn, composite)
 
@@ -285,7 +275,7 @@ class InnerProofBenchmark(FrxBenchmark):
             merkle_tree(args.arity)
             n_bits_ext = n_bits + args.blowup_bits
             steps = _fold_steps(n_bits_ext, args.fold_bits, args.final_bits)
-            fri_pol = frx.block_until_ready(_rand_cubic(1 << n_bits_ext, 0))
+            fri_pol = frx.block_until_ready(rand_ext_field(0, (1 << n_bits_ext,), F, F3))
 
             def fri_outputs(pol, steps=steps, arity=args.arity):
                 # A fresh transcript per call keeps the squeezed challenges
