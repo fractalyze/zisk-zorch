@@ -71,22 +71,43 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
 
 
 @dataclass(frozen=True)
+class QuotientCommitment:
+    """QuotientStage's output, the quotient analogue of ``TraceCommitment``:
+    the cubic codeword DeepStage opens, plus the base-limb matrix and digest
+    layers QueryStage opens the committed tree with."""
+
+    codeword: Array
+    root: Array
+    matrix: Array
+    layers: list[Array]
+
+
+@dataclass(frozen=True)
+class QueryOpenings:
+    """QueryStage's output, read by proof assembly: the grinding nonce, the
+    squeezed query positions, and every committed tree's per-query openings."""
+
+    nonce: int
+    positions: np.ndarray
+    trace: list[list[Array]]
+    quotient: list[list[Array]]
+    fri: list[list[Array]]
+
+
+@dataclass(frozen=True)
 class InnerBridge:
     """What flows between stages: the trace plus each stage's outputs the next
     one consumes. Stages return it via ``replace`` — a stage writes its own
-    fields and passes the rest through untouched."""
+    field and passes the rest through untouched."""
 
     trace: Array
     # Written by TraceCommitStage; read by QuotientStage (the extended trace it
     # folds constraints over), DeepStage (the committed columns it opens), and
     # QueryStage (the tree it opens per query position).
     trace_commit: TraceCommitment | None = None
-    # Written by QuotientStage; read by DeepStage (a committed column) and, as
-    # the base-limb matrix plus its digest layers, by QueryStage.
-    quotient: Array | None = None
-    quotient_root: Array | None = None
-    quotient_matrix: Array | None = None
-    quotient_layers: list[Array] | None = None
+    # Written by QuotientStage; read by DeepStage (the codeword it opens) and
+    # QueryStage (the committed tree).
+    quotient: QuotientCommitment | None = None
     # Written by DeepStage; read by FriStage as its codeword.
     fri_pol: Array | None = None
     # Written by DeepStage; read by proof assembly. The out-of-domain column
@@ -96,11 +117,7 @@ class InnerBridge:
     # Written by FriStage; read by QueryStage (the layer trees it opens).
     fri: FriProof | None = None
     # Written by QueryStage; read by proof assembly.
-    nonce: int | None = None
-    query_positions: np.ndarray | None = None
-    trace_openings: list[list[Array]] | None = None
-    quotient_openings: list[list[Array]] | None = None
-    fri_openings: list[list[Array]] | None = None
+    queries: QueryOpenings | None = None
 
 
 class TraceCommitStage(Round):
@@ -160,17 +177,10 @@ class QuotientStage(Round):
         matrix = split_coeffs(quotient)
         root, layers = merkle_tree(self._arity).commit(matrix)
         transcript.put(root)
-        return (
-            replace(
-                bridge,
-                quotient=quotient,
-                quotient_root=root,
-                quotient_matrix=matrix,
-                quotient_layers=layers,
-            ),
-            transcript,
-            root,
+        commitment = QuotientCommitment(
+            codeword=quotient, root=root, matrix=matrix, layers=layers
         )
+        return replace(bridge, quotient=commitment), transcript, root
 
 
 class DeepStage(Round):
@@ -195,7 +205,7 @@ class DeepStage(Round):
     ) -> tuple[InnerBridge, Transcript, Array]:
         fri_pol, evals = deep_fri_polynomial(
             bridge.trace_commit.extended,
-            bridge.quotient,
+            bridge.quotient.codeword,
             transcript,
             n_bits=self._n_bits,
             blowup_bits=self._blowup_bits,
@@ -214,7 +224,8 @@ class QuotientEchoStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, Array]:
-        return replace(bridge, fri_pol=bridge.quotient), transcript, bridge.quotient
+        codeword = bridge.quotient.codeword
+        return replace(bridge, fri_pol=codeword), transcript, codeword
 
 
 class FriStage(Round):
@@ -275,23 +286,23 @@ class QueryStage(Round):
             [
                 group_proof(
                     quotient_tree,
-                    bridge.quotient_matrix,
-                    bridge.quotient_layers,
+                    bridge.quotient.matrix,
+                    bridge.quotient.layers,
                     int(idx) & ext_mask,
                 )
             ]
             for idx in positions
         ]
         fri_openings = prove_queries(bridge.fri, positions)
+        openings = QueryOpenings(
+            nonce=nonce,
+            positions=positions,
+            trace=trace_openings,
+            quotient=quotient_openings,
+            fri=fri_openings,
+        )
         return (
-            replace(
-                bridge,
-                nonce=nonce,
-                query_positions=positions,
-                trace_openings=trace_openings,
-                quotient_openings=quotient_openings,
-                fri_openings=fri_openings,
-            ),
+            replace(bridge, queries=openings),
             transcript,
             (trace_openings, quotient_openings, fri_openings),
         )
@@ -402,13 +413,13 @@ def prove_inner(
 
     return InnerProof(
         trace_root=bridge.trace_commit.root,
-        quotient_root=bridge.quotient_root,
+        quotient_root=bridge.quotient.root,
         evals=bridge.deep_evals,
         fri=bridge.fri,
         final_pol=bridge.fri.final_pol,
-        nonce=bridge.nonce,
-        query_positions=bridge.query_positions,
-        trace_openings=bridge.trace_openings,
-        quotient_openings=bridge.quotient_openings,
-        fri_openings=bridge.fri_openings,
+        nonce=bridge.queries.nonce,
+        query_positions=bridge.queries.positions,
+        trace_openings=bridge.queries.trace,
+        quotient_openings=bridge.queries.quotient,
+        fri_openings=bridge.queries.fri,
     )
