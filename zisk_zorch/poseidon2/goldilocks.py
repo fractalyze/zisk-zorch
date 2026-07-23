@@ -16,11 +16,11 @@ The pil2 conventions these parameters encode on top of zorch's agnostic core:
   not Plonky3's [[2,3,1,1],...] that `default_external_matrix` builds. The
   block form is the same (2x M4 on the diagonal 4-blocks, M4 off-diagonal;
   plain M4 at width 4), so the full matrix is passed explicitly per width.
-  zorch#264 carries the base M4 as an `external_m4` marker attribute that
-  zkx#676 applies via multiply-free add-chains, so the block-structured widths
+  zorch#264 carries the base M4 as an `external_m4` marker attribute, which the
+  compiler applies via multiply-free add-chains, so the block-structured widths
   (8/12/16) lower to the dedicated `zorch.poseidon2` emitter — the fast
-  commit-compile path. Width 4's plain single-block M4 is not marker-carried,
-  so it stays on the generic fused region.
+  commit-compile path. Width 4's plain single-block M4 is
+  not marker-carried, so it stays on the generic fused region.
 - The internal layer is `Diag(d) + J` (pil2's `prodadd`: out_i = d_i*x_i +
   sum), i.e. zorch's `internal_diag = d`, `internal_j_scale = 1`.
 """

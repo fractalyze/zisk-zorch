@@ -22,6 +22,7 @@ from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zisk_zorch.quotient.zerofier import _PIL2_GENERATOR
 from zorch.coding.reed_solomon import ReedSolomon
 from zorch.commit.merkle import MerkleTree
 from zorch.hash.compression import Compression, CompressionParams
@@ -33,14 +34,11 @@ COSET_SHIFT = 7
 # `Goldilocks::W[32]`; zk_dtypes' canonical Goldilocks two-adic generator spans
 # the same subgroup but is a different element, so `lax.ntt`'s canonical root
 # would index the domain in a different order than pil2. `lax.ntt` derives its
-# root as `generator^((p-1)/ntt_length)`, so passing the generator whose
-# image is pil2's root makes the transform emit directly in pil2's domain order —
+# root as `generator^((p-1)/ntt_length)`, so passing the generator whose image is
+# pil2's root makes the transform emit directly in pil2's domain order —
 # eliminating the in/out domain-reorder gathers this used to need. That generator
-# is `W[32]^-1` (verified against the W table: `W[32]^-1 ^((p-1)/N) == w_pil2`).
-_PIL2_W32 = 7277203076849721926
-# W[32]^-1, computed as a field-native inverse (no Python modular pow / raw
-# modulus); `int()` because `generator=` is a host-side subgroup-generator value.
-_PIL2_GENERATOR = int(F(_PIL2_W32) ** -1)
+# is `_PIL2_GENERATOR` (`W[32]^-1`), shared from `zerofier` so the LDE and the FRI
+# fold cannot disagree on which root pil2 is on.
 
 # starkinfo's merkleTreeArity -> the Poseidon2 width hashing that tree
 # (MerkleTreeGL::merkelize switches arity {2,3,4} to Poseidon2Goldilocks

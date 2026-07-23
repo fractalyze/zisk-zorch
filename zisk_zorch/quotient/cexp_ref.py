@@ -22,7 +22,7 @@ The op list is N-independent (one straight-line program per row), so it runs on
 any extended domain; tests drive it on a small synthetic one. Every operand is
 evaluated in the cubic extension `F3` — a base operand embeds as `(b, 0, 0)`, so
 base x cubic stays exact scalar multiplication. The base->cubic embed happens at
-the numpy level: the zkx CPU emitter crashes on cubic bitcast/`view`.
+the numpy level.
 """
 
 from __future__ import annotations
@@ -30,8 +30,7 @@ from __future__ import annotations
 import frx.numpy as fnp
 from frx import Array
 
-from zisk_zorch.golden import u64x3
-from zisk_zorch.quotient.field_io import embed, rotate
+from zisk_zorch.golden import embed, u64x3
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
 
@@ -64,9 +63,9 @@ def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int) -> Array:
     if t == "number":
         return embed([s["value"]])
     if t == "cm":
-        return rotate(env["cm"][s["id"]], s["prime"] * extend)
+        return fnp.roll(env["cm"][s["id"]], -(s["prime"] * extend))
     if t == "const":
-        return rotate(env["const"][s["id"]], s["prime"] * extend)
+        return fnp.roll(env["const"][s["id"]], -(s["prime"] * extend))
     if t == "challenge":
         return env["challenges"][s["id"]]
     if t == "airvalue":

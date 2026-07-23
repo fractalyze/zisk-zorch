@@ -4,9 +4,9 @@ Everything load-bearing lives in repo docs. Treat those as the source of truth;
 this file is just the map plus the rules every change must respect.
 
 - **Project overview & quick start:** [`README.md`](README.md)
+- **Architecture:** [`docs/architecture.md`](docs/architecture.md) — the inner proof over one transcript: commit, constraint ingestion, DEEP.
+- **Development:** [`docs/development.md`](docs/development.md) — env setup, testing, and the per-stage baseline any perf number must trace to.
 - **Coding conventions:** [`docs/conventions.md`](docs/conventions.md)
-- **Stage-1 commit pipeline:** [`docs/stage1-commit.md`](docs/stage1-commit.md)
-- **Stage-2 constraint ingestion:** [`docs/stage2-constraint-ingest.md`](docs/stage2-constraint-ingest.md)
 
 ## Non-negotiables
 
@@ -17,7 +17,7 @@ this file is just the map plus the rules every change must respect.
   `zorch`, never here.
 - **Byte-match is the contract.** Every primitive that mirrors pil2-stark
   must be pinned by a golden vector generated from the pil2-proofman
-  reference (`golden/`). A change that breaks a golden test is wrong until
+  reference (`tools/fixture-gen/`). A change that breaks a golden test is wrong until
   the reference says otherwise.
 - **Pin external references.** Link pil2-proofman / ZisK sources as GitHub
   permalinks at tag `v1.0.0-alpha` (or a short commit SHA), never a branch.

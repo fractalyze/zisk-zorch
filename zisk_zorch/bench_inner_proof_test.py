@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import argparse
 
+import frx.numpy as fnp
+import numpy as np
 from absl.testing import absltest
+from zk_dtypes import goldilocks as F
 
-from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark
+from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark, _make_eval_fn
+from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
@@ -47,6 +51,62 @@ class BenchInnerProofTest(absltest.TestCase):
         self.assertEqual(ops[0].metadata["stage"], "divide")
         self.assertEqual(ops[0].throughput_unit, "rows/s")
         self.assertTrue(ops[0].input_hash)
+
+    def test_constraints_are_distinct_products(self) -> None:
+        # The quotient proxy is only worth its name if the constraints survive
+        # CSE: duplicate column tuples fold into one, so the stage would measure
+        # a fraction of --n_constraints. Main's density is 900 over 38 columns.
+        fn = _make_eval_fn(n_cols=38, n_constraints=900, degree=9)
+        trace = fnp.array(
+            np.random.default_rng(0).integers(1, 1 << 30, (8, 38)).astype(np.uint64),
+            dtype=F,
+        )
+        out = np.asarray(fn(trace))  # (rows, 900), field dtype
+        # Distinct products of random columns take distinct values, w.h.p.
+        self.assertEqual(out.shape, (8, 900))
+        self.assertLen({out[:, j].tobytes() for j in range(900)}, 900)
+
+    def test_fri_leg_warms_the_perm_width_its_arity_needs(self) -> None:
+        # The fri leg jits `prove`, which builds `merkle_tree(arity)` *inside* the
+        # trace, so the width-4*arity perm must be memoized host-side first or its
+        # M4 analysis meets a tracer. Every arity must warm, not a listed few.
+        for arity, width in ((2, 8), (3, 12), (4, 16)):
+            with self.subTest(arity=arity):
+                goldilocks_perm.cache_clear()
+                list(
+                    InnerProofBenchmark().get_ops(
+                        _parse([f"--arity={arity}", "--stages=fri", "--n_bits=7"])
+                    )
+                )
+                before = goldilocks_perm.cache_info().hits
+                goldilocks_perm(width)  # a hit iff get_ops already warmed it
+                self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
+
+    def test_chip_mode_folds_a_real_air(self) -> None:
+        # #66: the chip leg replaces the proxy's independent products with a real
+        # re-authored AIR's `eval_constraints`. Pin the wiring, not the timing:
+        # the eval yields K constraints in the trailing axis, and the quotient op
+        # records the AIR's real width — not the proxy's --n_cols/--n_constraints.
+        import frx
+
+        frx.config.update("jax_enable_x64", True)  # rw exports view u64→FIELD_DTYPE
+        from zisk_zorch.bench_inner_proof import _chip_eval_fn
+
+        eval_fn, n_cols, k = _chip_eval_fn("main")
+        self.assertGreater(n_cols, 0)
+        self.assertGreater(k, 0)
+        out = eval_fn(fnp.zeros((4, n_cols), F))
+        self.assertEqual(out.shape, (4, k))
+
+        ops = list(
+            InnerProofBenchmark().get_ops(
+                _parse(["--stages=quotient", "--chip=main", "--n_bits=3"])
+            )
+        )
+        self.assertLen(ops, 1)
+        self.assertEqual(ops[0].metadata["chip"], "main")
+        self.assertEqual(ops[0].metadata["n_cols"], n_cols)
+        self.assertEqual(ops[0].metadata["n_constraints"], k)
 
     def test_unknown_stage_is_rejected(self) -> None:
         # get_ops is a generator, so the guard only fires once it is advanced.

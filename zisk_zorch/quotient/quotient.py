@@ -14,6 +14,9 @@ intermediates), NOT rw_constraints' `constraint_order` (which is SP1
 `eval_block` / zerocheck indexing). The caller supplies an `eval_fn` whose
 trailing-axis constraint order matches pil2's.
 
+`Q` commits each cubic row as its 3 contiguous Goldilocks limbs — pil2's
+`FIELD_EXTENSION` memory order, which is also what the FRI seam reads.
+
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp#L415-L417
 """
 

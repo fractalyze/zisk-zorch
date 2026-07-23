@@ -1,5 +1,5 @@
 [package]
-name = "zisk-zorch-golden"
+name = "zisk-zorch-fixture-gen"
 version = "0.1.0"
 edition = "2021"
 publish = false

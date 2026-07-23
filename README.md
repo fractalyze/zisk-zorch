@@ -8,45 +8,32 @@ parameters, the pil2 transcript and linear-hash conventions, and the
 byte-match against the [pil2-proofman](https://github.com/0xPolygonHermez/pil2-proofman)
 reference prover that ZisK uses.
 
-```
-JAX  ──▶  zorch (scheme-/zkVM-agnostic blocks)  ──▶  zisk-zorch (ZisK / pil2-stark glue)
+```text
+frx  ──▶  zorch (scheme-/zkVM-agnostic blocks)  ──▶  zisk-zorch (ZisK / pil2-stark glue)
 ```
 
-Why a separate repo: ZisK proves with Polygon's eSTARK (pil2-stark) — a
-FRI-based STARK over the Goldilocks field. None of that scheme-specific
-knowledge belongs in `zorch` (its hard rule); building directly on `zorch`'s
-blocks keeps this prover small and gives a focused target to grow ZisK glue
-and benchmark against the pil2-stark CUDA reference.
+ZisK proves with Polygon's eSTARK (pil2-stark) — a FRI-based STARK over
+Goldilocks. None of that scheme-specific knowledge belongs in `zorch` (its hard
+rule), so it lives here.
 
 ## Status
 
-Early bootstrap. First slice: the **stage-1 trace commit** (≈ pil2-stark's
-`extendAndMerkelize`) — coset-7 NTT LDE onto the extended domain, pil2
-linear-hash row leaves, k-ary Poseidon2 Merkle tree, and the pil2 transcript —
+`prove_inner` runs the inner proof end to end over one Fiat-Shamir transcript —
+trace commit → quotient → DEEP → FRI. The primitives it is built from are
 byte-matched against golden vectors generated from pil2-proofman v1.0.0-alpha's
-`fields` crate (see [`golden/`](golden/)).
-
-## The scheme (what ZisK actually runs)
-
-ZisK delegates proving to pil2-proofman (eSTARK / pil2-stark). The constants
-that pin this repo's glue, all from
-[pil2-proofman v1.0.0-alpha](https://github.com/0xPolygonHermez/pil2-proofman/tree/v1.0.0-alpha):
-
-- **Field**: Goldilocks (2^64 − 2^32 + 1); FRI challenges in the cubic
-  extension x³ − x − 1.
-- **Hash**: Poseidon2 over Goldilocks, widths 4/8/12/16, capacity always 4,
-  x⁷ S-box, 4+4 full rounds, 21–22 partial rounds.
-- **Merkle**: configurable arity (2/3/4 → node hash Poseidon2_8/12/16), rows
-  leaf-hashed with pil2's chained `linear_hash`, 4-element roots.
-- **LDE**: NTT with coset shift 7, blowup 2^(nBitsExt − nBits).
-- **Transcript**: Poseidon2 sponge with a pending/out buffer discipline
-  (not a duplex sponge — see `zisk_zorch/transcript/`).
+`fields` crate ([`tools/fixture-gen/`](tools/fixture-gen/)); DEEP is the one
+stage with no golden. No stage is yet byte-matched against a real pil2 dump, so
+the per-stage timings in [`docs/development.md`](docs/development.md) are
+engineering signal, not a sealed baseline. See
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Development
 
-`zisk-zorch` is pure Python on JAX + the ZKX PJRT plugin, built with Bazel
-(bzlmod). It consumes `zorch` as a Bazel module, pinned in `MODULE.bazel` via
-`git_override` for reproducible builds.
+`zisk-zorch` is pure Python on frx (Field, Ring Accelerated), run against the
+Fractalyze [xla](https://github.com/fractalyze/xla) fork's PJRT plugin (the
+`frx-cuda12` wheels), built with Bazel (bzlmod). It consumes `zorch` as a
+dev-release wheel from the Fractalyze index, pinned in
+[`requirements.in`](requirements.in), so `frx` and `zk_dtypes` resolve once here.
 
 ```sh
 python3.11 -m venv .venv && . .venv/bin/activate
@@ -54,7 +41,7 @@ pip install -r requirements.in \
     --extra-index-url https://fractalyze.github.io/pypi/simple/
 ```
 
-**Dev against a local `zorch` checkout** instead of the pinned commit — create
+**Dev against a local `zorch` checkout** instead of the pinned wheel — create
 `.bazelrc.user` (gitignored):
 
 ```
@@ -67,42 +54,13 @@ Run the tests (CPU is the default for determinism):
 bazel test //...
 ```
 
-### Benchmarks
+## Documentation
 
-[`zisk_zorch/bench_inner_proof.py`](zisk_zorch/bench_inner_proof.py) times the
-legs of pil2's `GENERATING_INNER_PROOFS` — `extend`, `commit`, `full`,
-`quotient`, `divide`, `fri` — on `zkbench`, one op per (stage, size), so the
-zkx-compiled path can be lined up against native ZisK. It wants a GPU host:
-
-```sh
-FRX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 \
-    bazel run //zisk_zorch:bench_inner_proof -- \
-    --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 --arity=2 \
-    -o "$PWD/report.json"
-```
-
-`//zisk_zorch:bench_inner_proof_test` is the CPU smoke test that keeps it
-importable and building; it pins the wiring only and asserts nothing about
-timings.
-
-### CI
-
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on PRs and pushes to
-`main` (self-hosted runners): a CPU leg always runs (`bazel build //...` + the
-full test suite, pil2 byte-match included), and a GPU leg is added when the
-`HAS_GPU_RUNNER` repo variable is `true`. The byte-match runs on CPU since the
-zkx `dev20260622060558` bump ([fractalyze/zkx#755](https://github.com/fractalyze/zkx/issues/755)
-fixed the EF bitcast + Poseidon2 `external_m4` path).
-
-### Regenerating the golden vectors
-
-The byte-match fixtures under `zisk_zorch/**/testdata/golden/` are produced by
-the Rust harness in [`golden/`](golden/), which links the same `fields` crate
-pil2-proofman v1.0.0-alpha ships:
-
-```sh
-cd golden && cargo run --release
-```
+See [`docs/`](docs/README.md) — the [architecture](docs/architecture.md) (the
+inner proof as stages over one transcript, plus the pil2 vocabulary they
+mirror), the [development guide](docs/development.md) (environment, testing,
+fixtures, CI, and the per-stage pil2 baseline), and the
+[conventions](docs/conventions.md).
 
 ## License
 

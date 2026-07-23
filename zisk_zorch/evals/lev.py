@@ -32,27 +32,34 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-from zk_dtypes import pfinfo
 
-# The Goldilocks modulus, the LDE coset generator, and pil2's 2^32-order
-# generator `Goldilocks::W[32]` (cf. zisk_zorch.fri.fold, which folds on the
-# same root — pfinfo carries the modulus but not the generator or the shift).
-_MODULUS = int(pfinfo(F).modulus)
+from zorch.poly.univariate import powers
+
+# The LDE coset generator and pil2's 2^32-order generator `Goldilocks::W[32]`
+# (cf. zisk_zorch.fri.fold, which folds on the same root).
 _COSET_SHIFT = 7
 _TWO_ADIC_ROOT = 7277203076849721926
 
+# Host Goldilocks scalars for the compile-time-constant LEv arithmetic: the
+# field type carries its own modulus, so the roots and inverses below are field
+# ops on numpy scalars (host, hence constant-folded into the graph) rather than
+# `pow(x, k, modulus)` restating the modulus.
+_ONE = np.array(1, dtype=F)
 
-def _base(value: int) -> Array:
-    """A canonical Goldilocks int -> a plain goldilocks scalar (value-converted)."""
-    return fnp.array(np.array(value % _MODULUS, dtype=np.uint64), dtype=F)
+
+def _fpow(base: Array, exp: int) -> Array:
+    """`base ** exp` in Goldilocks on the host, `exp` possibly negative — the
+    field type has no negative integer power, so `exp < 0` is `1 / base**|exp|`
+    (a field inverse). Positive powers use its fast (square-and-multiply) `**`."""
+    return base**exp if exp >= 0 else _ONE / base ** (-exp)
 
 
-def _base_powers(base: int, count: int) -> Array:
-    """`[base^0, ..., base^(count-1)] mod p` as a 1-D plain goldilocks array."""
-    out = [1] * count
-    for k in range(1, count):
-        out[k] = out[k - 1] * base % _MODULUS
-    return fnp.array(np.array(out, dtype=np.uint64), dtype=F)
+# Cubic one from explicit limbs: `fnp.ones` on an extension dtype lowers to an
+# i64 constant the field type rejects under jit (same reason `fnp.power`'s
+# integer exponent cannot trace — see compute_lev's squaring loop).
+_CUBIC_ONE = fnp.array(
+    np.array([1, 0, 0], dtype=np.uint64).astype(F).view(F3).reshape(())
+)
 
 
 def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> Array:
@@ -64,20 +71,22 @@ def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> 
         raise ValueError("opening_points must be non-empty")
 
     n = 1 << n_bits
-    one = fnp.ones((), F3)
-    inv_n = _base(pow(n, -1, _MODULUS))
-    w = pow(_TWO_ADIC_ROOT, 1 << (32 - n_bits), _MODULUS)
-    shift_inv = pow(_COSET_SHIFT, -1, _MODULUS)
+    one = _CUBIC_ONE
+    inv_n = _ONE / np.array(n, dtype=F)
+    w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
+    shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
     # w^-j over the base domain — the per-coefficient evaluation points.
-    wj_inv = _base_powers(pow(w, -1, _MODULUS), n)
+    wj_inv = powers(fnp.array(_fpow(w, -1)), n)
 
     cols = []
     for p in opening_points:
-        w_p = pow(w, abs(p), _MODULUS)
-        if p < 0:
-            w_p = pow(w_p, -1, _MODULUS)
-        g = xi_challenge * _base(w_p * shift_inv % _MODULUS)
-        num = fnp.power(g, n) - one
+        g = xi_challenge * fnp.array(_fpow(w, p) * shift_inv)
+        # g^N by n_bits squarings: `fnp.power`'s integer exponent does not
+        # lower for extension dtypes under jit, and N is a power of two.
+        g_n = g
+        for _ in range(n_bits):
+            g_n = g_n * g_n
+        num = g_n - one
         # c_j = N^-1 * (g^N - 1) / (g * w^-j - 1), vectorized over j.
         cols.append(inv_n * num * (one / (g * wj_inv - one)))
     return fnp.stack(cols, axis=1)

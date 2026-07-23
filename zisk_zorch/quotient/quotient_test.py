@@ -15,17 +15,19 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
+from zk_dtypes import pfinfo
 
 from zisk_zorch.golden import load, u64
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
 from zisk_zorch.quotient.zerofier import (
+    _root,
     inv_frame_zerofier,
     inv_one_row_zerofier,
     inv_zerofier,
 )
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
-_MODULUS = 0xFFFFFFFF00000001
+_MODULUS = int(pfinfo(F).modulus)
 _COSET_SHIFT = 7
 _TWO_ADIC_ROOT = 7277203076849721926
 
@@ -54,6 +56,14 @@ class ZerofierTest(absltest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.golden = load(_TESTDATA / "zerofier_inv.json")
+
+    def test_root_rejects_bits_past_the_two_adic_ceiling(self) -> None:
+        # pil2's generator is W[32], so there is no 2^33-th root; the guard must
+        # name that rather than let `1 << (32 - bits)` fail as a Python shift.
+        self.assertIsNotNone(_root(32))
+        for bits in (33, 64, -1):
+            with self.subTest(bits=bits), self.assertRaisesRegex(ValueError, "W\\[32\\]"):
+                _root(bits)
 
     def test_every_row_matches_pil2_build_zh_inv(self) -> None:
         for case in self.golden["every_row"]:
