@@ -220,10 +220,10 @@ class InnerProofBenchmark(FrxBenchmark):
             yield op("divide", dfn, composite)
 
         if "fri" in stages:
-            # Warm the memoized Poseidon2 perms (host-side M4/const analysis)
-            # so the jit trace reuses them instead of rebuilding under trace.
-            goldilocks_perm(8)
-            goldilocks_perm(12)
+            # Warm every Poseidon2 width the run uses (4*arity = merkle
+            # sponge): a cold perm rebuilds params under trace, which cannot.
+            for w in (8, 12, 4 * args.arity):
+                goldilocks_perm(w)
             n_bits_ext = n_bits + args.blowup_bits
             steps = _fold_steps(n_bits_ext, args.fold_bits, args.final_bits)
             fri_pol = frx.block_until_ready(_rand_cubic(1 << n_bits_ext, 0))
