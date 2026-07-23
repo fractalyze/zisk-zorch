@@ -253,6 +253,6 @@ zk-dtypes==0.0.10 \
 zkbench==0.5.0 \
     --hash=sha256:1c6020d02504f43aa6b7cfa62e7ba300cf6305abab771ff83626cae912352bb3
     # via -r requirements.in
-zorch==0.1.0.dev20260714055619 \
-    --hash=sha256:e7737279339e4954bdbac6dbdea11f9ede8249073a046f76f6537e45dae21ee0
+zorch==0.1.0.dev20260722235316 \
+    --hash=sha256:759d451b5cdd73c8a367a222d0a2ee5c87b0f234ce1dd1eb1763be6ef1840232
     # via -r requirements.in
