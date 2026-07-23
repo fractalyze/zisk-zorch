@@ -37,11 +37,9 @@ from zorch.utils.field import join_coeffs, split_coeffs
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
-# Jitted here, not run eager: per-column dispatch is ~85% of both stages' wall
-# (opening 28.2 → 3.6 ms, composition 58.0 → 9.2 ms at the wired 2^22 shape).
-# This does not re-trip #67 — its trigger is a coset *built inside* the trace,
-# and both cosets here (`lev`, `domain`) enter as inputs. `opening_pos` must be
-# a tuple: static args are hashed.
+# Safe to jit despite #67: its trigger is a coset built *inside* the trace, and
+# both cosets here (`lev`, `domain`) enter as inputs. `opening_pos` must be a
+# tuple: static args are hashed.
 _open_columns = frx.jit(open_columns, static_argnames=("opening_pos", "stride"))
 _deep_composition = frx.jit(deep_composition, static_argnames=("opening_pos",))
 
