@@ -75,7 +75,7 @@ flags `trace_commit_test` as oversized and nine `medium` tests as `small`-able.
 
 ### Fixtures
 
-Two kinds, both vendored, small, and compared with exact equality — field
+Three kinds, all vendored, small, and compared with exact equality — field
 elements either match or they don't.
 
 - **Goldens** (`zisk_zorch/*/testdata/golden/*.json`) pin every primitive that
@@ -88,6 +88,39 @@ elements either match or they don't.
   carry a ZisK AIR's stage-2 composite-cExp fragment and per-constraint SSAs,
   extracted from the ziskup proving key by
   [`../scripts/extract_cexp.py`](../scripts/extract_cexp.py).
+- **Real-program stage-1 fixtures**
+  (`zisk_zorch/commit/testdata/fullprogram/<air>/`) pin the assembled
+  trace-commit pipeline against a real ZisK witness trace at proving-key shape:
+  the go-program-hello-world guest's InputData AIR (2^21 rows × 9 cols). Each
+  dir holds the native trace dump (`expected_*_trace.npy.gz`, gzip payload =
+  the `golden_sha256` preimage: row-major canonical u64 LE), its provenance
+  (`fixture_metadata.json`), and the root the native prover's `commit_witness`
+  emitted for that exact trace (`stage1_commit.json`).
+  `//zisk_zorch/commit:fullprogram_commit_test` re-commits the trace and
+  matches that root.
+
+  Regeneration needs the private `fractalyze/zisk` fork's `rw-fixture-gen`
+  (branch `rw/zisk-v1.0.0-alpha`) plus the ziskup v1.0.0-alpha proving key:
+
+  ```sh
+  # 1. Dump the native trace for the AIR (fixture + golden-preimage blob):
+  cargo run --release -p rw-fixture-gen -- \
+      --elf "$PWD/go-program-hello-world.elf" --input-data \
+      --out /tmp/fullprogram --debug-trace
+
+  # 2. Capture the stage-1 root the native prover commits for that dump.
+  #    --hash-family Poseidon2 because that is the family this repo models;
+  #    the installed key's own default is currently Poseidon1 (its globalInfo
+  #    carries no `hash` field), which zisk-zorch does not implement.
+  cargo run --release -p rw-fixture-gen -- \
+      --stage1-root /tmp/fullprogram/input_data/fullprogram/seg00 \
+      --hash-family Poseidon2
+  ```
+
+  Both steps are deterministic: same fork + proving-key pins → identical
+  bytes. Larger AIRs (BinaryBasic is 2^22 × 39, an ~11 MB dump) follow the
+  same recipe but stay uncommitted — drop the regenerated dir under
+  `testdata/fullprogram/` locally and the test runs every fixture dir present.
 
 ## Per-stage baseline against native pil2
 
@@ -96,11 +129,12 @@ stage**, on the premise that both prove the same instance, at the same scope, an
 produce the same output. Only under that premise is a wall-clock comparison
 meaningful.
 
-> **No row here is a baseline yet.** Not one stage has a reproducible byte-match
-> against a real pil2 dump — `tools/fixture-gen` pins primitives on tiny
-> synthetic inputs, and #59's real-dump harness was never committed. The ratios
-> are engineering signal. Do not quote one as "zisk-zorch is Nx pil2" outside
-> this page.
+> **No row here is a baseline yet.** The trace commit is the one stage with a
+> reproducible real-input byte-match (the `fullprogram/` fixtures above match
+> the native root for a real InputData trace); every other stage is pinned only
+> by `tools/fixture-gen`'s tiny synthetic inputs — #59's real-dump harness was
+> never committed. The ratios are engineering signal. Do not quote one as
+> "zisk-zorch is Nx pil2" outside this page.
 
 **Numbers that must not be re-quoted:**
 

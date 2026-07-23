@@ -1,0 +1,22 @@
+{
+  "air": "InputData (air_id 16)",
+  "airgroup_id": 0,
+  "air_id": 16,
+  "n_bits": 21,
+  "n_bits_ext": 22,
+  "blowup_bits": 1,
+  "merkle_tree_arity": 4,
+  "hash_family": "Poseidon2",
+  "trace_rows": 2097152,
+  "trace_cols": 9,
+  "field": "goldilocks_canonical_u64",
+  "trace_sha256": "b0a06aad871635e52608e69b809cff616b8a2f1a2a3b00a2838415838901db6a",
+  "committed_trace_sha256": "b0a06aad871635e52608e69b809cff616b8a2f1a2a3b00a2838415838901db6a",
+  "root": [
+    "13511470493433401883",
+    "6607696643551458709",
+    "16678293879581899500",
+    "11379776704576353560"
+  ],
+  "root_semantics": "pil2-stark stage-1 commit (commit_witness): witness_calc hints, coset-SHIFT LDE to 2^n_bits_ext, linear-hash leaves, arity-k MerkleTreeGL in hash_family"
+}

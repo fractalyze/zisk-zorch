@@ -83,3 +83,16 @@ py_test(
         requirement("absl_py"),
     ],
 )
+
+py_test(
+    name = "fullprogram_commit_test",
+    size = "medium",
+    srcs = ["fullprogram_commit_test.py"],
+    data = glob(["testdata/fullprogram/**"]),
+    deps = [
+        ":trace_commit",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+        requirement("zk_dtypes"),
+    ],
+)
