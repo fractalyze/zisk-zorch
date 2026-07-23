@@ -39,7 +39,6 @@ _GOLDILOCKS_P = int(pfinfo(F).modulus)
 _COSET_SHIFT = 7
 _TWO_ADIC_ROOT = 7277203076849721926
 _POW_BITS = 8  # grinding difficulty; small keeps the prover's PoW search short
-_GOLDILOCKS_ORDER = 0xFFFF_FFFF_0000_0001
 
 
 def _low_degree_codeword(n_bits: int, n_bits_ext: int, seed: int) -> Array:
@@ -128,7 +127,7 @@ class FriVerifierTest(absltest.TestCase):
                     )
                 self.assertFalse(
                     self._verify(
-                        case, proof.roots, proof.final_pol, openings, _GOLDILOCKS_ORDER
+                        case, proof.roots, proof.final_pol, openings, _GOLDILOCKS_P
                     ),
                     msg="accepted a non-canonical nonce",
                 )

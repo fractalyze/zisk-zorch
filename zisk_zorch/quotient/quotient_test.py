@@ -15,6 +15,7 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
+from zk_dtypes import pfinfo
 
 from zisk_zorch.golden import load, u64
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
@@ -26,7 +27,7 @@ from zisk_zorch.quotient.zerofier import (
 )
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
-_MODULUS = 0xFFFFFFFF00000001
+_MODULUS = int(pfinfo(F).modulus)
 _COSET_SHIFT = 7
 _TWO_ADIC_ROOT = 7277203076849721926
 

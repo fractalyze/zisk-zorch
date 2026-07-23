@@ -25,8 +25,9 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
-
+from zk_dtypes import pfinfo
 from zorch.utils.field import split_coeffs
+
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.transcript.transcript import Transcript, _canonical
 
@@ -37,7 +38,7 @@ _GRIND_PERM = goldilocks_perm(_GRIND_WIDTH)
 # Batched search stride: scan candidate nonces a chunk at a time so the per-call
 # permutation runs once over the whole chunk, mirroring pil2's chunked OMP scan.
 _GRIND_CHUNK = 256
-_GOLDILOCKS_ORDER = 0xFFFF_FFFF_0000_0001
+_GOLDILOCKS_ORDER = int(pfinfo(F).modulus)
 
 
 def _grind_level(pow_bits: int) -> int:

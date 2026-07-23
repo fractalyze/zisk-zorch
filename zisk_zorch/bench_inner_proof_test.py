@@ -19,13 +19,6 @@ from zk_dtypes import goldilocks as F
 from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark, _make_eval_fn
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 
-try:  # the chip-mode leg needs the rw_constraints wheel; the rest does not.
-    import rw_constraints  # noqa: F401
-
-    _HAS_RW = True
-except ImportError:
-    _HAS_RW = False
-
 
 def _parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -89,7 +82,6 @@ class BenchInnerProofTest(absltest.TestCase):
                 goldilocks_perm(width)  # a hit iff get_ops already warmed it
                 self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
 
-    @absltest.skipUnless(_HAS_RW, "rw_constraints wheel not installed")
     def test_chip_mode_folds_a_real_air(self) -> None:
         # #66: the chip leg replaces the proxy's independent products with a real
         # re-authored AIR's `eval_constraints`. Pin the wiring, not the timing:
