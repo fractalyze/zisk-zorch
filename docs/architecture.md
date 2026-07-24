@@ -64,7 +64,7 @@ composite through `bind_trace_commitment`.
 
 | Phase | pil2 name | What it does | Module | Golden |
 |---|---|---|---|---|
-| Trace commit | `extendAndMerkelize` (`commitStage(1)`) | INTT each column, coset-7 RS encode to `N·blowup` rows in pil2 domain order, pil2 linear-hash each row to a 4-Goldilocks leaf, k-ary Poseidon2 fold to the root | `commit/` | `lde`, `linear_hash`, `merkle_root`, `merkle_proof`, `stage1_commit`, + a real-program trace root (`testdata/fullprogram/`, see [development.md](development.md#fixtures)) |
+| Trace commit | `extendAndMerkelize` (`commitStage(1)`) | INTT each column, coset-7 RS encode to `N·blowup` rows in pil2 domain order, pil2 linear-hash each row to a 4-Goldilocks leaf, k-ary fold to the root in the selected hash family (Poseidon2 or the key's Poseidon1 default) | `commit/` | `lde`, `linear_hash`, `merkle_root`, `merkle_proof`, `stage1_commit`, `poseidon1_{linear_hash,stage1_commit}`, + real-program trace roots per family (`testdata/fullprogram/`, see [development.md](development.md#fixtures)) |
 | Constraint ingest | — (rw-exported) | Load each ZisK chip's constraints + bus interactions from the `rw_constraints` wheel (`constraints/zisk/v1`), the same export `sp1-zorch` consumes | `constraints/` | — (pinned by the quotient's byte-match) |
 | LogUp bus | `calculateWitnessSTD` (`std_sum`) | Combine each bus tuple into one cubic denominator, prefix-sum the row-local terms into the committed `gsum` column, export its last row as the airgroup `gsum_result` | `logup/` | `gsum` |
 | Quotient | `calculateQuotientPolynomial` | Fold constraints by powers of `alpha` (zorch's agnostic `constraint_eval`), divide by the inverse zerofier, commit `Q` | `quotient/` | `cexp_eval`, `zerofier_inv` |

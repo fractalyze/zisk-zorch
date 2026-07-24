@@ -86,10 +86,15 @@ elements either match or they don't.
 - **Real-program stage-1 fixtures**
   (`zisk_zorch/commit/testdata/fullprogram/<air>/`) pin the assembled
   trace-commit pipeline against a real ZisK witness trace at proving-key shape
-  (`fullprogram_commit_test` re-commits the trace and matches the native
-  root). Regeneration needs the private `fractalyze/zisk` fork's
-  `rw-fixture-gen` (branch `rw/zisk-v1.0.0-alpha`) plus the ziskup
-  v1.0.0-alpha proving key; both steps are deterministic:
+  (`fullprogram_commit_test` re-commits each fixture dir's trace with the
+  `hash_family` recorded beside it and matches the native root). The same trace
+  appears under two dirs, one per family — `input_data_seg00` (Poseidon2) and
+  `input_data_seg00_poseidon1` — because the dump is family-independent and only
+  the root differs. Poseidon1 is what native ZisK commits with by default (the
+  installed key's globalInfo carries no `hash`, so pil2's `DEFAULT_HASH_ID`
+  wins); Poseidon2 needs an explicit override. Regeneration needs the private
+  `fractalyze/zisk` fork's `rw-fixture-gen` (branch `rw/zisk-v1.0.0-alpha`) plus
+  the ziskup v1.0.0-alpha proving key; both steps are deterministic:
 
   ```sh
   # 1. Dump the native trace for the AIR (fixture + golden-preimage blob):
@@ -97,9 +102,11 @@ elements either match or they don't.
       --elf "$PWD/go-program-hello-world.elf" --input-data \
       --out /tmp/fullprogram --debug-trace
 
-  # 2. Capture the stage-1 root the native prover commits for that dump.
-  #    --hash-family Poseidon2: the family this repo models; the installed
-  #    key's own default is Poseidon1, which zisk-zorch does not implement.
+  # 2a. Root at the installed key's default family (Poseidon1 — no override):
+  cargo run --release -p rw-fixture-gen -- \
+      --stage1-root /tmp/fullprogram/input_data/fullprogram/seg00
+
+  # 2b. Root at Poseidon2 (explicit override via a shadow proving key):
   cargo run --release -p rw-fixture-gen -- \
       --stage1-root /tmp/fullprogram/input_data/fullprogram/seg00 \
       --hash-family Poseidon2
@@ -114,10 +121,10 @@ elements either match or they don't.
 A wall-clock comparison against ZisK's native pil2-stark CUDA reference means
 something only when both sides prove the **same instance**, at the **same
 scope**, and produce the **same output**. Only the trace commit meets the
-output half today (the `fullprogram/` fixtures match the native root for a
-real trace); every other stage is pinned by `tools/fixture-gen`'s synthetic
-inputs. The ratios below are engineering signal — do not quote one as
-"zisk-zorch is Nx pil2" outside this page.
+output half today (the `fullprogram/` fixtures match the native root for a real
+trace, in both hash families); every other stage is pinned by
+`tools/fixture-gen`'s synthetic inputs. The ratios below are engineering signal
+— do not quote one as "zisk-zorch is Nx pil2" outside this page.
 
 > **Only numbers on this page are quotable.** Figures from issues and PR
 > threads have been retracted for density-proxy, extrapolation, and scope
