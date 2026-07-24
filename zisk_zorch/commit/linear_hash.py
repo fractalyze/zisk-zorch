@@ -39,6 +39,18 @@ class LinearHash:
         # satisfy the chained precondition rate + out == width.
         self._sponge = Sponge(permutation, SpongeParams(rate=self.rate, out=self.out))
 
+    # Value equality/hash so a MerkleTree over this hasher works as a static
+    # jit-zone key (zorch #214): fresh per-proof trees must compare equal or
+    # every proof re-traces and recompiles the commit kernels. The Sponge
+    # carries the full identity (permutation + rate/out).
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, LinearHash):
+            return NotImplemented
+        return self._sponge == other._sponge
+
+    def __hash__(self) -> int:
+        return hash(self._sponge)
+
     @property
     def has_dedicated_fusion(self) -> bool:
         return self._permutation.has_dedicated_fusion
