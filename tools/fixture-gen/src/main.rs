@@ -9,9 +9,10 @@
 //! numbers cannot carry 64-bit values exactly.
 
 use fields::{
-    intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon2_hash, verify_fold, verify_mt,
-    CubicExtensionField, Field, Goldilocks, Hash, PrimeField64, Poseidon2_12, Poseidon2_16,
-    Poseidon2Constants, Poseidon2_4, Poseidon2_8, Transcript,
+    intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon1_hash, poseidon2_hash, verify_fold,
+    verify_mt, CubicExtensionField, Field, Goldilocks, Hash, Poseidon1Constants, Poseidon1_12,
+    Poseidon1_16, Poseidon1_8, PrimeField64, Poseidon2_12, Poseidon2_16, Poseidon2Constants,
+    Poseidon2_4, Poseidon2_8, Transcript,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -68,6 +69,74 @@ fn permutation_cases<C: Poseidon2Constants<W>, const W: usize>(seed: u64) -> Val
     json!({"width": W, "cases": cases})
 }
 
+fn poseidon1_permutation_cases<C: Poseidon1Constants<W>, const W: usize>(seed: u64) -> Value {
+    let mut cases = Vec::new();
+
+    // The all-zero and 0..W sequence inputs are the two cases pil2's own
+    // `poseidon1.rs` tests publish hard-coded outputs for, so a consumer's
+    // permutation can be pinned against those constants independently of this
+    // golden (an extra anchor on top of the linked-reference authority).
+    let zero = [Goldilocks::ZERO; W];
+    cases.push(json!({"input": ser(&zero), "output": ser(&poseidon1_hash::<Goldilocks, C, W>(&zero))}));
+
+    let iota: Vec<Goldilocks> = (0..W as u64).map(Goldilocks::new).collect();
+    let mut input = [Goldilocks::ZERO; W];
+    input.copy_from_slice(&iota);
+    cases.push(json!({"input": ser(&input), "output": ser(&poseidon1_hash::<Goldilocks, C, W>(&input))}));
+
+    let mut state = seed;
+    for _ in 0..3 {
+        let mut input = [Goldilocks::ZERO; W];
+        for x in input.iter_mut() {
+            *x = rand_fe(&mut state);
+        }
+        cases.push(json!({"input": ser(&input), "output": ser(&poseidon1_hash::<Goldilocks, C, W>(&input))}));
+    }
+    json!({"width": W, "cases": cases})
+}
+
+// pil2's Poseidon1 (Hades) round constants and matrices for one width, as the
+// raw `u64` arrays pil2 stores (C/M/P/S with pil2's flat layout). The consumer's
+// params module reshapes and interprets these — this is a faithful dump of the
+// pinned reference's optimized-sparse constants, the single authoritative source
+// so nothing is hand-transcribed. `u64`s serialize as decimal strings (a JSON
+// number cannot carry a 64-bit value exactly), read back losslessly.
+fn poseidon1_constants<C: Poseidon1Constants<W>, const W: usize>() -> Value {
+    let ser_u64 = |xs: &[u64]| -> Vec<String> { xs.iter().map(|x| x.to_string()).collect() };
+    json!({
+        "width": W,
+        "half_full_rounds": C::HALF_FULL_ROUNDS,
+        "n_partial_rounds": C::N_PARTIAL_ROUNDS,
+        "rate": C::RATE,
+        "capacity": C::CAPACITY,
+        // C: [initial ARC (W)][full-pre (HALF-1)*W][transition (W)]
+        //    [partial (N_PARTIAL)][full-post (HALF-1)*W]
+        "c": ser_u64(C::C),
+        // M/P flat row-major, pil2 convention mat[j*W + i] (new[i] = Σ_j old[j]·mat[j*W+i]).
+        "m": ser_u64(C::M),
+        "p": ser_u64(C::P),
+        // S flat N_PARTIAL*(2*W-1): per round r, [dot row (W)][col update (W-1)].
+        "s": ser_u64(C::S),
+    })
+}
+
+// pil2's linear_hash over a Poseidon1 permutation (RATE from the Hash trait).
+// Same length regimes as the Poseidon2 variant.
+fn poseidon1_linear_hash_cases<C: Poseidon1Constants<W> + Hash<Goldilocks>, const W: usize>(
+    seed: u64,
+) -> Value {
+    let rate = <C as Hash<Goldilocks>>::RATE as u64;
+    let lens = [1, 3, 4, 5, rate - 1, rate, rate + 1, 2 * rate, 2 * rate + 3, 5 * rate + 1];
+    let mut state = seed;
+    let mut cases = Vec::new();
+    for &len in lens.iter() {
+        let input: Vec<Goldilocks> = (0..len).map(|_| rand_fe(&mut state)).collect();
+        let out = linear_hash_seq::<Goldilocks, C>(&input);
+        cases.push(json!({"input": ser(&input), "output": ser(out.as_ref())}));
+    }
+    json!({"width": W, "rate": <C as Hash<Goldilocks>>::RATE, "cases": cases})
+}
+
 fn linear_hash_cases<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize>(seed: u64) -> Value {
     // Lengths probe every linear_hash regime: short single-block rows
     // (v0.15.0's <=4 unhashed shortcut is gone in v1.0.0-alpha — they permute),
@@ -96,7 +165,11 @@ fn linear_hash_cases<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize
     json!({"width": W, "rate": <C as Poseidon2Constants<W>>::RATE, "cases": cases})
 }
 
-fn merkle_root<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
+// Bound is `Hash` only (not `Poseidon2Constants`): `linear_hash_seq` /
+// `partial_merkle_tree` are hash-family-generic, so this serves both Poseidon2
+// and Poseidon1 leaf/node widths. `W` is retained so call sites read
+// `::<8, Poseidon2_8>` / `::<8, Poseidon1_8>` uniformly.
+fn merkle_root<const W: usize, C: Hash<Goldilocks>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
 ) -> [Goldilocks; 4] {
@@ -539,7 +612,34 @@ fn grand_sum_case(n: usize, n_interactions: usize, seed: u64) -> Value {
 /// The full stage-1 pipeline on one small matrix: extendPol then leaf-hash
 /// every extended row and fold the k-ary tree — the byte-match target for
 /// zisk_zorch.commit.trace_commit.
-fn stage1_case(n_bits: usize, blowup_bits: usize, n_cols: usize, arity: u64, seed: u64) -> Value {
+// `HashFamily` selects the merkle leaf/node permutation for the commit goldens;
+// the LDE step is family-independent (pure NTT), so only the tree differs.
+#[derive(Clone, Copy)]
+enum HashFamily {
+    Poseidon2,
+    Poseidon1,
+}
+
+fn stage1_merkle_root(rows: &[Vec<Goldilocks>], arity: u64, family: HashFamily) -> [Goldilocks; 4] {
+    match (family, arity) {
+        (HashFamily::Poseidon2, 2) => merkle_root::<8, Poseidon2_8>(rows, arity),
+        (HashFamily::Poseidon2, 3) => merkle_root::<12, Poseidon2_12>(rows, arity),
+        (HashFamily::Poseidon2, 4) => merkle_root::<16, Poseidon2_16>(rows, arity),
+        (HashFamily::Poseidon1, 2) => merkle_root::<8, Poseidon1_8>(rows, arity),
+        (HashFamily::Poseidon1, 3) => merkle_root::<12, Poseidon1_12>(rows, arity),
+        (HashFamily::Poseidon1, 4) => merkle_root::<16, Poseidon1_16>(rows, arity),
+        _ => unreachable!(),
+    }
+}
+
+fn stage1_case(
+    n_bits: usize,
+    blowup_bits: usize,
+    n_cols: usize,
+    arity: u64,
+    family: HashFamily,
+    seed: u64,
+) -> Value {
     let lde = lde_case(n_bits, blowup_bits, n_cols, seed);
     let extended: Vec<Goldilocks> = lde["extended"]
         .as_array()
@@ -550,12 +650,7 @@ fn stage1_case(n_bits: usize, blowup_bits: usize, n_cols: usize, arity: u64, see
     let n_ext = 1usize << (n_bits + blowup_bits);
     let rows: Vec<Vec<Goldilocks>> =
         (0..n_ext).map(|r| extended[r * n_cols..(r + 1) * n_cols].to_vec()).collect();
-    let root = match arity {
-        2 => merkle_root::<8, Poseidon2_8>(&rows, arity),
-        3 => merkle_root::<12, Poseidon2_12>(&rows, arity),
-        4 => merkle_root::<16, Poseidon2_16>(&rows, arity),
-        _ => unreachable!(),
-    };
+    let root = stage1_merkle_root(&rows, arity, family);
     json!({
         "arity": arity,
         "lde": lde,
@@ -1166,6 +1261,20 @@ fn main() {
             ]
         }),
     );
+    // Poseidon1 (Hades / circom optimized-sparse) — the family native ZisK
+    // commits with by default (the installed proving key sets no `hash`, so
+    // pil2's DEFAULT_HASH_ID = "Poseidon1" wins). Widths 8/12/16 only; there is
+    // no width-4 Poseidon1 leaf/node in the merkle layouts.
+    write(
+        "zisk_zorch/poseidon1/testdata/golden/permutation.json",
+        json!({
+            "widths": [
+                poseidon1_permutation_cases::<Poseidon1_8, 8>(0xA4),
+                poseidon1_permutation_cases::<Poseidon1_12, 12>(0xA5),
+                poseidon1_permutation_cases::<Poseidon1_16, 16>(0xA6),
+            ]
+        }),
+    );
     write(
         "zisk_zorch/commit/testdata/golden/linear_hash.json",
         json!({
@@ -1237,10 +1346,44 @@ fn main() {
         "zisk_zorch/commit/testdata/golden/stage1_commit.json",
         json!({
             "cases": [
-                stage1_case(3, 2, 5, 2, 0xF1),
-                stage1_case(3, 2, 5, 3, 0xF2),
-                stage1_case(3, 2, 5, 4, 0xF3),
-                stage1_case(5, 1, 9, 4, 0xF4),
+                stage1_case(3, 2, 5, 2, HashFamily::Poseidon2, 0xF1),
+                stage1_case(3, 2, 5, 3, HashFamily::Poseidon2, 0xF2),
+                stage1_case(3, 2, 5, 4, HashFamily::Poseidon2, 0xF3),
+                stage1_case(5, 1, 9, 4, HashFamily::Poseidon2, 0xF4),
+            ]
+        }),
+    );
+    // Not a testdata golden: goldilocks.py loads this at import to build the
+    // Poseidon1 params, so it lives beside that module as package data. Still
+    // fixture-gen-owned (regenerated from the pinned pil2 reference).
+    write(
+        "zisk_zorch/poseidon1/goldilocks_constants.json",
+        json!({
+            "widths": [
+                poseidon1_constants::<Poseidon1_8, 8>(),
+                poseidon1_constants::<Poseidon1_12, 12>(),
+                poseidon1_constants::<Poseidon1_16, 16>(),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/commit/testdata/golden/poseidon1_linear_hash.json",
+        json!({
+            "widths": [
+                poseidon1_linear_hash_cases::<Poseidon1_8, 8>(0xB4),
+                poseidon1_linear_hash_cases::<Poseidon1_12, 12>(0xB5),
+                poseidon1_linear_hash_cases::<Poseidon1_16, 16>(0xB6),
+            ]
+        }),
+    );
+    write(
+        "zisk_zorch/commit/testdata/golden/poseidon1_stage1_commit.json",
+        json!({
+            "cases": [
+                stage1_case(3, 2, 5, 2, HashFamily::Poseidon1, 0xF5),
+                stage1_case(3, 2, 5, 3, HashFamily::Poseidon1, 0xF6),
+                stage1_case(3, 2, 5, 4, HashFamily::Poseidon1, 0xF7),
+                stage1_case(5, 1, 9, 4, HashFamily::Poseidon1, 0xF8),
             ]
         }),
     );
