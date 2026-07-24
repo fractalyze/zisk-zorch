@@ -31,6 +31,15 @@ class LinearHashTest(absltest.TestCase):
                     msg=f"width {entry['width']}, len {len(case['input'])}",
                 )
 
+    def test_value_equality(self) -> None:
+        # Fresh instances over the same permutation are one static jit-zone
+        # key; different widths are distinct keys.
+        a, b = LinearHash(goldilocks_perm(12)), LinearHash(goldilocks_perm(12))
+        self.assertEqual(a, b)
+        self.assertEqual(hash(a), hash(b))
+        self.assertNotEqual(a, LinearHash(goldilocks_perm(16)))
+        self.assertNotEqual(a, object())
+
 
 if __name__ == "__main__":
     absltest.main()

@@ -73,5 +73,15 @@ class Stage1CommitTest(absltest.TestCase):
             )
 
 
+class MerkleTreeJitKeyTest(absltest.TestCase):
+    def test_fresh_trees_share_one_jit_key(self) -> None:
+        # The spine builds a fresh tree per proof; zorch's commit kernels are
+        # jitted with the tree static, so fresh trees must be value-equal or
+        # every proof recompiles them.
+        self.assertEqual(merkle_tree(4), merkle_tree(4))
+        self.assertEqual(hash(merkle_tree(4)), hash(merkle_tree(4)))
+        self.assertNotEqual(merkle_tree(4), merkle_tree(2))
+
+
 if __name__ == "__main__":
     absltest.main()
