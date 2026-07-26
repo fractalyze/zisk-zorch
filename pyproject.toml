@@ -1,0 +1,100 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zisk-zorch"
+dynamic = ["version"]
+description = "zisk-zorch — a lean ZisK (pil2-stark eSTARK) prover built on zorch's scheme-agnostic blocks."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The zisk-zorch Authors" }]
+# frxlib ships a single cp311 wheel and no sdist, so no other interpreter can
+# resolve the tree, which is why the classifiers name only 3.11. requires-python
+# stays the plain `>=3.11` the sibling repos publish rather than capping at
+# `<3.12`: pip then reports a missing frxlib instead of a Requires-Python
+# rejection, which is worse, but a cap only this repo has would be its own trap.
+# Move them together, not separately.
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+]
+# Every entry below is imported at module top level by a module that ships in the
+# wheel, which is the whole bar for being here — `requirements.in` is the
+# development pin set and is deliberately not the source for this list. Two of
+# its entries could not appear here at all: it names `rw-constraints` and
+# `zkbench` as PEP 508 direct URLs, and PyPI rejects any upload whose metadata
+# carries a direct reference.
+#
+# pyzorch is the PyPI distribution of `zorch` (the bare `zorch` name belongs to
+# an unrelated pytorch helper); the import package stays `zorch`, and 19 shipped
+# modules import it. frx (imported as frx / frx.numpy / frx.lax) pulls the CPU
+# stack (frxlib, zk-dtypes) transitively, so `pip install zisk-zorch` is
+# importable on its own; the `.dev0` floor stays compatible with the exact dev
+# frx the consuming workspace pins in requirements.in (a plain `>=0.10.0` would
+# conflict — dev builds sort below the release). frxlib is left out: nothing here
+# imports it and frx already requires it.
+#
+# zk-dtypes is declared even though frx already requires it, because 15 shipped
+# modules import `goldilocks` / `goldilocksx3` / `pfinfo` from it directly — the
+# Goldilocks and cubic-extension dtypes the whole pil2 byte-match is expressed
+# in. requirements.in pins it separately (==0.0.10) precisely because the
+# transitive resolve through frx lags, so leaning on frx's floor for dtypes we
+# dereference ourselves would be a coincidence, not a contract.
+#
+# rw-constraints carries the re-authored ZisK AIRs; constraints/chip_loader.py
+# imports `Chip` / `ConstraintRegistry` / `bundled_constraints_dir` from it at
+# module top level, so it is a hard requirement, not an extra. The floor is a
+# plain `>=0.1.0` rather than `.dev0`: 0.1.0 is on PyPI as of this campaign, and
+# it is the release that first carries `bundled_constraints_dir`.
+#
+# absl-py is absent on purpose: it appears only in the 21 `*_test.py` modules,
+# never in a shipped runnable (bench_inner_proof.py parses flags with argparse),
+# so declaring it would make every consumer install it for nothing.
+#
+# The frx-cuda12-* plugins are never declared: frx-cuda12-pjrt is 129 MB against
+# PyPI's 100 MiB per-file limit, so PyPI carries a name-reservation stub only and
+# the GPU tier pulls the real wheels from the Fractalyze index (see the README's
+# Installation section).
+dependencies = [
+    "numpy",
+    "pyzorch>=0.1.0",
+    "frx>=0.10.0.dev0",
+    "zk-dtypes>=0.0.10",
+    "rw-constraints>=0.1.0",
+]
+
+# zkbench is not on PyPI at all — only on the Fractalyze index — so as a hard
+# dependency it would break `pip install zisk-zorch` outright. (requirements.in
+# reaches it by release-asset URL because that index page was missing when the
+# pin was written; it serves zkbench again, so an extra resolves.) It is not
+# dev-only either: the driver that
+# imports it, zisk_zorch/bench_inner_proof.py, sits inside the shipped package
+# rather than under a benchmark/ directory, so an extra is what makes that one
+# module usable from an install. The extra needs the Fractalyze index:
+#   pip install "zisk-zorch[bench]" \
+#     --extra-index-url https://fractalyze.github.io/pypi/simple/
+[project.optional-dependencies]
+bench = ["zkbench>=0.5.0"]
+
+[project.urls]
+Repository = "https://github.com/fractalyze/zisk-zorch"
+
+[tool.setuptools.dynamic]
+version = { attr = "zisk_zorch.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["zisk_zorch*"]
+
+# No `[tool.setuptools.package-data]` here, unlike openvm-zorch. The `*_test.py`
+# modules live inside the package so discovery ships them either way, but nothing
+# else does: the golden fixtures under `*/testdata/` are referenced only by those
+# 21 test modules, and the one shipped runnable (`python -m
+# zisk_zorch.bench_inner_proof`) generates its own inputs. openvm-zorch shipped
+# its fixtures because a *runnable* defaulted to a testdata path and died on a
+# pip install; there is no such runnable here, and the fixtures are 2.08 MB
+# across 25 files — 12x openvm's 172 KB — so every consumer would pay for data
+# only a source checkout can use.
