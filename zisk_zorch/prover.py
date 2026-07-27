@@ -80,37 +80,45 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
     return steps
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class InnerClaim:
-    """Some trace of height ``2**n_bits`` satisfies the AIR.
+    """Some trace of this shape satisfies the AIR.
 
     Spelled out: there exists a ``(2**n_bits, n_cols)`` base-field trace on
-    which every constraint the AIR produces vanishes on every row. Nothing here
-    names that trace — it is existentially quantified, and the prover exhibits
-    one by committing to it, which is why the trace root is proof data rather
-    than a field of the statement. The AIR itself (`eval_fn`, its constraint
-    count) is static configuration on `QuotientProver`.
+    which every one of the AIR's `n_constraints` constraints vanishes on every
+    row. Nothing here names that trace — it is existentially quantified, and
+    the prover exhibits one by committing to it, which is why the trace root
+    is proof data rather than a field of the statement. The AIR's circuits
+    (`eval_fn`) stay static configuration on `QuotientProver` — both roles are
+    built against the same AIR — while the statement instance's shape lives
+    here, where both read it: the prover cross-checks its witness against it,
+    the verifier sizes the alpha fold and the openings by it.
     """
 
     n_bits: int
+    n_cols: int
+    n_constraints: int
 
 
 @dataclass(frozen=True, kw_only=True)
 class QuotientBoundClaim:
-    """The codeword committed under `quotient_root` is the alpha-fold of the
-    AIR constraints on the trace committed under `trace_root`, divided by the
-    zerofier.
+    """The codeword committed under `quotient_root` is the alpha-fold of
+    `inner`'s AIR constraints on the trace committed under `trace_root`,
+    divided by the zerofier.
 
     What the quotient stage reduces the AIR statement to: the division is
     exact only when the alpha-folded constraints vanish on the whole base
     domain, so a single violated row makes the true quotient a non-polynomial
     no committed codeword can equal at the opening's out-of-domain point.
-    Both roles hold the roots — the prover from committing, the verifier off
-    the wire — so they are claim data: they name what the opening is checked
-    against. The fields are keyword-only so the two same-shaped roots cannot
-    be passed to each other's slot.
+    `inner` is the source statement the reduction conditions on — the opening
+    still needs its shape to size what it opens. Both roles hold the roots —
+    the prover from committing, the verifier off the wire — so they are claim
+    data: they name what the opening is checked against. The fields are
+    keyword-only so the two same-shaped roots cannot be passed to each
+    other's slot.
     """
 
+    inner: InnerClaim
     trace_root: Array
     quotient_root: Array
 
@@ -195,7 +203,9 @@ class QuotientProver(
     What it proves: every constraint evaluates to zero on every trace row —
     conditionally on the reduced claim, which the opening stage discharges.
     The witness is the trace commitment (constraints must be evaluated on the
-    coset, where the zerofier is invertible). Cubic rows commit as 3
+    coset, where the zerofier is invertible). The statement's shape — domain
+    size, constraint count — is read off the claim; only the AIR's circuits
+    and the protocol parameters are configuration. Cubic rows commit as 3
     contiguous base limbs (pil2 `FIELD_EXTENSION` layout), so the leaf hash
     matches the FRI seam."""
 
@@ -203,14 +213,10 @@ class QuotientProver(
         self,
         eval_fn: Callable[[Array], Array],
         *,
-        n_constraints: int,
-        n_bits: int,
         blowup_bits: int,
         arity: int,
     ) -> None:
         self._eval_fn = eval_fn
-        self._n_constraints = n_constraints
-        self._n_bits = n_bits
         self._blowup_bits = blowup_bits
         self._arity = arity
 
@@ -224,13 +230,13 @@ class QuotientProver(
         # challenge — exactly the coefficient vector `zorch.constraint_eval` takes.
         alpha = powers(
             join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(()),
-            self._n_constraints,
+            claim.n_constraints,
         )
         quotient = quotient_from_constraints(
             self._eval_fn,
             witness.extended,
             alpha,
-            self._n_bits,
+            claim.n_bits,
             self._blowup_bits,
         )
         matrix = split_coeffs(quotient)
@@ -240,7 +246,9 @@ class QuotientProver(
             codeword=quotient, root=root, matrix=matrix, layers=layers
         )
         return ProveResult(
-            QuotientBoundClaim(trace_root=witness.root, quotient_root=root),
+            QuotientBoundClaim(
+                inner=claim, trace_root=witness.root, quotient_root=root
+            ),
             commitment,
             transcript,
         )
@@ -274,7 +282,6 @@ class OpeningProver(
     def __init__(
         self,
         *,
-        n_bits: int,
         blowup_bits: int,
         steps: list[int],
         arity: int,
@@ -282,7 +289,6 @@ class OpeningProver(
         n_queries: int,
         opening_points: Sequence[int] = (0,),
     ) -> None:
-        self._n_bits = n_bits
         self._blowup_bits = blowup_bits
         self._steps = steps
         self._arity = arity
@@ -291,7 +297,10 @@ class OpeningProver(
         self._opening_points = opening_points
 
     def _fri_input(
-        self, witness: OpeningWitness, transcript: Transcript
+        self,
+        claim: QuotientBoundClaim,
+        witness: OpeningWitness,
+        transcript: Transcript,
     ) -> tuple[Array, Array | None]:
         """The codeword FRI folds and the OOD openings the proof transmits —
         pil2 `calculateFRIPolynomial`. `EchoOpening` overrides this hook."""
@@ -299,7 +308,7 @@ class OpeningProver(
             witness.trace_commit.extended,
             witness.quotient.codeword,
             transcript,
-            n_bits=self._n_bits,
+            n_bits=claim.inner.n_bits,
             blowup_bits=self._blowup_bits,
             opening_points=self._opening_points,
         )
@@ -311,9 +320,9 @@ class OpeningProver(
         witness: OpeningWitness,
         transcript: Transcript,
     ) -> ProveResult[TrivialClaim, OpeningProof]:
-        fri_pol, evals = self._fri_input(witness, transcript)
+        fri_pol, evals = self._fri_input(claim, witness, transcript)
         fri = prove(fri_pol, self._steps, arity=self._arity, transcript=transcript)
-        n_bits_ext = self._n_bits + self._blowup_bits
+        n_bits_ext = claim.inner.n_bits + self._blowup_bits
         positions, nonce = sample_query_positions(
             transcript,
             fri.final_pol,
@@ -371,7 +380,10 @@ class EchoOpening(OpeningProver):
     conformance."""
 
     def _fri_input(
-        self, witness: OpeningWitness, transcript: Transcript
+        self,
+        claim: QuotientBoundClaim,
+        witness: OpeningWitness,
+        transcript: Transcript,
     ) -> tuple[Array, Array | None]:
         return witness.quotient.codeword, None
 
@@ -396,7 +408,6 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
         self,
         eval_fn: Callable[[Array], Array],
         *,
-        n_constraints: int,
         n_bits: int,
         blowup_bits: int = 1,
         arity: int = 2,
@@ -408,16 +419,9 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
     ) -> None:
         self._blowup = 1 << blowup_bits
         self._arity = arity
-        self.quotient = QuotientProver(
-            eval_fn,
-            n_constraints=n_constraints,
-            n_bits=n_bits,
-            blowup_bits=blowup_bits,
-            arity=arity,
-        )
+        self.quotient = QuotientProver(eval_fn, blowup_bits=blowup_bits, arity=arity)
         opening_cls = EchoOpening if echo_deep else OpeningProver
         self.opening = opening_cls(
-            n_bits=n_bits,
             blowup_bits=blowup_bits,
             steps=_fold_steps(n_bits + blowup_bits, fold_bits, final_bits),
             arity=arity,
@@ -431,6 +435,13 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
         witness: InnerWitness,
         transcript: Transcript,
     ) -> ProveResult[TrivialClaim, InnerProof]:
+        # The verifier dual reads the statement's shape off the claim while
+        # the prover has it in the witness's trace; a pair that disagrees
+        # would otherwise only surface later, as a transcript divergence.
+        assert witness.trace.shape == (
+            1 << claim.n_bits,
+            claim.n_cols,
+        ), "claim's trace shape does not match the witness"
         # The commit half: bind the trace root before QuotientProver squeezes
         # alpha off the same transcript — Fiat-Shamir soundness rests on the
         # commitment preceding every challenge.
@@ -490,7 +501,6 @@ def prove_inner(
 
     prover = InnerProver(
         eval_fn,
-        n_constraints=n_constraints,
         n_bits=n_bits,
         blowup_bits=blowup_bits,
         arity=arity,
@@ -500,7 +510,8 @@ def prove_inner(
         n_queries=n_queries,
         echo_deep=echo_deep,
     )
-    result = prover.prove(
-        InnerClaim(n_bits), InnerWitness(trace), transcript or Transcript()
+    claim = InnerClaim(
+        n_bits=n_bits, n_cols=int(trace.shape[1]), n_constraints=n_constraints
     )
+    result = prover.prove(claim, InnerWitness(trace), transcript or Transcript())
     return result.reduction_proof
