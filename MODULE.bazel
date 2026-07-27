@@ -19,7 +19,7 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 
 # zorch arrives as a dev-release wheel via the pip hub (see requirements.in),
 # not a Bazel module — so frx/zk_dtypes resolve once here. Targets depend on it
-# with requirement("zorch").
+# with requirement("pyzorch").
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(

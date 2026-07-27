@@ -35,7 +35,7 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zorch.commit.merkle import MerkleTree
-from zorch.pcs.fold import PreFoldKGroupCommitRound
+from zorch.pcs.fold import FoldState, PreFoldKGroupCommitRound
 from zorch.prove import fold_rounds
 
 from zisk_zorch.commit.openings import group_proof
@@ -84,21 +84,20 @@ def prove(
     num_rounds = len(steps) - 1
 
     # Each round commits the current layer's next-fold cosets, squeezes the cubic
-    # challenge, and folds — the carry is the running codeword (pil2's `f`), and
-    # the last round's carry is the final polynomial.
-    final_pol, _, layers_msg = fold_rounds(
+    # challenge, and folds — the carry is the running codeword (pil2's `f`) plus
+    # the committed layers, and the last round's codeword is the final polynomial.
+    state, _, roots = fold_rounds(
         PreFoldKGroupCommitRound(code, tree),
-        fri_pol,
+        FoldState(fri_pol),
         Pil2SeamTranscript(transcript),
         num_rounds,
     )
 
-    roots = [msg.root for msg in layers_msg]
     layers = [
-        _Layer(tree, msg.leaves, msg.digest_layers, steps[i + 1])
-        for i, msg in enumerate(layers_msg)
+        _Layer(tree, layer.leaves, layer.digest_layers, steps[i + 1])
+        for i, layer in enumerate(state.layers)
     ]
-    return FriProof(roots=roots, final_pol=final_pol, layers=layers)
+    return FriProof(roots=roots, final_pol=state.codeword, layers=layers)
 
 
 def prove_queries(

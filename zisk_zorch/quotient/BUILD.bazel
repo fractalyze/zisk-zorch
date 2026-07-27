@@ -19,7 +19,7 @@ py_library(
         requirement("frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -32,7 +32,7 @@ py_test(
         ":quotient",
         "//zisk_zorch:golden",
         requirement("absl_py"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 

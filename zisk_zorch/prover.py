@@ -1,14 +1,17 @@
-"""End-to-end inner-proof prover — a `ProveChain` of Stages over one transcript.
+"""End-to-end inner-proof prover — five stage rounds over one transcript.
 
-`prove_inner_chain` is a `zorch.round.ProveChain` of five **Stages** — trace
-commit, quotient, DEEP, FRI, queries — threading one duplex `Transcript` and a
-single **Bridge** (`InnerBridge`). Each stage's Merkle root is absorbed before
+`prove_inner_chain` lists five **Stages** — trace commit, quotient, DEEP, FRI,
+queries — that `zorch.round.prove_rounds` runs over one duplex `Transcript` and
+a single **Bridge** (`InnerBridge`). Each stage's Merkle root is absorbed before
 the next stage's challenges (`alpha`, the FRI fold betas, the query positions)
 are squeezed from that running state — the byte stream pil2-proofman's `genProof`
 drives.
 
-- **Stage** — one step of the inner proof's heterogeneous sequence, a `Round`
-  subclass named `*Stage`. Each runs its own inner rounds (FRI's layer chain).
+- **Stage** — one step of the inner proof's heterogeneous sequence, a
+  `zorch.round.ProverRound` named `*Stage` (in zorch's claim-reduction
+  vocabulary these are rounds: pil2's monolithic transcript leaves no
+  per-stage claim boundary to reduce). Each runs its own inner rounds
+  (FRI's layer chain).
 - **Bridge** — the state a Stage hands the next (`InnerBridge`). It holds only
   what a later Stage reads from an earlier one; a Stage writes its own fields via
   `replace` and passes the rest through. Static config (arity, the fold schedule,
@@ -35,7 +38,7 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 from zorch.poly.univariate import powers
-from zorch.round import ProveChain, Round
+from zorch.round import ProverRound, prove_rounds
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.openings import group_proof
@@ -122,7 +125,7 @@ class InnerBridge:
     queries: QueryOpenings | None = None
 
 
-class TraceCommitStage(Round):
+class TraceCommitStage:
     """pil2 `extendAndMerkelize`: LDE the trace onto the coset and Merkle-commit
     it. Fiat-Shamir requires the root be absorbed here, before `QuotientStage`
     squeezes alpha off the same transcript. The message is the trace root."""
@@ -139,7 +142,7 @@ class TraceCommitStage(Round):
         return replace(bridge, trace_commit=commitment), transcript, commitment.root
 
 
-class QuotientStage(Round):
+class QuotientStage:
     """pil2 `calculateQuotientPolynomial`: squeeze alpha, fold the constraints by
     its powers, divide by the zerofier, commit `Q`. Cubic rows commit as 3
     contiguous base limbs (pil2 `FIELD_EXTENSION` layout), so the leaf hash
@@ -187,7 +190,7 @@ class QuotientStage(Round):
         return replace(bridge, quotient=commitment), transcript, root
 
 
-class DeepStage(Round):
+class DeepStage:
     """pil2 `calculateFRIPolynomial`: build the codeword FRI folds. Owns its
     out-of-domain squeeze, so it sits between the quotient's root and the FRI
     betas on this transcript, reading the committed trace and quotient off the
@@ -220,7 +223,7 @@ class DeepStage(Round):
         return replace(bridge, fri_pol=fri_pol, deep_evals=evals), transcript, fri_pol
 
 
-class QuotientEchoStage(Round):
+class QuotientEchoStage:
     """Placeholder DEEP: fold FRI over the quotient codeword itself, skipping the
     out-of-domain opening. The quotient is a valid cubic FRI input, so this drives
     the spine end to end for wiring/shape tests — but it is NOT pil2's DEEP
@@ -236,7 +239,7 @@ class QuotientEchoStage(Round):
         return replace(bridge, fri_pol=codeword), transcript, codeword
 
 
-class FriStage(Round):
+class FriStage:
     """pil2 `FRI::fold`: fold the codeword down the layer chain, committing each
     layer. Its inner rounds are the layer folds, whose betas chain off the same
     transcript — so its state carries the absorbed trace and quotient roots into
@@ -257,7 +260,7 @@ class FriStage(Round):
         return replace(bridge, fri=fri), transcript, fri
 
 
-class QueryStage(Round):
+class QueryStage:
     """pil2 `proveQueries`: absorb the final polynomial, grind, squeeze the query
     positions, and open every committed tree at each. The message is the
     per-tree openings."""
@@ -348,35 +351,34 @@ def prove_inner_chain(
     final_bits: int = 5,
     pow_bits: int = 16,
     n_queries: int = 64,
-    deep_stage: Round | None = None,
-) -> ProveChain:
-    """The ZisK inner-proof chain. One definition for the stage wiring so the
-    benchmark, the byte-match runnables, and proof assembly cannot drift on it.
+    deep_stage: ProverRound | None = None,
+) -> list[ProverRound]:
+    """The ZisK inner-proof stage list, run by `zorch.round.prove_rounds`. One
+    definition for the stage wiring so the benchmark, the byte-match runnables,
+    and proof assembly cannot drift on it.
 
     `n_bits` sizes the base trace domain; the trace itself rides the bridge.
     `deep_stage` fills the DEEP slot; it defaults to the real `DeepStage` — pass
     `QuotientEchoStage()` for the trivial fallback that skips the OOD opening."""
     n_bits_ext = n_bits + blowup_bits
-    return ProveChain(
-        [
-            TraceCommitStage(blowup=1 << blowup_bits, arity=arity),
-            QuotientStage(
-                eval_fn,
-                n_constraints=n_constraints,
-                n_bits=n_bits,
-                blowup_bits=blowup_bits,
-                arity=arity,
-            ),
-            deep_stage or DeepStage(n_bits=n_bits, blowup_bits=blowup_bits),
-            FriStage(steps=_fold_steps(n_bits_ext, fold_bits, final_bits), arity=arity),
-            QueryStage(
-                n_bits_ext=n_bits_ext,
-                arity=arity,
-                pow_bits=pow_bits,
-                n_queries=n_queries,
-            ),
-        ]
-    )
+    return [
+        TraceCommitStage(blowup=1 << blowup_bits, arity=arity),
+        QuotientStage(
+            eval_fn,
+            n_constraints=n_constraints,
+            n_bits=n_bits,
+            blowup_bits=blowup_bits,
+            arity=arity,
+        ),
+        deep_stage or DeepStage(n_bits=n_bits, blowup_bits=blowup_bits),
+        FriStage(steps=_fold_steps(n_bits_ext, fold_bits, final_bits), arity=arity),
+        QueryStage(
+            n_bits_ext=n_bits_ext,
+            arity=arity,
+            pow_bits=pow_bits,
+            n_queries=n_queries,
+        ),
+    ]
 
 
 def prove_inner(
@@ -390,7 +392,7 @@ def prove_inner(
     final_bits: int = 5,
     pow_bits: int = 16,
     n_queries: int = 64,
-    deep_stage: Round | None = None,
+    deep_stage: ProverRound | None = None,
     transcript: Transcript | None = None,
 ) -> InnerProof:
     """Run `prove_inner_chain` over one shared `Transcript` and assemble the proof.
@@ -417,7 +419,9 @@ def prove_inner(
         n_queries=n_queries,
         deep_stage=deep_stage,
     )
-    bridge, _, _ = chain(InnerBridge(trace=trace), transcript or Transcript())
+    bridge, _, _ = prove_rounds(
+        chain, InnerBridge(trace=trace), transcript or Transcript()
+    )
 
     return InnerProof(
         trace_root=bridge.trace_commit.root,

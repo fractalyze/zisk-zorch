@@ -1,9 +1,9 @@
 # Architecture: the inner proof over one transcript
 
-`prove_inner_chain` ([`../zisk_zorch/prover.py`](../zisk_zorch/prover.py)) is a
-`ProveChain` of five **Stages** — trace commit, quotient, DEEP, FRI, queries —
-running in pil2-proofman's `genProof` order over a single Fiat-Shamir
-`Transcript` and one **Bridge** (`InnerBridge`). This page maps the proof onto
+`prove_inner_chain` ([`../zisk_zorch/prover.py`](../zisk_zorch/prover.py)) lists
+five **Stages** — trace commit, quotient, DEEP, FRI, queries — that
+`zorch.round.prove_rounds` runs in pil2-proofman's `genProof` order over a
+single Fiat-Shamir `Transcript` and one **Bridge** (`InnerBridge`). This page maps the proof onto
 those Stages and names the pil2 vocabulary each one mirrors. Every primitive that
 mirrors pil2 is pinned against pil2-proofman v1.0.0-alpha's `fields` crate via
 [`../tools/fixture-gen/`](../tools/fixture-gen/).
@@ -11,8 +11,9 @@ mirrors pil2 is pinned against pil2-proofman v1.0.0-alpha's `fields` crate via
 ## Stage / Bridge in this repo
 
 - **Stage** — one step of the inner proof's heterogeneous sequence, a
-  `zorch.round.Round` subclass named `*Stage`. Each runs its own inner rounds
-  (FRI's layer chain).
+  `zorch.round.ProverRound` named `*Stage` (in zorch's claim-reduction
+  vocabulary these are rounds: pil2's monolithic transcript leaves no per-stage
+  claim boundary to reduce). Each runs its own inner rounds (FRI's layer chain).
 - **Bridge** — the state a Stage hands the next (`InnerBridge`): the trace
   commitment, the quotient and its tree, the DEEP codeword, the FRI proof. It
   holds only what a later Stage reads from an earlier one — a Stage writes its

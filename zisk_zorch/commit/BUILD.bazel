@@ -11,7 +11,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -26,7 +26,7 @@ py_library(
         "//zisk_zorch/quotient",
         requirement("frx"),
         requirement("zk_dtypes"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -37,7 +37,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
