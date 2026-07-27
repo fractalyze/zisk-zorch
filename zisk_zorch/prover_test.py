@@ -13,7 +13,7 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import QuotientEchoStage, _fold_steps, prove_inner
+from zisk_zorch.prover import _fold_steps, prove_inner
 
 _N_BITS = 6
 _N_COLS = 8
@@ -46,7 +46,7 @@ def _eval_fn(trace: fnp.ndarray) -> fnp.ndarray:
     return fnp.stack(cols, axis=-1)
 
 
-def _prove(seed: int = 0, deep_stage=QuotientEchoStage()):
+def _prove(seed: int = 0, echo_deep: bool = True):
     return prove_inner(
         _trace(seed),
         _eval_fn,
@@ -57,7 +57,7 @@ def _prove(seed: int = 0, deep_stage=QuotientEchoStage()):
         final_bits=_FINAL_BITS,
         pow_bits=_POW_BITS,
         n_queries=_N_QUERIES,
-        deep_stage=deep_stage,
+        echo_deep=echo_deep,
     )
 
 
@@ -118,11 +118,11 @@ class ProveInnerTest(absltest.TestCase):
             np.array_equal(np.asarray(a.trace_root), np.asarray(b.trace_root))
         )
 
-    def test_default_deep_stage_runs(self):
-        # The default deep_stage is the real DeepStage (opens the committed
+    def test_default_opening_runs(self):
+        # The default opening is the real OpeningProver (opens the committed
         # columns at the OOD point, absorbs, batches) — exercise the whole pil2
         # spine, not just the quotient-passthrough fallback.
-        proof = _prove(deep_stage=None)
+        proof = _prove(echo_deep=False)
         self.assertEqual(proof.final_pol.shape, (1 << _FINAL_BITS,))
         self.assertEqual(len(proof.query_positions), _N_QUERIES)
 

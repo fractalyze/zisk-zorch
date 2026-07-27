@@ -1,21 +1,26 @@
-"""End-to-end inner-proof prover — five stage rounds over one transcript.
+"""End-to-end inner-proof prover — the inner proof as composite Stage roles.
 
-`prove_inner_chain` lists five **Stages** — trace commit, quotient, DEEP, FRI,
-queries — that `zorch.round.prove_rounds` runs over one duplex `Transcript` and
-a single **Bridge** (`InnerBridge`). Each stage's Merkle root is absorbed before
-the next stage's challenges (`alpha`, the FRI fold betas, the query positions)
-are squeezed from that running state — the byte stream pil2-proofman's `genProof`
-drives.
+`InnerProver` reduces the inner statement to the trivial claim over one duplex
+`Transcript`, the byte stream pil2-proofman's `genProof` drives: the trace
+commit binds the witness, then two `zorch.stage.ProverStage` roles — quotient,
+opening — each discharge the claim the one before produced, so what crosses a
+seam is a claim both roles derive rather than a shared mutable carry.
 
-- **Stage** — one step of the inner proof's heterogeneous sequence, a
-  `zorch.round.ProverRound` named `*Stage` (in zorch's claim-reduction
-  vocabulary these are rounds: pil2's monolithic transcript leaves no
-  per-stage claim boundary to reduce). Each runs its own inner rounds
-  (FRI's layer chain).
-- **Bridge** — the state a Stage hands the next (`InnerBridge`). It holds only
-  what a later Stage reads from an earlier one; a Stage writes its own fields via
-  `replace` and passes the rest through. Static config (arity, the fold schedule,
-  `eval_fn`) lives on the Stage, not the Bridge.
+- **Claim** — the statement a stage consumes and reduces (`InnerClaim`,
+  `QuotientBoundClaim`, `zorch.stage.TrivialClaim`). Claims hold only what
+  both roles can derive — the verifier from the wire, the prover from its own
+  run — never prover-only data.
+- **Witness** — what makes a claim true, plus the prover data discharging it
+  takes (`InnerWitness`, `OpeningWitness`). Prover data produced by one part
+  and consumed by another — the trace commitment, the quotient codeword —
+  rides witness wrappers the composite assembles; it belongs to no claim.
+- Static configuration (the AIR's `eval_fn`, arity, the fold schedule) lives
+  on the role instances, the statement on the claim, the trace on the witness.
+
+pil2's DEEP, FRI, and query phases are ONE terminal stage here
+(`OpeningProver`): each of those sub-steps consumes a challenge the previous
+one squeezed and produces the next one's prover input, so their seams are
+prover-data seams, not claim boundaries a `ProverStage` pair could meet at.
 
 The quotient-commit leaf layout mirrors the FRI seam's cubic convention (each
 cubic row -> its 3 contiguous Goldilocks limbs, cf. `zorch.utils.field`), which
@@ -29,7 +34,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import partial
 
 import frx
@@ -38,7 +43,7 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 from zorch.poly.univariate import powers
-from zorch.round import ProverRound, prove_rounds
+from zorch.stage import ProveResult, ProverStage, TrivialClaim
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.openings import group_proof
@@ -76,10 +81,56 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
 
 
 @dataclass(frozen=True)
+class InnerClaim:
+    """Some trace of height ``2**n_bits`` satisfies the AIR.
+
+    Spelled out: there exists a ``(2**n_bits, n_cols)`` base-field trace on
+    which every constraint the AIR produces vanishes on every row. Nothing here
+    names that trace — it is existentially quantified, and the prover exhibits
+    one by committing to it, which is why the trace root is proof data rather
+    than a field of the statement. The AIR itself (`eval_fn`, its constraint
+    count) is static configuration on `QuotientProver`.
+    """
+
+    n_bits: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class QuotientBoundClaim:
+    """The codeword committed under `quotient_root` is the alpha-fold of the
+    AIR constraints on the trace committed under `trace_root`, divided by the
+    zerofier.
+
+    What the quotient stage reduces the AIR statement to: the division is
+    exact only when the alpha-folded constraints vanish on the whole base
+    domain, so a single violated row makes the true quotient a non-polynomial
+    no committed codeword can equal at the opening's out-of-domain point.
+    Both roles hold the roots — the prover from committing, the verifier off
+    the wire — so they are claim data: they name what the opening is checked
+    against. The fields are keyword-only so the two same-shaped roots cannot
+    be passed to each other's slot.
+    """
+
+    trace_root: Array
+    quotient_root: Array
+
+
+@dataclass(frozen=True)
+class InnerWitness:
+    """The trace that makes an `InnerClaim` true: the ``(2**n_bits, n_cols)``
+    base-field evaluation matrix."""
+
+    trace: Array
+
+
+@dataclass(frozen=True)
 class QuotientCommitment:
-    """QuotientStage's output, the quotient analogue of ``TraceCommitment``:
-    the cubic codeword DeepStage opens, plus the base-limb matrix and digest
-    layers QueryStage opens the committed tree with."""
+    """The quotient stage's reduction proof, the quotient analogue of
+    ``TraceCommitment``. Its wire projection is `root`; the cubic codeword the
+    DEEP batch opens and the base-limb `matrix`/`layers` the query phase opens
+    the committed tree with ride along as prover data — pil2 commits the
+    quotient mid-transcript (alpha precedes it), so unlike a PCS trace commit
+    this cannot be split into a pre-transcript commit half."""
 
     codeword: Array
     root: Array
@@ -88,78 +139,65 @@ class QuotientCommitment:
 
 
 @dataclass(frozen=True)
-class QueryOpenings:
-    """QueryStage's output, read by proof assembly: the grinding nonce, the
-    squeezed query positions, and every committed tree's per-query openings."""
+class OpeningWitness:
+    """What discharging a `QuotientBoundClaim` takes: both committed trees'
+    prover data — the extended trace and quotient codeword the DEEP batch
+    reads, and the digest layers the query phase opens."""
 
-    nonce: int
-    positions: np.ndarray
-    trace: list[list[Array]]
-    quotient: list[list[Array]]
-    fri: list[list[Array]]
+    trace_commit: TraceCommitment
+    quotient: QuotientCommitment
 
 
 @dataclass(frozen=True)
-class InnerBridge:
-    """What flows between stages: the trace plus each stage's outputs the next
-    one consumes. Stages return it via ``replace`` — a stage writes its own
-    field and passes the rest through untouched."""
+class OpeningProof:
+    """Discharges a `QuotientBoundClaim`, leaving nothing to prove: pil2's
+    `evals` section (the out-of-domain column openings; None under
+    `EchoOpening`, which opens nothing), the FRI fold proof, the grinding
+    nonce, the squeezed query positions, and every committed tree's per-query
+    openings."""
 
-    trace: Array
-    # Written by TraceCommitStage; read by QuotientStage (the extended trace it
-    # folds constraints over), DeepStage (the committed columns it opens), and
-    # QueryStage (the tree it opens per query position).
-    trace_commit: TraceCommitment | None = None
-    # Written by QuotientStage; read by DeepStage (the codeword it opens) and
-    # QueryStage (the committed tree).
-    quotient: QuotientCommitment | None = None
-    # Written by DeepStage; read by FriStage as its codeword.
-    fri_pol: Array | None = None
-    # Written by DeepStage; read by proof assembly. The out-of-domain column
-    # openings the transcript absorbed — the verifier needs them to reach `vf`.
-    # None under QuotientEchoStage, which opens nothing.
-    deep_evals: Array | None = None
-    # Written by FriStage; read by QueryStage (the layer trees it opens).
-    fri: FriProof | None = None
-    # Written by QueryStage; read by proof assembly.
-    queries: QueryOpenings | None = None
+    evals: Array | None
+    fri: FriProof
+    nonce: int
+    positions: np.ndarray
+    trace_openings: list[list[Array]]
+    quotient_openings: list[list[Array]]
+    fri_openings: list[list[Array]]
 
 
-class TraceCommitStage:
-    """pil2 `extendAndMerkelize`: LDE the trace onto the coset and Merkle-commit
-    it. Reads `bridge.trace`; writes `bridge.trace_commit`, the extended trace
-    plus digest layers every later stage evaluates or opens against. Fiat-Shamir
-    requires the root be absorbed here, before `QuotientStage` squeezes alpha off
-    the same transcript. The message is the trace root.
+@dataclass(frozen=True)
+class InnerProof:
+    """What a verifier needs to check an `InnerClaim` without the trace: the
+    per-stage roots the transcript absorbed and the opening stage's discharge,
+    assembled flat for the wire."""
 
-    What it proves: nothing yet — it BINDS. Absorbing the root before any
-    challenge exists commits the prover to one fixed trace; every later stage's
-    claim is about this trace and no other."""
-
-    def __init__(self, *, blowup: int, arity: int) -> None:
-        self._blowup = blowup
-        self._arity = arity
-
-    def __call__(
-        self, bridge: InnerBridge, transcript: Transcript
-    ) -> tuple[InnerBridge, Transcript, Array]:
-        commitment = commit_trace(bridge.trace, blowup=self._blowup, arity=self._arity)
-        transcript.put(commitment.root)
-        return replace(bridge, trace_commit=commitment), transcript, commitment.root
+    trace_root: Array
+    quotient_root: Array
+    # pil2's `evals` section: the committed columns opened at the OOD point.
+    # None when the opening is EchoOpening (no openings to send).
+    evals: Array | None
+    fri: FriProof
+    final_pol: Array
+    nonce: int
+    query_positions: np.ndarray
+    trace_openings: list[list[Array]]
+    quotient_openings: list[list[Array]]
+    fri_openings: list[list[Array]]
 
 
-class QuotientStage:
-    """pil2 `calculateQuotientPolynomial`: squeeze alpha, fold the constraints by
-    its powers, divide by the zerofier, commit `Q`. Reads the extended trace off
-    `bridge.trace_commit` (constraints must be evaluated on the coset, where the
-    zerofier is invertible); writes `bridge.quotient`. Cubic rows commit as 3
+class QuotientProver(
+    ProverStage[InnerClaim, TraceCommitment, QuotientBoundClaim, QuotientCommitment]
+):
+    """pil2 `calculateQuotientPolynomial` as one claim reduction: squeeze
+    alpha, fold the constraints by its powers, divide by the zerofier, commit
+    `Q`, absorb its root.
+
+    What it proves: every constraint evaluates to zero on every trace row —
+    conditionally on the reduced claim, which the opening stage discharges.
+    The witness is the trace commitment (constraints must be evaluated on the
+    coset, where the zerofier is invertible). Cubic rows commit as 3
     contiguous base limbs (pil2 `FIELD_EXTENSION` layout), so the leaf hash
-    matches the FRI seam. The message is the quotient root.
-
-    What it proves: every constraint evaluates to zero on every trace row. The
-    division by the zerofier is exact only when the alpha-folded constraints
-    vanish on the whole base domain, so a single violated row makes `Q` a
-    non-polynomial — a codeword FRI's low-degree test then rejects."""
+    matches the FRI seam."""
 
     def __init__(
         self,
@@ -176,11 +214,12 @@ class QuotientStage:
         self._blowup_bits = blowup_bits
         self._arity = arity
 
-    def __call__(
-        self, bridge: InnerBridge, transcript: Transcript
-    ) -> tuple[InnerBridge, Transcript, Array]:
-        # Set by TraceCommitStage, which always precedes this one.
-        assert bridge.trace_commit is not None
+    def prove(
+        self,
+        claim: InnerClaim,
+        witness: TraceCommitment,
+        transcript: Transcript,
+    ) -> ProveResult[QuotientBoundClaim, QuotientCommitment]:
         # pil2 folds the K constraints by powers of the stage-`nStages+1`
         # challenge — exactly the coefficient vector `zorch.constraint_eval` takes.
         alpha = powers(
@@ -189,7 +228,7 @@ class QuotientStage:
         )
         quotient = quotient_from_constraints(
             self._eval_fn,
-            bridge.trace_commit.extended,
+            witness.extended,
             alpha,
             self._n_bits,
             self._blowup_bits,
@@ -200,228 +239,226 @@ class QuotientStage:
         commitment = QuotientCommitment(
             codeword=quotient, root=root, matrix=matrix, layers=layers
         )
-        return replace(bridge, quotient=commitment), transcript, root
+        return ProveResult(
+            QuotientBoundClaim(trace_root=witness.root, quotient_root=root),
+            commitment,
+            transcript,
+        )
 
 
-class DeepStage:
-    """pil2 `calculateFRIPolynomial`: build the codeword FRI folds — the DEEP
-    batching of every committed column's out-of-domain quotient. Owns its
-    out-of-domain squeeze, so it sits between the quotient's root and the FRI
-    betas on this transcript. Reads the committed trace and quotient off the
-    bridge; writes `bridge.fri_pol` (FriStage's input) and `bridge.deep_evals`
-    (the OOD column openings the proof transmits so the verifier can rebuild
-    the same batching). The message is the codeword.
+class OpeningProver(
+    ProverStage[QuotientBoundClaim, OpeningWitness, TrivialClaim, OpeningProof]
+):
+    """pil2's whole opening — `calculateFRIPolynomial`, `FRI::fold`,
+    `proveQueries` — as the terminal stage discharging a `QuotientBoundClaim`.
 
-    What it proves: the transmitted OOD openings are the committed columns'
-    true values. Each DEEP term `(f(x) - f(z)) / (x - z)` is a polynomial only
-    if the claimed `f(z)` is genuine, so batching the terms reduces every
-    opening's honesty to one low-degree claim FRI can test."""
+    What it proves, in three internal steps whose seams are prover-data
+    seams (each consumes a challenge the previous step squeezed and produces
+    the next step's input, which is why they share one stage):
+
+    - DEEP: the transmitted OOD openings are the committed columns' true
+      values. Each term `(f(x) - f(z)) / (x - z)` is a polynomial only if the
+      claimed `f(z)` is genuine, so batching the terms reduces every opening's
+      honesty to one low-degree claim.
+    - FRI: that DEEP codeword is (close to) low-degree. Each beta-fold cuts
+      the degree by `2**fold_bits` while preserving low-degreeness iff it held
+      before, until the final polynomial is small enough to transmit and check
+      directly.
+    - Queries: the fold chain was computed honestly. Everything so far
+      exchanged Merkle roots, not data; the query openings let the verifier
+      re-derive each fold at `n_queries` random positions and check it against
+      the committed layers, back to the trace and quotient leaves themselves.
+      Grinding (`pow_bits`) makes retrying for favorable positions costly.
+    """
 
     def __init__(
         self,
         *,
         n_bits: int,
         blowup_bits: int,
+        steps: list[int],
+        arity: int,
+        pow_bits: int,
+        n_queries: int,
         opening_points: Sequence[int] = (0,),
     ) -> None:
         self._n_bits = n_bits
         self._blowup_bits = blowup_bits
+        self._steps = steps
+        self._arity = arity
+        self._pow_bits = pow_bits
+        self._n_queries = n_queries
         self._opening_points = opening_points
 
-    def __call__(
-        self, bridge: InnerBridge, transcript: Transcript
-    ) -> tuple[InnerBridge, Transcript, Array]:
-        # trace_commit from TraceCommitStage, quotient from QuotientStage.
-        assert bridge.trace_commit is not None and bridge.quotient is not None
+    def _fri_input(
+        self, witness: OpeningWitness, transcript: Transcript
+    ) -> tuple[Array, Array | None]:
+        """The codeword FRI folds and the OOD openings the proof transmits —
+        pil2 `calculateFRIPolynomial`. `EchoOpening` overrides this hook."""
         fri_pol, evals = deep_fri_polynomial(
-            bridge.trace_commit.extended,
-            bridge.quotient.codeword,
+            witness.trace_commit.extended,
+            witness.quotient.codeword,
             transcript,
             n_bits=self._n_bits,
             blowup_bits=self._blowup_bits,
             opening_points=self._opening_points,
         )
-        return replace(bridge, fri_pol=fri_pol, deep_evals=evals), transcript, fri_pol
+        return fri_pol, evals
 
-
-class QuotientEchoStage:
-    """Placeholder DEEP: echo `bridge.quotient.codeword` into `bridge.fri_pol`,
-    skipping the out-of-domain opening (`bridge.deep_evals` stays None). The
-    quotient is a valid cubic FRI input, so this drives the spine end to end for
-    wiring/shape tests — but it is NOT pil2's DEEP batching (no trace openings),
-    so a proof built with it does not byte-match pil2. Not for conformance.
-
-    What it proves: nothing about the trace — with no OOD openings, the
-    quotient's consistency with the committed trace is never tested."""
-
-    def __call__(
-        self, bridge: InnerBridge, transcript: Transcript
-    ) -> tuple[InnerBridge, Transcript, Array]:
-        # Set by QuotientStage.
-        assert bridge.quotient is not None
-        codeword = bridge.quotient.codeword
-        return replace(bridge, fri_pol=codeword), transcript, codeword
-
-
-class FriStage:
-    """pil2 `FRI::fold`: fold the codeword down the layer chain, committing each
-    layer. Reads `bridge.fri_pol`; writes `bridge.fri`, the layer roots, trees,
-    and final polynomial QueryStage opens. Its inner rounds are the layer folds,
-    whose betas chain off the same transcript — so its state carries the absorbed
-    trace and quotient roots into every layer challenge. The message is the fold
-    output.
-
-    What it proves: the DEEP codeword is (close to) a low-degree polynomial —
-    the claim every earlier stage reduced to. Each beta-fold cuts the degree by
-    `2^fold_bits` while preserving low-degreeness iff it held before, until the
-    final polynomial is small enough to transmit and check directly."""
-
-    def __init__(self, *, steps: list[int], arity: int) -> None:
-        self._steps = steps
-        self._arity = arity
-
-    def __call__(
-        self, bridge: InnerBridge, transcript: Transcript
-    ) -> tuple[InnerBridge, Transcript, FriProof]:
-        # Set by DeepStage, or by QuotientEchoStage on the echo path.
-        assert bridge.fri_pol is not None
-        fri = prove(
-            bridge.fri_pol, self._steps, arity=self._arity, transcript=transcript
-        )
-        return replace(bridge, fri=fri), transcript, fri
-
-
-class QueryStage:
-    """pil2 `proveQueries`: absorb the final polynomial, grind, squeeze the query
-    positions, and open every committed tree — the trace and quotient commitments
-    plus each FRI layer — at each. Reads `bridge.trace_commit`, `bridge.quotient`,
-    and `bridge.fri`; writes `bridge.queries`, which proof assembly unpacks. The
-    message is the per-tree openings.
-
-    What it proves: the fold chain was computed honestly. Every stage so far
-    exchanged Merkle roots, not data; the query openings let the verifier
-    re-derive each fold at `n_queries` random positions and check it against
-    the committed layers, back to the trace and quotient leaves themselves.
-    Grinding (`pow_bits`) makes retrying for favorable positions costly."""
-
-    def __init__(
-        self, *, n_bits_ext: int, arity: int, pow_bits: int, n_queries: int
-    ) -> None:
-        self._n_bits_ext = n_bits_ext
-        self._arity = arity
-        self._pow_bits = pow_bits
-        self._n_queries = n_queries
-
-    def __call__(
-        self, bridge: InnerBridge, transcript: Transcript
-    ) -> tuple[InnerBridge, Transcript, tuple[list, list, list]]:
-        # Every earlier stage in the chain has run by the time queries open.
-        assert bridge.trace_commit is not None and bridge.quotient is not None
-        assert bridge.fri is not None
+    def prove(
+        self,
+        claim: QuotientBoundClaim,
+        witness: OpeningWitness,
+        transcript: Transcript,
+    ) -> ProveResult[TrivialClaim, OpeningProof]:
+        fri_pol, evals = self._fri_input(witness, transcript)
+        fri = prove(fri_pol, self._steps, arity=self._arity, transcript=transcript)
+        n_bits_ext = self._n_bits + self._blowup_bits
         positions, nonce = sample_query_positions(
             transcript,
-            bridge.fri.final_pol,
+            fri.final_pol,
             pow_bits=self._pow_bits,
             n_queries=self._n_queries,
-            n_bits_ext=self._n_bits_ext,
+            n_bits_ext=n_bits_ext,
         )
         # Every challenge is squeezed by now and openings never re-enter the
         # transcript, so the per-query Merkle walks may batch freely: one
         # vmapped kernel per tree instead of a dispatch per query, with no
         # effect on the byte stream.
-        ext_mask = (1 << self._n_bits_ext) - 1
+        ext_mask = (1 << n_bits_ext) - 1
         idx_ext = fnp.asarray(np.asarray(positions)) & ext_mask
         trace_batched = frx.vmap(
             partial(
                 group_proof,
                 merkle_tree(self._arity),
-                bridge.trace_commit.extended,
-                bridge.trace_commit.digest_layers,
+                witness.trace_commit.extended,
+                witness.trace_commit.digest_layers,
             )
         )(idx_ext)
         quotient_batched = frx.vmap(
             partial(
                 group_proof,
                 merkle_tree(self._arity),
-                bridge.quotient.matrix,
-                bridge.quotient.layers,
+                witness.quotient.matrix,
+                witness.quotient.layers,
             )
         )(idx_ext)
         trace_openings = [[trace_batched[q]] for q in range(len(positions))]
         quotient_openings = [[quotient_batched[q]] for q in range(len(positions))]
-        fri_openings = prove_queries(bridge.fri, positions)
-        openings = QueryOpenings(
-            nonce=nonce,
-            positions=positions,
-            trace=trace_openings,
-            quotient=quotient_openings,
-            fri=fri_openings,
-        )
-        return (
-            replace(bridge, queries=openings),
+        fri_openings = prove_queries(fri, positions)
+        return ProveResult(
+            TrivialClaim(),
+            OpeningProof(
+                evals=evals,
+                fri=fri,
+                nonce=nonce,
+                positions=positions,
+                trace_openings=trace_openings,
+                quotient_openings=quotient_openings,
+                fri_openings=fri_openings,
+            ),
             transcript,
-            (trace_openings, quotient_openings, fri_openings),
         )
 
 
-@dataclass(frozen=True)
-class InnerProof:
-    """The wired inner proof: the per-stage roots the transcript absorbed, the
-    FRI fold output, and the query-phase openings of every committed tree."""
+class EchoOpening(OpeningProver):
+    """Placeholder opening: fold FRI over the quotient codeword itself,
+    skipping the out-of-domain opening (`evals` stays None). The quotient is a
+    valid cubic FRI input, so this drives the spine end to end for
+    wiring/shape tests — but with no OOD openings the quotient's consistency
+    with the committed trace is never tested, so it proves nothing about the
+    trace and a proof built with it does not byte-match pil2. Not for
+    conformance."""
 
-    trace_root: Array
-    quotient_root: Array
-    # pil2's `evals` section: the committed columns opened at the OOD point.
-    # None when the DEEP slot is QuotientEchoStage (no openings to send).
-    evals: Array | None
-    fri: FriProof
-    final_pol: Array
-    nonce: int
-    query_positions: np.ndarray
-    trace_openings: list[list[Array]]
-    quotient_openings: list[list[Array]]
-    fri_openings: list[list[Array]]
+    def _fri_input(
+        self, witness: OpeningWitness, transcript: Transcript
+    ) -> tuple[Array, Array | None]:
+        return witness.quotient.codeword, None
 
 
-def prove_inner_chain(
-    eval_fn: Callable[[Array], Array],
-    *,
-    n_constraints: int,
-    n_bits: int,
-    blowup_bits: int = 1,
-    arity: int = 2,
-    fold_bits: int = 3,
-    final_bits: int = 5,
-    pow_bits: int = 16,
-    n_queries: int = 64,
-    deep_stage: ProverRound | None = None,
-) -> list[ProverRound]:
-    """The ZisK inner-proof stage list, run by `zorch.round.prove_rounds`. One
-    definition for the stage wiring so the benchmark, the byte-match runnables,
-    and proof assembly cannot drift on it.
+class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof]):
+    """The ZisK inner prover: the trace commit, then two Stages.
 
-    `n_bits` sizes the base trace domain; the trace itself rides the bridge.
-    `deep_stage` fills the DEEP slot; it defaults to the real `DeepStage` — pass
-    `QuotientEchoStage()` for the trivial fallback that skips the OOD opening."""
-    n_bits_ext = n_bits + blowup_bits
-    return [
-        TraceCommitStage(blowup=1 << blowup_bits, arity=arity),
-        QuotientStage(
+    A composite role, so the wiring has one definition and the benchmark, the
+    byte-match runnables, and proof assembly cannot drift on it. The commit
+    binds the prover to one fixed trace before any challenge exists —
+    committing is not a claim reduction, so it is not a stage; its root is
+    absorbed here, where the Fiat-Shamir binding has one visible home. The
+    quotient and opening Stages then reduce the statement to the trivial
+    claim, each one's reduced claim the next one's source claim, with the
+    committed trees' prover data crossing between them as `OpeningWitness` —
+    it belongs to no claim.
+
+    `echo_deep` swaps the opening for `EchoOpening`, the trivial fallback that
+    skips the OOD opening."""
+
+    def __init__(
+        self,
+        eval_fn: Callable[[Array], Array],
+        *,
+        n_constraints: int,
+        n_bits: int,
+        blowup_bits: int = 1,
+        arity: int = 2,
+        fold_bits: int = 3,
+        final_bits: int = 5,
+        pow_bits: int = 16,
+        n_queries: int = 64,
+        echo_deep: bool = False,
+    ) -> None:
+        self._blowup = 1 << blowup_bits
+        self._arity = arity
+        self.quotient = QuotientProver(
             eval_fn,
             n_constraints=n_constraints,
             n_bits=n_bits,
             blowup_bits=blowup_bits,
             arity=arity,
-        ),
-        deep_stage or DeepStage(n_bits=n_bits, blowup_bits=blowup_bits),
-        FriStage(steps=_fold_steps(n_bits_ext, fold_bits, final_bits), arity=arity),
-        QueryStage(
-            n_bits_ext=n_bits_ext,
+        )
+        opening_cls = EchoOpening if echo_deep else OpeningProver
+        self.opening = opening_cls(
+            n_bits=n_bits,
+            blowup_bits=blowup_bits,
+            steps=_fold_steps(n_bits + blowup_bits, fold_bits, final_bits),
             arity=arity,
             pow_bits=pow_bits,
             n_queries=n_queries,
-        ),
-    ]
+        )
+
+    def prove(
+        self,
+        claim: InnerClaim,
+        witness: InnerWitness,
+        transcript: Transcript,
+    ) -> ProveResult[TrivialClaim, InnerProof]:
+        # The commit half: bind the trace root before QuotientProver squeezes
+        # alpha off the same transcript — Fiat-Shamir soundness rests on the
+        # commitment preceding every challenge.
+        commitment = commit_trace(witness.trace, blowup=self._blowup, arity=self._arity)
+        transcript.put(commitment.root)
+        quotient = self.quotient.prove(claim, commitment, transcript)
+        opening = self.opening.prove(
+            quotient.reduced_claim,
+            OpeningWitness(commitment, quotient.reduction_proof),
+            quotient.transcript,
+        )
+        proof = opening.reduction_proof
+        return ProveResult(
+            TrivialClaim(),
+            InnerProof(
+                trace_root=commitment.root,
+                quotient_root=quotient.reduction_proof.root,
+                evals=proof.evals,
+                fri=proof.fri,
+                final_pol=proof.fri.final_pol,
+                nonce=proof.nonce,
+                query_positions=proof.positions,
+                trace_openings=proof.trace_openings,
+                quotient_openings=proof.quotient_openings,
+                fri_openings=proof.fri_openings,
+            ),
+            opening.transcript,
+        )
 
 
 def prove_inner(
@@ -435,46 +472,35 @@ def prove_inner(
     final_bits: int = 5,
     pow_bits: int = 16,
     n_queries: int = 64,
-    deep_stage: ProverRound | None = None,
+    echo_deep: bool = False,
     transcript: Transcript | None = None,
 ) -> InnerProof:
-    """Run `prove_inner_chain` over one shared `Transcript` and assemble the proof.
+    """Run `InnerProver` over one shared `Transcript` and return the proof.
 
     `trace` is the `(2^n_bits, n_cols)` base-field evaluation matrix; `eval_fn`
     produces the `n_constraints` constraints in its trailing axis (pil2's cExp
-    order). `deep_stage` fills the DEEP slot — default real `DeepStage`, or
-    `QuotientEchoStage()` for the trivial fallback."""
+    order). `echo_deep` swaps the opening for the trivial `EchoOpening`
+    fallback that skips the OOD opening."""
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D (rows, cols), got ndim={trace.ndim}")
     n = trace.shape[0]
     if n & (n - 1):
         raise ValueError(f"trace height must be a power of two, got {n}")
+    n_bits = n.bit_length() - 1
 
-    chain = prove_inner_chain(
+    prover = InnerProver(
         eval_fn,
         n_constraints=n_constraints,
-        n_bits=n.bit_length() - 1,
+        n_bits=n_bits,
         blowup_bits=blowup_bits,
         arity=arity,
         fold_bits=fold_bits,
         final_bits=final_bits,
         pow_bits=pow_bits,
         n_queries=n_queries,
-        deep_stage=deep_stage,
+        echo_deep=echo_deep,
     )
-    bridge, _, _ = prove_rounds(
-        chain, InnerBridge(trace=trace), transcript or Transcript()
+    result = prover.prove(
+        InnerClaim(n_bits), InnerWitness(trace), transcript or Transcript()
     )
-
-    return InnerProof(
-        trace_root=bridge.trace_commit.root,
-        quotient_root=bridge.quotient.root,
-        evals=bridge.deep_evals,
-        fri=bridge.fri,
-        final_pol=bridge.fri.final_pol,
-        nonce=bridge.queries.nonce,
-        query_positions=bridge.queries.positions,
-        trace_openings=bridge.queries.trace,
-        quotient_openings=bridge.queries.quotient,
-        fri_openings=bridge.queries.fri,
-    )
+    return result.reduction_proof
