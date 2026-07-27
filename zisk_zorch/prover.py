@@ -127,8 +127,10 @@ class InnerBridge:
 
 class TraceCommitStage:
     """pil2 `extendAndMerkelize`: LDE the trace onto the coset and Merkle-commit
-    it. Fiat-Shamir requires the root be absorbed here, before `QuotientStage`
-    squeezes alpha off the same transcript. The message is the trace root."""
+    it. Reads `bridge.trace`; writes `bridge.trace_commit`, the extended trace
+    plus digest layers every later stage evaluates or opens against. Fiat-Shamir
+    requires the root be absorbed here, before `QuotientStage` squeezes alpha off
+    the same transcript. The message is the trace root."""
 
     def __init__(self, *, blowup: int, arity: int) -> None:
         self._blowup = blowup
@@ -144,7 +146,9 @@ class TraceCommitStage:
 
 class QuotientStage:
     """pil2 `calculateQuotientPolynomial`: squeeze alpha, fold the constraints by
-    its powers, divide by the zerofier, commit `Q`. Cubic rows commit as 3
+    its powers, divide by the zerofier, commit `Q`. Reads the extended trace off
+    `bridge.trace_commit` (constraints must be evaluated on the coset, where the
+    zerofier is invertible); writes `bridge.quotient`. Cubic rows commit as 3
     contiguous base limbs (pil2 `FIELD_EXTENSION` layout), so the leaf hash
     matches the FRI seam. The message is the quotient root."""
 
@@ -191,10 +195,13 @@ class QuotientStage:
 
 
 class DeepStage:
-    """pil2 `calculateFRIPolynomial`: build the codeword FRI folds. Owns its
+    """pil2 `calculateFRIPolynomial`: build the codeword FRI folds — the DEEP
+    batching of every committed column's out-of-domain quotient. Owns its
     out-of-domain squeeze, so it sits between the quotient's root and the FRI
-    betas on this transcript, reading the committed trace and quotient off the
-    bridge. The message is the codeword."""
+    betas on this transcript. Reads the committed trace and quotient off the
+    bridge; writes `bridge.fri_pol` (FriStage's input) and `bridge.deep_evals`
+    (the OOD column openings the proof transmits so the verifier can rebuild
+    the same batching). The message is the codeword."""
 
     def __init__(
         self,
@@ -224,11 +231,11 @@ class DeepStage:
 
 
 class QuotientEchoStage:
-    """Placeholder DEEP: fold FRI over the quotient codeword itself, skipping the
-    out-of-domain opening. The quotient is a valid cubic FRI input, so this drives
-    the spine end to end for wiring/shape tests — but it is NOT pil2's DEEP
-    batching (no trace openings), so a proof built with it does not byte-match
-    pil2. Not for conformance."""
+    """Placeholder DEEP: echo `bridge.quotient.codeword` into `bridge.fri_pol`,
+    skipping the out-of-domain opening (`bridge.deep_evals` stays None). The
+    quotient is a valid cubic FRI input, so this drives the spine end to end for
+    wiring/shape tests — but it is NOT pil2's DEEP batching (no trace openings),
+    so a proof built with it does not byte-match pil2. Not for conformance."""
 
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
@@ -241,9 +248,11 @@ class QuotientEchoStage:
 
 class FriStage:
     """pil2 `FRI::fold`: fold the codeword down the layer chain, committing each
-    layer. Its inner rounds are the layer folds, whose betas chain off the same
-    transcript — so its state carries the absorbed trace and quotient roots into
-    every layer challenge. The message is the fold output."""
+    layer. Reads `bridge.fri_pol`; writes `bridge.fri`, the layer roots, trees,
+    and final polynomial QueryStage opens. Its inner rounds are the layer folds,
+    whose betas chain off the same transcript — so its state carries the absorbed
+    trace and quotient roots into every layer challenge. The message is the fold
+    output."""
 
     def __init__(self, *, steps: list[int], arity: int) -> None:
         self._steps = steps
@@ -262,8 +271,10 @@ class FriStage:
 
 class QueryStage:
     """pil2 `proveQueries`: absorb the final polynomial, grind, squeeze the query
-    positions, and open every committed tree at each. The message is the
-    per-tree openings."""
+    positions, and open every committed tree — the trace and quotient commitments
+    plus each FRI layer — at each. Reads `bridge.trace_commit`, `bridge.quotient`,
+    and `bridge.fri`; writes `bridge.queries`, which proof assembly unpacks. The
+    message is the per-tree openings."""
 
     def __init__(
         self, *, n_bits_ext: int, arity: int, pow_bits: int, n_queries: int
@@ -286,6 +297,10 @@ class QueryStage:
             n_queries=self._n_queries,
             n_bits_ext=self._n_bits_ext,
         )
+        # Every challenge is squeezed by now and openings never re-enter the
+        # transcript, so the per-query Merkle walks may batch freely: one
+        # vmapped kernel per tree instead of a dispatch per query, with no
+        # effect on the byte stream.
         ext_mask = (1 << self._n_bits_ext) - 1
         idx_ext = fnp.asarray(np.asarray(positions)) & ext_mask
         trace_batched = frx.vmap(
