@@ -31,7 +31,13 @@ import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 
-from zorch.pcs.deep import deep_composition, open_columns
+from zorch.pcs.deep import (
+    deep_composition,
+    deep_finish,
+    deep_numerator_block,
+    open_columns,
+)
+from zorch.poly.univariate import powers
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.evals.lev import compute_lev
@@ -42,6 +48,39 @@ from zisk_zorch.quotient.zerofier import _coset_points, _root
 # tuple: static args are hashed.
 _open_columns = frx.jit(open_columns, static_argnames=("opening_pos", "stride"))
 _deep_composition = frx.jit(deep_composition, static_argnames=("opening_pos",))
+
+# ~32-column blocks: the fused composition kernel is register-pressure-bound
+# (zorch deep_numerator_block docstring has the measurements); slicing happens
+# inside the jit so no eager copy is paid per block.
+_BLOCK = 32
+
+
+def _numerator_block(cols, evals, vf_pows, lo, hi):
+    return deep_numerator_block(cols[:, lo:hi], evals[lo:hi], vf_pows[lo:hi])
+
+
+def _tail_block(cols, evals, vf_pows, lo):
+    return deep_numerator_block(cols, evals[lo:], vf_pows[lo:])
+
+
+_numerator_block = frx.jit(_numerator_block, static_argnames=("lo", "hi"))
+_tail_block = frx.jit(_tail_block, static_argnames=("lo",))
+_deep_finish = frx.jit(deep_finish)
+
+
+def _blocked_composition(base_cols, cubic_cols, evals, xi, vf, domain):
+    """Single-opening DEEP quotient via zorch's blocked protocol — byte-equal
+    to `_deep_composition` (exact field addition), kernels split on purpose."""
+    b, m = base_cols.shape[1], base_cols.shape[1] + cubic_cols.shape[1]
+    vf_pows = powers(vf, m)
+    nblk = max(1, round(b / _BLOCK))
+    bounds = [round(i * b / nblk) for i in range(nblk + 1)]
+    parts = [
+        _numerator_block(base_cols, evals, vf_pows, lo, hi)
+        for lo, hi in zip(bounds, bounds[1:])
+    ]
+    parts.append(_tail_block(cubic_cols, evals, vf_pows, b))
+    return _deep_finish(parts, domain, xi)
 
 
 def _ood_points(z: Array, opening_points: Sequence[int], n_bits: int) -> Array:
@@ -95,5 +134,13 @@ def deep_fri_polynomial(
     vf = join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(())
     xis = _ood_points(z, opening_points, n_bits)
     domain = _coset_points(n_bits, blowup_bits)  # (N_ext,) base — DEEP divides on it
-    f = _deep_composition(base_cols, cubic_cols, evals, xis, opening_pos, vf, domain)
+    if len(set(opening_pos)) == 1:
+        xi = xis[opening_pos[0]]
+        f = _blocked_composition(base_cols, cubic_cols, evals, xi, vf, domain)
+    else:
+        # Multi-point batching keeps the fused form: the blocked split is only
+        # written (and only measured) for one opening group.
+        f = _deep_composition(
+            base_cols, cubic_cols, evals, xis, opening_pos, vf, domain
+        )
     return f, evals
