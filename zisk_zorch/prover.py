@@ -130,7 +130,11 @@ class TraceCommitStage:
     it. Reads `bridge.trace`; writes `bridge.trace_commit`, the extended trace
     plus digest layers every later stage evaluates or opens against. Fiat-Shamir
     requires the root be absorbed here, before `QuotientStage` squeezes alpha off
-    the same transcript. The message is the trace root."""
+    the same transcript. The message is the trace root.
+
+    What it proves: nothing yet — it BINDS. Absorbing the root before any
+    challenge exists commits the prover to one fixed trace; every later stage's
+    claim is about this trace and no other."""
 
     def __init__(self, *, blowup: int, arity: int) -> None:
         self._blowup = blowup
@@ -150,7 +154,12 @@ class QuotientStage:
     `bridge.trace_commit` (constraints must be evaluated on the coset, where the
     zerofier is invertible); writes `bridge.quotient`. Cubic rows commit as 3
     contiguous base limbs (pil2 `FIELD_EXTENSION` layout), so the leaf hash
-    matches the FRI seam. The message is the quotient root."""
+    matches the FRI seam. The message is the quotient root.
+
+    What it proves: every constraint evaluates to zero on every trace row. The
+    division by the zerofier is exact only when the alpha-folded constraints
+    vanish on the whole base domain, so a single violated row makes `Q` a
+    non-polynomial — a codeword FRI's low-degree test then rejects."""
 
     def __init__(
         self,
@@ -201,7 +210,12 @@ class DeepStage:
     betas on this transcript. Reads the committed trace and quotient off the
     bridge; writes `bridge.fri_pol` (FriStage's input) and `bridge.deep_evals`
     (the OOD column openings the proof transmits so the verifier can rebuild
-    the same batching). The message is the codeword."""
+    the same batching). The message is the codeword.
+
+    What it proves: the transmitted OOD openings are the committed columns'
+    true values. Each DEEP term `(f(x) - f(z)) / (x - z)` is a polynomial only
+    if the claimed `f(z)` is genuine, so batching the terms reduces every
+    opening's honesty to one low-degree claim FRI can test."""
 
     def __init__(
         self,
@@ -235,7 +249,10 @@ class QuotientEchoStage:
     skipping the out-of-domain opening (`bridge.deep_evals` stays None). The
     quotient is a valid cubic FRI input, so this drives the spine end to end for
     wiring/shape tests — but it is NOT pil2's DEEP batching (no trace openings),
-    so a proof built with it does not byte-match pil2. Not for conformance."""
+    so a proof built with it does not byte-match pil2. Not for conformance.
+
+    What it proves: nothing about the trace — with no OOD openings, the
+    quotient's consistency with the committed trace is never tested."""
 
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
@@ -252,7 +269,12 @@ class FriStage:
     and final polynomial QueryStage opens. Its inner rounds are the layer folds,
     whose betas chain off the same transcript — so its state carries the absorbed
     trace and quotient roots into every layer challenge. The message is the fold
-    output."""
+    output.
+
+    What it proves: the DEEP codeword is (close to) a low-degree polynomial —
+    the claim every earlier stage reduced to. Each beta-fold cuts the degree by
+    `2^fold_bits` while preserving low-degreeness iff it held before, until the
+    final polynomial is small enough to transmit and check directly."""
 
     def __init__(self, *, steps: list[int], arity: int) -> None:
         self._steps = steps
@@ -274,7 +296,13 @@ class QueryStage:
     positions, and open every committed tree — the trace and quotient commitments
     plus each FRI layer — at each. Reads `bridge.trace_commit`, `bridge.quotient`,
     and `bridge.fri`; writes `bridge.queries`, which proof assembly unpacks. The
-    message is the per-tree openings."""
+    message is the per-tree openings.
+
+    What it proves: the fold chain was computed honestly. Every stage so far
+    exchanged Merkle roots, not data; the query openings let the verifier
+    re-derive each fold at `n_queries` random positions and check it against
+    the committed layers, back to the trace and quotient leaves themselves.
+    Grinding (`pow_bits`) makes retrying for favorable positions costly."""
 
     def __init__(
         self, *, n_bits_ext: int, arity: int, pow_bits: int, n_queries: int
