@@ -21,7 +21,7 @@ from zorch.poly.univariate import powers
 
 from zorch.pcs.deep import deep_composition
 
-from zisk_zorch.deep.fri_polynomial import _ood_points
+from zisk_zorch.deep.fri_polynomial import _blocked_composition, _ood_points
 from zisk_zorch.fri.fold import intt
 from zorch.utils.field import split_coeffs
 from zisk_zorch.quotient.zerofier import _coset_points
@@ -93,6 +93,31 @@ class DeepCompositionTest(absltest.TestCase):
         return deep_composition(
             self.base_cols, self.cubic_cols, evals, self.xis, self.opening_pos,
             self.vf, domain,
+        )
+
+    def test_blocked_uses_pil2_power_assignment(self):
+        # The wired blocked path batches with pil2's genProof convention:
+        # column 0 carries the HIGHEST vf power (Horner accumulation), the
+        # last column power 0. Independent fnp construction; exact field
+        # arithmetic makes the equality byte-level.
+        domain = _coset_points(_N_BITS, _BLOWUP_BITS)
+        got = _blocked_composition(
+            self.base_cols, self.cubic_cols, self.evals, self.xis[0],
+            self.vf, domain,
+        )
+        vf_pows = powers(self.vf, _N_COLS)[::-1]
+        want = None
+        for j in range(_N_COLS):
+            col = (
+                self.base_cols[:, j]
+                if j < _N_BASE
+                else self.cubic_cols[:, j - _N_BASE]
+            )
+            term = vf_pows[j] * (col - self.evals[j])
+            want = term if want is None else want + term
+        want = want / (domain - self.xis[0])
+        self.assertTrue(
+            bool(fnp.all(got == want)), "pil2 descending assignment mismatch"
         )
 
     def test_correct_opening_is_low_degree(self):

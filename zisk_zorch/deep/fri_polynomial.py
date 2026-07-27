@@ -69,10 +69,18 @@ _deep_finish = frx.jit(deep_finish)
 
 
 def _blocked_composition(base_cols, cubic_cols, evals, xi, vf, domain):
-    """Single-opening DEEP quotient via zorch's blocked protocol — byte-equal
-    to `_deep_composition` (exact field addition), kernels split on purpose."""
+    """Single-opening DEEP quotient via zorch's blocked protocol, with pil2's
+    challenge-power assignment: `genProof`'s `computeFRIExpression` Horner-
+    accumulates the batch, so column 0 carries the HIGHEST power of `vf` and
+    the last column power 0 — the reverse of `deep_composition`'s ascending
+    `vf^m`. Only the per-column scalar constants change (the power vector is
+    reversed); the per-row kernels are identical, and the assignment is what
+    `verify_fri_polynomial` byte-matched against the real pil2 CUDA kernel.
+    A real proving key's `friExp` will make this order data-driven
+    (`docs/architecture.md`); until then the wired all-at-`z` flow is exactly
+    the reversed range."""
     b, m = base_cols.shape[1], base_cols.shape[1] + cubic_cols.shape[1]
-    vf_pows = powers(vf, m)
+    vf_pows = powers(vf, m)[::-1]
     nblk = max(1, round(b / _BLOCK))
     bounds = [round(i * b / nblk) for i in range(nblk + 1)]
     parts = [
@@ -138,8 +146,11 @@ def deep_fri_polynomial(
         xi = xis[opening_pos[0]]
         f = _blocked_composition(base_cols, cubic_cols, evals, xi, vf, domain)
     else:
-        # Multi-point batching keeps the fused form: the blocked split is only
-        # written (and only measured) for one opening group.
+        # Multi-point batching keeps the fused form AND zorch's ascending
+        # powers: the blocked split and pil2's reversed power assignment are
+        # only written (and only byte-matched) for one opening group — wiring
+        # wrapped openings needs the proving key's friExp order, plus pil2's
+        # vf1 Horner across groups.
         f = _deep_composition(
             base_cols, cubic_cols, evals, xis, opening_pos, vf, domain
         )
