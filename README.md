@@ -49,15 +49,6 @@ The extra index carries the CUDA plugin wheels: `frx-cuda12-pjrt` is over PyPI's
 per-file limit, and `frx-cuda12-plugin` is not published there. It is not needed
 for the CPU tier.
 
-The `bench` extra also needs it, since `zkbench` is not on PyPI either:
-
-```sh
-pip install 'zisk-zorch[bench]' \
-    --extra-index-url https://fractalyze.github.io/pypi/simple/
-```
-
-That is what `python -m zisk_zorch.bench_inner_proof` requires.
-
 ### Verify
 
 ```sh
