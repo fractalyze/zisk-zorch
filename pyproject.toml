@@ -66,18 +66,16 @@ dependencies = [
     "rw-constraints>=0.1.0",
 ]
 
-# zkbench is not on PyPI at all — only on the Fractalyze index — so as a hard
-# dependency it would break `pip install zisk-zorch` outright. (requirements.in
-# reaches it by release-asset URL because that index page was missing when the
-# pin was written; it serves zkbench again, so an extra resolves.) It is not
-# dev-only either: the driver that
-# imports it, zisk_zorch/bench_inner_proof.py, sits inside the shipped package
-# rather than under a benchmark/ directory, so an extra is what makes that one
-# module usable from an install. The extra needs the Fractalyze index:
-#   pip install "zisk-zorch[bench]" \
-#     --extra-index-url https://fractalyze.github.io/pypi/simple/
+# An extra rather than a hard dependency because only one shipped module needs
+# it: zisk_zorch/bench_inner_proof.py imports zkbench at top level, and it sits
+# inside the package rather than under a benchmark/ directory, so discovery
+# ships it either way. Making it a hard dependency would charge every consumer
+# for a benchmark harness; leaving it out entirely would ship a module that
+# cannot run. requirements.in still reaches zkbench by release-asset URL, which
+# a wheel cannot do — PyPI rejects direct references — but a plain specifier now
+# resolves, so this needs no index beyond PyPI.
 [project.optional-dependencies]
-bench = ["zkbench>=0.5.0"]
+bench = ["zkbench>=0.6.2"]
 
 [project.urls]
 Repository = "https://github.com/fractalyze/zisk-zorch"
