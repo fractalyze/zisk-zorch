@@ -46,7 +46,7 @@ def _eval_fn(trace: fnp.ndarray) -> fnp.ndarray:
     return fnp.stack(cols, axis=-1)
 
 
-def _prove(seed: int = 0, echo_deep: bool = True):
+def _prove(seed: int = 0, echo_deep: bool = True, jit: bool = True):
     return prove_inner(
         _trace(seed),
         _eval_fn,
@@ -58,6 +58,7 @@ def _prove(seed: int = 0, echo_deep: bool = True):
         pow_bits=_POW_BITS,
         n_queries=_N_QUERIES,
         echo_deep=echo_deep,
+        jit=jit,
     )
 
 
@@ -125,6 +126,24 @@ class ProveInnerTest(absltest.TestCase):
         proof = _prove(echo_deep=False)
         self.assertEqual(proof.final_pol.shape, (1 << _FINAL_BITS,))
         self.assertEqual(len(proof.query_positions), _N_QUERIES)
+
+    def test_jit_zone_matches_eager_bytes(self):
+        # The DEEP-leg jit zone threads the transcript through the boundary as
+        # a pytree; the eager path hops between the inner zones. The whole
+        # Fiat-Shamir stream must agree exactly — one diverged absorb would
+        # move every later challenge.
+        a = _prove(echo_deep=False, jit=True)
+        b = _prove(echo_deep=False, jit=False)
+        np.testing.assert_array_equal(
+            np.asarray(a.trace_root), np.asarray(b.trace_root)
+        )
+        np.testing.assert_array_equal(
+            np.asarray(a.quotient_root), np.asarray(b.quotient_root)
+        )
+        np.testing.assert_array_equal(np.asarray(a.evals), np.asarray(b.evals))
+        np.testing.assert_array_equal(np.asarray(a.final_pol), np.asarray(b.final_pol))
+        np.testing.assert_array_equal(a.query_positions, b.query_positions)
+        self.assertEqual(a.nonce, b.nonce)
 
 
 if __name__ == "__main__":

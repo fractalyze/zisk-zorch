@@ -19,14 +19,18 @@ uses to dodge the root reindex). `g` carries a nonzero extension part for a real
 extension challenge, so `g * w^-j != 1` and the denominator never vanishes.
 
 Output is `(N, n_open)` cubic, entry `[k][i]` the k-th coefficient for opening
-point `i` — pil2's row-major `LEv[k*nOpen + i]` layout. Host-driven and
-un-jitted like the rest of the proof orchestration.
+point `i` — pil2's row-major `LEv[k*nOpen + i]` layout. Runs eagerly by
+default; inside a jit zone it takes its field constants as arguments
+(`LevConstants` — frx miscompiles in-trace field constants).
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp#L243-L279
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
@@ -61,31 +65,77 @@ _CUBIC_ONE = fnp.array(
 )
 
 
-def compute_lev(xi_challenge: Array, opening_points: list[int], n_bits: int) -> Array:
+@dataclass(frozen=True)
+class LevConstants:
+    """`compute_lev`'s field constants, materialized in an eager prologue.
+
+    A jit zone wrapping the LEv arithmetic must receive these as ARGUMENTS:
+    frx miscompiles field constants embedded inside a traced region — the
+    `_CUBIC_ONE` family surfaces as an i64 type-inference failure, an
+    `EmitConstant` GOLDILOCKSX3→F64 CHECK crash, or silently wrong values
+    depending on the surrounding fusion. Every field here depends only on
+    `(opening_points, n_bits)`, so the prologue is one-time per shape."""
+
+    one: Array  # cubic 1
+    inv_n: Array  # N^-1, base
+    wj_inv: Array  # (N,) base — w^-j per-coefficient evaluation points
+    g_shifts: Array  # (P,) base — w^p / coset_shift per opening point
+
+
+frx.tree_util.register_dataclass(
+    LevConstants,
+    data_fields=["one", "inv_n", "wj_inv", "g_shifts"],
+    meta_fields=[],
+)
+
+
+def lev_constants(opening_points: list[int], n_bits: int) -> LevConstants:
+    """The eager prologue: every field constant the LEv arithmetic reads."""
+    n = 1 << n_bits
+    w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
+    shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
+    return LevConstants(
+        one=_CUBIC_ONE,
+        inv_n=fnp.array(_ONE / np.array(n, dtype=F)),
+        # w^-j over the base domain — the per-coefficient evaluation points.
+        wj_inv=powers(fnp.array(_fpow(w, -1)), n),
+        g_shifts=fnp.stack(
+            [fnp.array(_fpow(w, p) * shift_inv) for p in opening_points]
+        ),
+    )
+
+
+def compute_lev(
+    xi_challenge: Array,
+    opening_points: list[int],
+    n_bits: int,
+    *,
+    consts: LevConstants | None = None,
+) -> Array:
     """The `(N, len(opening_points))` cubic LEv coefficient matrix for opening at
-    the cubic `xi_challenge`, `N = 2^n_bits` the base-domain size."""
+    the cubic `xi_challenge`, `N = 2^n_bits` the base-domain size.
+
+    `consts` is the eager-prologue constant pack, built here when omitted; a
+    caller tracing this inside a jit zone MUST build it outside and pass it
+    in (see `LevConstants`)."""
     if not 0 <= n_bits <= 32:
         raise ValueError(f"n_bits must be in [0, 32], got {n_bits}")
     if not opening_points:
         raise ValueError("opening_points must be non-empty")
-
-    n = 1 << n_bits
-    one = _CUBIC_ONE
-    inv_n = _ONE / np.array(n, dtype=F)
-    w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
-    shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
-    # w^-j over the base domain — the per-coefficient evaluation points.
-    wj_inv = powers(fnp.array(_fpow(w, -1)), n)
+    if consts is None:
+        consts = lev_constants(opening_points, n_bits)
 
     cols = []
-    for p in opening_points:
-        g = xi_challenge * fnp.array(_fpow(w, p) * shift_inv)
+    for i in range(len(opening_points)):
+        g = xi_challenge * consts.g_shifts[i]
         # g^N by n_bits squarings: `fnp.power`'s integer exponent does not
         # lower for extension dtypes under jit, and N is a power of two.
         g_n = g
         for _ in range(n_bits):
             g_n = g_n * g_n
-        num = g_n - one
+        num = g_n - consts.one
         # c_j = N^-1 * (g^N - 1) / (g * w^-j - 1), vectorized over j.
-        cols.append(inv_n * num * (one / (g * wj_inv - one)))
+        cols.append(
+            num * (consts.one / (g * consts.wj_inv - consts.one)) * consts.inv_n
+        )
     return fnp.stack(cols, axis=1)

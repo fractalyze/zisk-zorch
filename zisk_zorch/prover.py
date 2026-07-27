@@ -50,10 +50,49 @@ from zorch.utils.field import join_coeffs, split_coeffs
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import TraceCommitment, commit_trace, merkle_tree
 from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
+from zisk_zorch.evals.lev import LevConstants, lev_constants
 from zisk_zorch.fri.prover import FriProof, prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.quotient.quotient import quotient_from_constraints
+from zisk_zorch.quotient.zerofier import _coset_points
 from zisk_zorch.transcript.transcript import Transcript
+
+
+@partial(frx.jit, static_argnames=("n_bits", "blowup_bits", "opening_points"))
+def _opening_deep_jit(
+    trace_ext: Array,
+    quotient: Array,
+    domain: Array,
+    lev_consts: LevConstants,
+    transcript: Transcript,
+    *,
+    n_bits: int,
+    blowup_bits: int,
+    opening_points: tuple[int, ...],
+) -> tuple[Transcript, Array, Array]:
+    """The DEEP leg — z squeeze, column openings, evals absorb, vf squeeze,
+    composition — as one shape-invariant ``@jit`` zone (the sp1-zorch
+    jagged-PCS pattern): the transcript rides through as a traced pytree, so
+    the whole leg is one compiled executable instead of eager transcript hops
+    between the inner `open_columns`/`deep_composition` zones. The compile
+    keys on the committed shapes and the static schedule alone.
+
+    `domain` and `lev_consts` arrive from the eager prologue: an in-trace
+    coset feeding the composition's cubic reciprocal is #67's NVPTX crash
+    trigger, and in-trace field constants are the frx miscompile
+    `LevConstants` documents. The zone RETURNS its transcript — the caller's
+    object is not advanced in place across the boundary."""
+    fri_pol, evals = deep_fri_polynomial(
+        trace_ext,
+        quotient,
+        transcript,
+        n_bits=n_bits,
+        blowup_bits=blowup_bits,
+        opening_points=opening_points,
+        domain=domain,
+        lev_consts=lev_consts,
+    )
+    return transcript, fri_pol, evals
 
 
 def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
@@ -306,6 +345,7 @@ class OpeningProver(
         pow_bits: int,
         n_queries: int,
         opening_points: Sequence[int] = (0,),
+        jit: bool = True,
     ) -> None:
         self._blowup_bits = blowup_bits
         self._steps = steps
@@ -313,6 +353,7 @@ class OpeningProver(
         self._pow_bits = pow_bits
         self._n_queries = n_queries
         self._opening_points = opening_points
+        self._jit = jit
 
     def commit(self, witness: InnerWitness) -> TraceCommitment:
         """Commit the trace — pil2 `extendAndMerkelize`: LDE onto the coset,
@@ -333,9 +374,29 @@ class OpeningProver(
         claim: QuotientBoundClaim,
         witness: OpeningWitness,
         transcript: Transcript,
-    ) -> tuple[Array, Array | None]:
-        """The codeword FRI folds and the OOD openings the proof transmits —
-        pil2 `calculateFRIPolynomial`. `EchoOpening` overrides this hook."""
+    ) -> tuple[Array, Array | None, Transcript]:
+        """The codeword FRI folds, the OOD openings the proof transmits, and
+        the advanced transcript — pil2 `calculateFRIPolynomial`. `EchoOpening`
+        overrides this hook.
+
+        Under the `jit` knob the leg runs as the `_opening_deep_jit` zone,
+        with the domain coset materialized here in the eager prologue (#67);
+        eagerly it is the same flow with transcript hops between the inner
+        zones. Byte-identical either way — exact field ops, same schedule."""
+        if self._jit:
+            domain = _coset_points(claim.inner.n_bits, self._blowup_bits)
+            consts = lev_constants(list(self._opening_points), claim.inner.n_bits)
+            transcript, fri_pol, evals = _opening_deep_jit(
+                witness.trace_commit.extended,
+                witness.quotient.codeword,
+                domain,
+                consts,
+                transcript,
+                n_bits=claim.inner.n_bits,
+                blowup_bits=self._blowup_bits,
+                opening_points=tuple(self._opening_points),
+            )
+            return fri_pol, evals, transcript
         fri_pol, evals = deep_fri_polynomial(
             witness.trace_commit.extended,
             witness.quotient.codeword,
@@ -344,7 +405,7 @@ class OpeningProver(
             blowup_bits=self._blowup_bits,
             opening_points=self._opening_points,
         )
-        return fri_pol, evals
+        return fri_pol, evals, transcript
 
     def prove(
         self,
@@ -352,7 +413,7 @@ class OpeningProver(
         witness: OpeningWitness,
         transcript: Transcript,
     ) -> ProveResult[TrivialClaim, OpeningProof]:
-        fri_pol, evals = self._fri_input(claim, witness, transcript)
+        fri_pol, evals, transcript = self._fri_input(claim, witness, transcript)
         fri = prove(fri_pol, self._steps, arity=self._arity, transcript=transcript)
         n_bits_ext = claim.inner.n_bits + self._blowup_bits
         positions, nonce = sample_query_positions(
@@ -416,8 +477,8 @@ class EchoOpening(OpeningProver):
         claim: QuotientBoundClaim,
         witness: OpeningWitness,
         transcript: Transcript,
-    ) -> tuple[Array, Array | None]:
-        return witness.quotient.codeword, None
+    ) -> tuple[Array, Array | None, Transcript]:
+        return witness.quotient.codeword, None, transcript
 
 
 class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof]):
@@ -447,6 +508,7 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
         pow_bits: int = 16,
         n_queries: int = 64,
         echo_deep: bool = False,
+        jit: bool = True,
     ) -> None:
         self.quotient = QuotientProver(eval_fn, blowup_bits=blowup_bits, arity=arity)
         opening_cls = EchoOpening if echo_deep else OpeningProver
@@ -456,6 +518,7 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
             arity=arity,
             pow_bits=pow_bits,
             n_queries=n_queries,
+            jit=jit,
         )
 
     def prove(
@@ -510,6 +573,7 @@ def prove_inner(
     pow_bits: int = 16,
     n_queries: int = 64,
     echo_deep: bool = False,
+    jit: bool = True,
     transcript: Transcript | None = None,
 ) -> InnerProof:
     """Run `InnerProver` over one shared `Transcript` and return the proof.
@@ -535,6 +599,7 @@ def prove_inner(
         pow_bits=pow_bits,
         n_queries=n_queries,
         echo_deep=echo_deep,
+        jit=jit,
     )
     claim = InnerClaim(
         n_bits=n_bits, n_cols=int(trace.shape[1]), n_constraints=n_constraints
