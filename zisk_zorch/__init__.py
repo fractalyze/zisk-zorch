@@ -5,4 +5,4 @@
 # to publish a tag that disagrees with it. Nothing rewrites this string at
 # release time — the repo has no dev-release.yml stamping timestamped
 # prereleases — so it is also exactly what an install reports.
-__version__ = "0.1.0"
+__version__ = "0.1.1"
