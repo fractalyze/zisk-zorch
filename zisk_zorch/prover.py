@@ -1,10 +1,11 @@
 """End-to-end inner-proof prover — the inner proof as composite Stage roles.
 
 `InnerProver` reduces the inner statement to the trivial claim over one duplex
-`Transcript`, the byte stream pil2-proofman's `genProof` drives: the trace
-commit binds the witness, then two `zorch.stage.ProverStage` roles — quotient,
-opening — each discharge the claim the one before produced, so what crosses a
-seam is a claim both roles derive rather than a shared mutable carry.
+`Transcript`, the byte stream pil2-proofman's `genProof` drives: the opening
+scheme's commit half binds the witness, then two `zorch.stage.ProverStage`
+roles — quotient, opening — each discharge the claim the one before produced,
+so what crosses a seam is a claim both roles derive rather than a shared
+mutable carry.
 
 - **Claim** — the statement a stage consumes and reduces (`InnerClaim`,
   `QuotientBoundClaim`, `zorch.stage.TrivialClaim`). Claims hold only what
@@ -193,6 +194,19 @@ class InnerProof:
     fri_openings: list[list[Array]]
 
 
+def bind_trace_commitment(transcript: Transcript, root: Array) -> Transcript:
+    """Bind the committed trace into the stream — pil2's stage-1 root absorb,
+    what sits between the opening scheme's commit half and the first squeeze.
+
+    A transcript-only schedule operation, so it is one shared function both
+    roles call rather than a stage: the prover and the verifier dual reach the
+    post-commit transcript state through this single definition, and an
+    ordering edit cannot land in one Fiat-Shamir stream and not the other.
+    """
+    transcript.put(root)
+    return transcript
+
+
 class QuotientProver(
     ProverStage[InnerClaim, TraceCommitment, QuotientBoundClaim, QuotientCommitment]
 ):
@@ -260,6 +274,10 @@ class OpeningProver(
     """pil2's whole opening — `calculateFRIPolynomial`, `FRI::fold`,
     `proveQueries` — as the terminal stage discharging a `QuotientBoundClaim`.
 
+    The two halves bracket the inner proof: `commit` binds the trace before
+    any challenge exists, `prove` is the open. Only the open reduces a claim,
+    so only the open is the Stage role; the commit is the scheme's other half.
+
     What it proves, in three internal steps whose seams are prover-data
     seams (each consumes a challenge the previous step squeezed and produces
     the next step's input, which is why they share one stage):
@@ -295,6 +313,20 @@ class OpeningProver(
         self._pow_bits = pow_bits
         self._n_queries = n_queries
         self._opening_points = opening_points
+
+    def commit(self, witness: InnerWitness) -> TraceCommitment:
+        """Commit the trace — pil2 `extendAndMerkelize`: LDE onto the coset,
+        Merkle-commit the rows. The commit half of the scheme whose open half
+        is `prove`; only the open reduces a claim, so only the open is the
+        Stage role, and `TraceCommitment` is what commit hands forward.
+
+        No transcript argument: committing is not a transcript operation. The
+        composite absorbs the returned root through `bind_trace_commitment`,
+        so the Fiat-Shamir binding has one visible home rather than hiding
+        inside the scheme."""
+        return commit_trace(
+            witness.trace, blowup=1 << self._blowup_bits, arity=self._arity
+        )
 
     def _fri_input(
         self,
@@ -392,13 +424,12 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
     """The ZisK inner prover: the trace commit, then two Stages.
 
     A composite role, so the wiring has one definition and the benchmark, the
-    byte-match runnables, and proof assembly cannot drift on it. The commit
-    binds the prover to one fixed trace before any challenge exists —
-    committing is not a claim reduction, so it is not a stage; its root is
-    absorbed here, where the Fiat-Shamir binding has one visible home. The
-    quotient and opening Stages then reduce the statement to the trivial
-    claim, each one's reduced claim the next one's source claim, with the
-    committed trees' prover data crossing between them as `OpeningWitness` —
+    byte-match runnables, and proof assembly cannot drift on it. The quotient
+    and opening Stages reduce the statement to the trivial claim, each one's
+    reduced claim the next one's source claim. They are bracketed by the
+    opening scheme's two halves: `opening.commit` binds the trace up front —
+    before any challenge exists — and `opening.prove` discharges the reduced
+    claim at the end, with the `TraceCommitment` held here in between because
     it belongs to no claim.
 
     `echo_deep` swaps the opening for `EchoOpening`, the trivial fallback that
@@ -417,8 +448,6 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
         n_queries: int = 64,
         echo_deep: bool = False,
     ) -> None:
-        self._blowup = 1 << blowup_bits
-        self._arity = arity
         self.quotient = QuotientProver(eval_fn, blowup_bits=blowup_bits, arity=arity)
         opening_cls = EchoOpening if echo_deep else OpeningProver
         self.opening = opening_cls(
@@ -442,11 +471,8 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
             1 << claim.n_bits,
             claim.n_cols,
         ), "claim's trace shape does not match the witness"
-        # The commit half: bind the trace root before QuotientProver squeezes
-        # alpha off the same transcript — Fiat-Shamir soundness rests on the
-        # commitment preceding every challenge.
-        commitment = commit_trace(witness.trace, blowup=self._blowup, arity=self._arity)
-        transcript.put(commitment.root)
+        commitment = self.opening.commit(witness)
+        transcript = bind_trace_commitment(transcript, commitment.root)
         quotient = self.quotient.prove(claim, commitment, transcript)
         opening = self.opening.prove(
             quotient.reduced_claim,

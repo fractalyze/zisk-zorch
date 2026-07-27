@@ -48,8 +48,9 @@ roots — the property the per-stage benchmarks cannot exercise.
 The pipeline phase → module map. Phases are pil2's `genProof` vocabulary (the
 grid [development.md](development.md)'s per-stage baseline measures), not
 `zorch.stage` Stages: the quotient phase is the one standalone Stage, DEEP/
-FRI/queries share the terminal `OpeningProver`, and the trace commit is the
-composite's bind.
+FRI/queries share the terminal `OpeningProver`, and the trace commit is
+`OpeningProver.commit` — the opening scheme's other half, bound by the
+composite through `bind_trace_commitment`.
 
 | Phase | pil2 name | What it does | Module | Golden |
 |---|---|---|---|---|
