@@ -30,7 +30,6 @@ import frx
 import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
-
 from zorch.pcs.deep import deep_composition, open_columns
 from zorch.utils.field import join_coeffs, split_coeffs
 

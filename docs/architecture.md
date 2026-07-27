@@ -51,4 +51,3 @@ Each stage's pil2 conventions — the Poseidon2 M4 choice, the NTT domain order,
 the linear-hash chaining, the transcript's buffer discipline, the opening layout,
 the α-power order — live in the module docstring of the code that implements
 them, per [conventions.md](conventions.md).
-

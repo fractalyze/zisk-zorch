@@ -26,9 +26,7 @@ def _cases() -> list[dict]:
     # fold-PCS query layout); a stage-1 commit always has 2^nBitsExt rows, so
     # pil2's padded binary case is unreachable on this path. Arity 3/4 still
     # pin the padding.
-    return [
-        c for c in cases if c["arity"] != 2 or not c["height"] & (c["height"] - 1)
-    ]
+    return [c for c in cases if c["arity"] != 2 or not c["height"] & (c["height"] - 1)]
 
 
 class GroupProofTest(absltest.TestCase):

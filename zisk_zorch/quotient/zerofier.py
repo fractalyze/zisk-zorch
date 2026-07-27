@@ -28,7 +28,6 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
-
 from zorch.poly.univariate import powers
 
 # pil2's coset shift and the 2^32-order generator `Goldilocks::W[32]`, as field

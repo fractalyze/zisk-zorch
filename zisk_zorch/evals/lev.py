@@ -32,7 +32,6 @@ import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-
 from zorch.poly.univariate import powers
 
 # The LDE coset generator and pil2's 2^32-order generator `Goldilocks::W[32]`

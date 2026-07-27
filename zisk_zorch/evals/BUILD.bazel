@@ -22,7 +22,7 @@ py_test(
     name = "lev_test",
     size = "medium",
     srcs = ["lev_test.py"],
-    data = glob(["testdata/golden/compute_lev.json"]),
+    data = ["testdata/golden/compute_lev.json"],
     deps = [
         ":lev",
         "//zisk_zorch:golden",

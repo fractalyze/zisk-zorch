@@ -49,13 +49,13 @@ import numpy as np
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zkbench import BenchmarkConfig, BenchmarkOp, FrxBenchmark, compute_hash
+from zorch.testkit.random_field import rand_ext_field, rand_field
 
 from zisk_zorch.commit.trace_commit import extend, merkle_tree
 from zisk_zorch.fri.prover import prove
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
 from zisk_zorch.transcript.transcript import Transcript
-from zorch.testkit.random_field import rand_ext_field, rand_field
 
 _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
 
@@ -126,7 +126,9 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
 def _first_array(result: object) -> frx.Array:
     """The first device array in a result (an op returns an array, a tuple, or a
     pytree commitment); hashing one representative array pins reproducibility."""
-    leaves = [leaf for leaf in frx.tree_util.tree_leaves(result) if hasattr(leaf, "shape")]
+    leaves = [
+        leaf for leaf in frx.tree_util.tree_leaves(result) if hasattr(leaf, "shape")
+    ]
     if not leaves:
         raise TypeError(f"no array leaf to hash in {type(result)}")
     return leaves[0]
@@ -152,20 +154,26 @@ class InnerProofBenchmark(FrxBenchmark):
 
     def add_custom_args(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "--n_bits", type=int, action="append",
+            "--n_bits",
+            type=int,
+            action="append",
             help="log2 base trace height N; repeat to sweep (default 20).",
         )
         parser.add_argument("--n_cols", type=int, default=64)
         parser.add_argument("--blowup_bits", type=int, default=1)
         parser.add_argument(
-            "--arity", type=int, default=2,
+            "--arity",
+            type=int,
+            default=2,
             help="Merkle arity (2/3/4 -> Poseidon2 8/12/16); arity>=3 hits the "
             "merkle_commit power-of-two leaf-layer limit at scale, so default 2.",
         )
         parser.add_argument("--n_constraints", type=int, default=64)
         parser.add_argument("--degree", type=int, default=3)
         parser.add_argument(
-            "--chip", type=str, default=None,
+            "--chip",
+            type=str,
+            default=None,
             help="quotient stage: fold a real rw_constraints ZisK AIR's "
             "eval_constraints (e.g. main/arith/binary) instead of the proxy. "
             "Forces JAX x64; use with --stages=quotient alone.",
@@ -176,15 +184,21 @@ class InnerProofBenchmark(FrxBenchmark):
         # Drop-2-to-0 is a schedule no ZisK config uses — it adds tiny tail rounds
         # that over-state the per-round fold/commit compile the fri stage measures.
         parser.add_argument(
-            "--fold_bits", type=int, default=3,
+            "--fold_bits",
+            type=int,
+            default=3,
             help="bits folded per FRI layer (default 3 = production factor-8 drop).",
         )
         parser.add_argument(
-            "--final_bits", type=int, default=5,
+            "--final_bits",
+            type=int,
+            default=5,
             help="log2 size of the final FRI polynomial (default 5, production).",
         )
         parser.add_argument(
-            "--stages", type=str, default=",".join(_STAGES),
+            "--stages",
+            type=str,
+            default=",".join(_STAGES),
             help=f"comma list, subset of {_STAGES}.",
         )
 
@@ -210,8 +224,14 @@ class InnerProofBenchmark(FrxBenchmark):
         n_ext = n * blowup
         meta = {"n_bits": n_bits, "n_cols": args.n_cols, "arity": args.arity}
 
-        def op(name: str, fn: Callable, arg, lower: bool = True, hash_arg=None,
-               meta_extra: dict | None = None):
+        def op(
+            name: str,
+            fn: Callable,
+            arg,
+            lower: bool = True,
+            hash_arg=None,
+            meta_extra: dict | None = None,
+        ):
             """Assemble a BenchmarkOp. The output hash is taken lazily (one fn call
             at hash time, after the runtime phase) so the op is NOT pre-compiled
             here — otherwise zkbench's compile phase would hit a warm cache and
@@ -225,7 +245,9 @@ class InnerProofBenchmark(FrxBenchmark):
                 throughput_unit="rows/s",
                 throughput_count=n_ext,
                 input_hash=_hash_array(arg if hash_arg is None else hash_arg),
-                output_hash_fn=lambda fn=fn, arg=arg: _hash_array(_first_array(fn(arg))),
+                output_hash_fn=lambda fn=fn, arg=arg: _hash_array(
+                    _first_array(fn(arg))
+                ),
                 lower=(lambda fn=fn, arg=arg: fn.lower(arg)) if lower else None,
             )
 
@@ -239,8 +261,12 @@ class InnerProofBenchmark(FrxBenchmark):
                 yield op("extend", extend_jit, trace)
             if "commit" in stages:
                 extended = frx.block_until_ready(extend_jit(trace))
-                yield op("commit", frx.jit(lambda e: mt.commit(e)), extended,
-                         hash_arg=extended)
+                yield op(
+                    "commit",
+                    frx.jit(lambda e: mt.commit(e)),
+                    extended,
+                    hash_arg=extended,
+                )
             if "full" in stages:
                 yield op("full", frx.jit(lambda t: mt.commit(extend(t, blowup))), trace)
 
@@ -257,9 +283,16 @@ class InnerProofBenchmark(FrxBenchmark):
                     eval_fn, t, alpha, n_bits, args.blowup_bits
                 )
             )
-            yield op("quotient", qfn, trace_ext,
-                     meta_extra={"n_cols": n_cols, "n_constraints": n_constraints,
-                                 "chip": args.chip})
+            yield op(
+                "quotient",
+                qfn,
+                trace_ext,
+                meta_extra={
+                    "n_cols": n_cols,
+                    "n_constraints": n_constraints,
+                    "chip": args.chip,
+                },
+            )
 
         if "divide" in stages:
             composite = frx.block_until_ready(rand_ext_field(2, (n_ext,), F, F3))
@@ -275,7 +308,9 @@ class InnerProofBenchmark(FrxBenchmark):
             merkle_tree(args.arity)
             n_bits_ext = n_bits + args.blowup_bits
             steps = _fold_steps(n_bits_ext, args.fold_bits, args.final_bits)
-            fri_pol = frx.block_until_ready(rand_ext_field(0, (1 << n_bits_ext,), F, F3))
+            fri_pol = frx.block_until_ready(
+                rand_ext_field(0, (1 << n_bits_ext,), F, F3)
+            )
 
             def fri_outputs(pol, steps=steps, arity=args.arity):
                 # A fresh transcript per call keeps the squeezed challenges

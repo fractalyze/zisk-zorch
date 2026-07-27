@@ -38,6 +38,9 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
+from zorch.commit.merkle import Opening
+from zorch.pcs.fold import verify_group_fold_chain
+from zorch.utils.field import join_coeffs
 
 from zisk_zorch.commit.openings import verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
@@ -48,9 +51,6 @@ from zisk_zorch.fri.queries import (
 )
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
-from zorch.commit.merkle import Opening
-from zorch.pcs.fold import verify_group_fold_chain
-from zorch.utils.field import join_coeffs
 
 
 def verify(
@@ -133,7 +133,9 @@ def verify(
     # polynomial at the last layer — the shared k-ary fold-chain check. The leaf
     # indices cross to JAX only here, for the device-side fold arithmetic.
     leaf_indices_jax = [fnp.asarray(idx) for idx in leaf_indices]
-    ok = verify_group_fold_chain(code, openings_seam, betas, leaf_indices_jax, final_pol)
+    ok = verify_group_fold_chain(
+        code, openings_seam, betas, leaf_indices_jax, final_pol
+    )
 
     # The terminal low-degree test on the in-clear final polynomial: the fold
     # chain only proves internal consistency, so a high-degree final pol would

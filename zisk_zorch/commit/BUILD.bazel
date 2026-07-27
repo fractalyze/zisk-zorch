@@ -21,9 +21,9 @@ py_library(
     srcs = ["trace_commit.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//zisk_zorch/quotient",
         ":linear_hash",
         "//zisk_zorch/poseidon2:goldilocks",
+        "//zisk_zorch/quotient",
         requirement("frx"),
         requirement("zk_dtypes"),
         requirement("zorch"),
@@ -45,7 +45,7 @@ py_test(
     name = "linear_hash_test",
     size = "medium",
     srcs = ["linear_hash_test.py"],
-    data = glob(["testdata/golden/linear_hash.json"]),
+    data = ["testdata/golden/linear_hash.json"],
     deps = [
         ":linear_hash",
         "//zisk_zorch:golden",
@@ -58,7 +58,7 @@ py_test(
     name = "openings_test",
     size = "medium",
     srcs = ["openings_test.py"],
-    data = glob(["testdata/golden/merkle_proof.json"]),
+    data = ["testdata/golden/merkle_proof.json"],
     deps = [
         ":openings",
         ":trace_commit",
@@ -72,11 +72,11 @@ py_test(
     name = "trace_commit_test",
     size = "large",
     srcs = ["trace_commit_test.py"],
-    data = glob([
+    data = [
         "testdata/golden/lde.json",
         "testdata/golden/merkle_root.json",
         "testdata/golden/stage1_commit.json",
-    ]),
+    ],
     deps = [
         ":trace_commit",
         "//zisk_zorch:golden",

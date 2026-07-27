@@ -31,8 +31,10 @@ The generic fold (`evaluate_from_constraints`) only handles all-`everyRow` AIRs
 today; check the printed boundaries before wiring a new chip's golden case.
 
 Usage:
-  python scripts/extract_cexp.py Arith [BinaryAdd ...]   # write <air>_{cexp,constraints}.json
-  python scripts/extract_cexp.py --check                 # regen Binary+MemAlign, diff vs vendored
+  # write <air>_{cexp,constraints}.json
+  python scripts/extract_cexp.py Arith [BinaryAdd ...]
+  # regen Binary+MemAlign, diff vs vendored
+  python scripts/extract_cexp.py --check
 """
 
 from __future__ import annotations
@@ -118,7 +120,8 @@ def _write(air: str) -> None:
     if boundaries != ["everyRow"]:
         print(
             f"  WARNING: {air} has non-everyRow boundaries — "
-            "evaluate_from_constraints raises NotImplementedError until those are wired."
+            "evaluate_from_constraints raises NotImplementedError until "
+            "those are wired."
         )
 
 
@@ -126,7 +129,10 @@ def _check() -> int:
     bad = 0
     for air in ("Binary", "MemAlignReadByte"):
         stem = _stem(air)
-        for suffix, got in (("cexp", extract_fragment(air)), ("constraints", extract_constraints(air))):
+        for suffix, got in (
+            ("cexp", extract_fragment(air)),
+            ("constraints", extract_constraints(air)),
+        ):
             vendored = json.loads((_TESTDATA / f"{stem}_{suffix}.json").read_text())
             ok = got == vendored
             print(f"{'OK ' if ok else 'BAD'} {stem}_{suffix}.json")

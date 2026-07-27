@@ -74,7 +74,7 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
     one = embed(["1"])
     mult = [neg_one if it.is_send else one for it in iacts]
 
-    c: list[Array] = [None] * 14  # type: ignore[list-item]
+    c: list[Array] = [None] * 14
     # Row-local (0..6) — authored from the Binary AIR.
     c[0] = cm[33] * (one - cm[33])  # mode32 booleanity
     c[1] = cm[32] * (one - cm[32])  # carry[7] booleanity

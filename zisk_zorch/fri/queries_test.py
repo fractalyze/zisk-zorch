@@ -79,7 +79,9 @@ class QuerySampleTest(absltest.TestCase):
             self.assertTrue(grind_is_valid(challenge, nonce, pow_bits))
 
             image = int(_grind_images(challenge, np.array([nonce], dtype=np.uint64))[0])
-            self.assertEqual(image, int(case["image"]), msg=f"pow_bits {pow_bits} image")
+            self.assertEqual(
+                image, int(case["image"]), msg=f"pow_bits {pow_bits} image"
+            )
             self.assertLess(image, 1 << (64 - pow_bits))
 
     def test_self_derives_grinding_nonce(self) -> None:

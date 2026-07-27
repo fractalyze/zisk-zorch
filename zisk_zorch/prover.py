@@ -34,7 +34,6 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
-
 from zorch.poly.univariate import powers
 from zorch.round import ProveChain, Round
 from zorch.utils.field import join_coeffs, split_coeffs
@@ -164,6 +163,8 @@ class QuotientStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, Array]:
+        # Set by TraceCommitStage, which always precedes this one.
+        assert bridge.trace_commit is not None
         # pil2 folds the K constraints by powers of the stage-`nStages+1`
         # challenge — exactly the coefficient vector `zorch.constraint_eval` takes.
         alpha = powers(
@@ -206,6 +207,8 @@ class DeepStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, Array]:
+        # trace_commit from TraceCommitStage, quotient from QuotientStage.
+        assert bridge.trace_commit is not None and bridge.quotient is not None
         fri_pol, evals = deep_fri_polynomial(
             bridge.trace_commit.extended,
             bridge.quotient.codeword,
@@ -227,6 +230,8 @@ class QuotientEchoStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, Array]:
+        # Set by QuotientStage.
+        assert bridge.quotient is not None
         codeword = bridge.quotient.codeword
         return replace(bridge, fri_pol=codeword), transcript, codeword
 
@@ -244,7 +249,11 @@ class FriStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, FriProof]:
-        fri = prove(bridge.fri_pol, self._steps, arity=self._arity, transcript=transcript)
+        # Set by DeepStage, or by QuotientEchoStage on the echo path.
+        assert bridge.fri_pol is not None
+        fri = prove(
+            bridge.fri_pol, self._steps, arity=self._arity, transcript=transcript
+        )
         return replace(bridge, fri=fri), transcript, fri
 
 
@@ -264,6 +273,9 @@ class QueryStage(Round):
     def __call__(
         self, bridge: InnerBridge, transcript: Transcript
     ) -> tuple[InnerBridge, Transcript, tuple[list, list, list]]:
+        # Every earlier stage in the chain has run by the time queries open.
+        assert bridge.trace_commit is not None and bridge.quotient is not None
+        assert bridge.fri is not None
         positions, nonce = sample_query_positions(
             transcript,
             bridge.fri.final_pol,
@@ -356,9 +368,7 @@ def prove_inner_chain(
                 arity=arity,
             ),
             deep_stage or DeepStage(n_bits=n_bits, blowup_bits=blowup_bits),
-            FriStage(
-                steps=_fold_steps(n_bits_ext, fold_bits, final_bits), arity=arity
-            ),
+            FriStage(steps=_fold_steps(n_bits_ext, fold_bits, final_bits), arity=arity),
             QueryStage(
                 n_bits_ext=n_bits_ext,
                 arity=arity,

@@ -26,7 +26,9 @@ from zisk_zorch.quotient.reauthor import (  # noqa: E402
 )
 
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "cexp_eval.json"
-_ARITH_CONSTRAINTS = pathlib.Path(__file__).parent / "testdata" / "arith_constraints.json"
+_ARITH_CONSTRAINTS = (
+    pathlib.Path(__file__).parent / "testdata" / "arith_constraints.json"
+)
 
 
 class ReauthorBinaryTest(absltest.TestCase):

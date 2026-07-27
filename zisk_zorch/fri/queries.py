@@ -74,7 +74,9 @@ def _grind(challenge: Array, pow_bits: int) -> int:
         if hits.size:
             return base + int(hits[0])
         base += _GRIND_CHUNK
-    raise RuntimeError(f"grinding: no nonce below the field order for pow_bits={pow_bits}")
+    raise RuntimeError(
+        f"grinding: no nonce below the field order for pow_bits={pow_bits}"
+    )
 
 
 def grind_is_valid(challenge: Array, nonce: int, pow_bits: int) -> bool:
@@ -91,7 +93,9 @@ def grinding_seed_challenge(transcript: Transcript, final_pol: Array) -> Array:
     """Absorb `final_pol` into the running transcript and squeeze the cubic
     grinding-seed challenge (3 base limbs) — pil2's pre-grinding discipline.
     Mutates `transcript`."""
-    transcript.put(split_coeffs(final_pol).reshape(-1))  # addTranscriptGL(friPol, len*3)
+    transcript.put(
+        split_coeffs(final_pol).reshape(-1)
+    )  # addTranscriptGL(friPol, len*3)
     return transcript.get_field()  # cubic grinding seed (3 base limbs)
 
 

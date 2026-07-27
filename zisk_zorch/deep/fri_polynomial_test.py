@@ -16,14 +16,12 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-
-from zorch.poly.univariate import powers
-
 from zorch.pcs.deep import deep_composition
+from zorch.poly.univariate import powers
+from zorch.utils.field import split_coeffs
 
 from zisk_zorch.deep.fri_polynomial import _ood_points
 from zisk_zorch.fri.fold import intt
-from zorch.utils.field import split_coeffs
 from zisk_zorch.quotient.zerofier import _coset_points
 
 _N_BITS = 4
@@ -41,7 +39,10 @@ def _rand_cubic(shape, seed: int) -> fnp.ndarray:
 
 def _rand_base(shape, seed: int) -> fnp.ndarray:
     return fnp.asarray(
-        np.random.default_rng(seed).integers(0, 1 << 30, shape).astype(np.uint64).view(F)
+        np.random.default_rng(seed)
+        .integers(0, 1 << 30, shape)
+        .astype(np.uint64)
+        .view(F)
     )
 
 
@@ -67,7 +68,7 @@ def _high_coeffs(f: fnp.ndarray) -> np.ndarray:
     n_ext = f.shape[0]
     base = split_coeffs(f)
     coeffs = intt(base, _N_BITS + _BLOWUP_BITS)  # (N_ext, 3) base
-    return np.asarray(coeffs[(1 << _N_BITS) - 1:])
+    return np.asarray(coeffs[(1 << _N_BITS) - 1 :])
 
 
 class DeepCompositionTest(absltest.TestCase):
@@ -91,8 +92,13 @@ class DeepCompositionTest(absltest.TestCase):
     def _compose(self, evals):
         domain = _coset_points(_N_BITS, _BLOWUP_BITS)
         return deep_composition(
-            self.base_cols, self.cubic_cols, evals, self.xis, self.opening_pos,
-            self.vf, domain,
+            self.base_cols,
+            self.cubic_cols,
+            evals,
+            self.xis,
+            self.opening_pos,
+            self.vf,
+            domain,
         )
 
     def test_correct_opening_is_low_degree(self):

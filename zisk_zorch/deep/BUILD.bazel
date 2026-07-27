@@ -13,7 +13,7 @@ py_library(
     deps = [
         "//zisk_zorch/evals:lev",
         "//zisk_zorch/fri:seam",
-        "//zisk_zorch/quotient:quotient",
+        "//zisk_zorch/quotient",
         requirement("frx"),
         requirement("zorch"),
     ],
@@ -27,7 +27,7 @@ py_test(
         ":fri_polynomial",
         "//zisk_zorch/fri:fold",
         "//zisk_zorch/fri:seam",
-        "//zisk_zorch/quotient:quotient",
+        "//zisk_zorch/quotient",
         requirement("absl_py"),
         requirement("frx"),
         requirement("numpy"),
@@ -44,7 +44,7 @@ py_test(
     srcs = ["opening_test.py"],
     deps = [
         "//zisk_zorch/evals:lev",
-        "//zisk_zorch/quotient:quotient",
+        "//zisk_zorch/quotient",
         requirement("absl_py"),
         requirement("frx"),
         requirement("numpy"),

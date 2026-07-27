@@ -1,4 +1,7 @@
-"""zisk-zorch — a lean ZisK (pil2-stark eSTARK) prover built on zorch's scheme-agnostic blocks."""
+"""zisk-zorch — a lean ZisK (pil2-stark eSTARK) prover.
+
+Built on zorch's scheme-agnostic blocks.
+"""
 
 # Single source of truth for the packaged version: pyproject.toml carries no
 # literal of its own (it derives this one via `attr =`), and release.yml refuses
