@@ -24,7 +24,10 @@ import frx.numpy as fnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.golden import load, u64x3  # noqa: E402
-from zisk_zorch.quotient.cexp_ref import evaluate, evaluate_from_constraints  # noqa: E402
+from zisk_zorch.quotient.cexp_ref import (
+    evaluate,
+    evaluate_from_constraints,
+)
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata"
 

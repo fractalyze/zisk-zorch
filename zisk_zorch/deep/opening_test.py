@@ -14,10 +14,9 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-
+from zorch.pcs.deep import open_columns
 from zorch.poly.univariate import powers
 
-from zorch.pcs.deep import open_columns
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
@@ -62,14 +61,11 @@ class OpeningTest(absltest.TestCase):
         g = _root(_N_BITS)
         for o, p in enumerate(opening_points):
             xi = z * fnp.power(g, p)
-            evals = open_columns(
-                no_base, column, lev, [o], stride=1 << _BLOWUP_BITS
-            )
+            evals = open_columns(no_base, column, lev, [o], stride=1 << _BLOWUP_BITS)
             self.assertTrue(
                 _cubic_eq(evals[0], _poly_eval(coeffs, xi)),
                 f"opening {p} did not recover p(z·g^{p})",
             )
-
 
 
 def _cubic_eq(a: fnp.ndarray, b: fnp.ndarray) -> bool:

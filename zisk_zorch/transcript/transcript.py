@@ -21,9 +21,9 @@ import numpy as np
 import zk_dtypes
 from frx import Array, lax
 from zk_dtypes import goldilocks as F
+from zorch.hash.poseidon2.poseidon2 import Poseidon2
 
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
-from zorch.hash.poseidon2.poseidon2 import Poseidon2
 
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
 CHALLENGE_LIMBS = 3
@@ -56,9 +56,7 @@ class Transcript:
 
     def _update_state(self) -> None:
         pad = [fnp.zeros((), F)] * (self.width - 4 - len(self._pending))
-        inputs = fnp.concatenate(
-            [fnp.stack(self._pending + pad), self._state[:4]]
-        )
+        inputs = fnp.concatenate([fnp.stack(self._pending + pad), self._state[:4]])
         self._state = self._perm.permute(inputs)
         self._out = self._state
         self._out_cursor = self.width

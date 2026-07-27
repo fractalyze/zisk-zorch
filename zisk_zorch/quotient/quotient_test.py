@@ -62,7 +62,10 @@ class ZerofierTest(absltest.TestCase):
         # name that rather than let `1 << (32 - bits)` fail as a Python shift.
         self.assertIsNotNone(_root(32))
         for bits in (33, 64, -1):
-            with self.subTest(bits=bits), self.assertRaisesRegex(ValueError, "W\\[32\\]"):
+            with (
+                self.subTest(bits=bits),
+                self.assertRaisesRegex(ValueError, "W\\[32\\]"),
+            ):
                 _root(bits)
 
     def test_every_row_matches_pil2_build_zh_inv(self) -> None:
@@ -73,7 +76,9 @@ class ZerofierTest(absltest.TestCase):
 
     def test_one_row_matches_pil2_build_one_row_zerofier_inv(self) -> None:
         for case in self.golden["one_row"]:
-            with self.subTest(blowup_bits=case["blowup_bits"], row_index=case["row_index"]):
+            with self.subTest(
+                blowup_bits=case["blowup_bits"], row_index=case["row_index"]
+            ):
                 got = inv_one_row_zerofier(
                     case["n_bits"], case["blowup_bits"], case["row_index"]
                 )
@@ -81,10 +86,14 @@ class ZerofierTest(absltest.TestCase):
 
     def test_frame_matches_pil2_build_frame_zerofier_inv(self) -> None:
         for case in self.golden["frame"]:
-            with self.subTest(offset_min=case["offset_min"], offset_max=case["offset_max"]):
+            with self.subTest(
+                offset_min=case["offset_min"], offset_max=case["offset_max"]
+            ):
                 got = inv_frame_zerofier(
-                    case["n_bits"], case["blowup_bits"],
-                    case["offset_min"], case["offset_max"],
+                    case["n_bits"],
+                    case["blowup_bits"],
+                    case["offset_min"],
+                    case["offset_max"],
                 )
                 self.assertTrue(bool(fnp.array_equal(got, u64(case["zi"]))))
 
@@ -113,7 +122,9 @@ class QuotientTest(absltest.TestCase):
             return fnp.concatenate([t, t * t], axis=-1)
 
         got = quotient_from_constraints(eval_fn, trace, alpha, n_bits, blowup_bits)
-        want = compute_quotient(constraint_eval(eval_fn, trace, alpha), n_bits, blowup_bits)
+        want = compute_quotient(
+            constraint_eval(eval_fn, trace, alpha), n_bits, blowup_bits
+        )
         self.assertTrue(bool(fnp.array_equal(got, want)))
 
 

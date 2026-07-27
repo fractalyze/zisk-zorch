@@ -35,7 +35,9 @@ from zisk_zorch.golden import u64
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "fullprogram"
 
 
-def _load_trace_npy_gz(path: pathlib.Path, rows: int, cols: int) -> tuple[np.ndarray, str]:
+def _load_trace_npy_gz(
+    path: pathlib.Path, rows: int, cols: int
+) -> tuple[np.ndarray, str]:
     """Decompress a rw-fixture-gen trace dump; return (u64 matrix, payload sha256).
 
     The payload after the v1 npy header is row-major canonical u64 LE — exactly
@@ -45,9 +47,9 @@ def _load_trace_npy_gz(path: pathlib.Path, rows: int, cols: int) -> tuple[np.nda
     assert raw[:6] == b"\x93NUMPY" and raw[6] == 1, f"{path} is not a v1 .npy"
     (header_len,) = struct.unpack("<H", raw[8:10])
     payload = raw[10 + header_len :]
-    assert len(payload) == rows * cols * 8, (
-        f"{path}: {len(payload)} payload bytes, expected {rows}x{cols} u64s"
-    )
+    assert (
+        len(payload) == rows * cols * 8
+    ), f"{path}: {len(payload)} payload bytes, expected {rows}x{cols} u64s"
     sha = hashlib.sha256(payload).hexdigest()
     return np.frombuffer(payload, dtype="<u8").reshape(rows, cols), sha
 

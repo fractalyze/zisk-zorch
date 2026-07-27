@@ -19,13 +19,13 @@ from dataclasses import dataclass
 import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
+from zorch.coding.reed_solomon import ReedSolomon
+from zorch.commit.merkle import MerkleTree
+from zorch.hash.compression import Compression, CompressionParams
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.quotient.zerofier import _PIL2_GENERATOR
-from zorch.coding.reed_solomon import ReedSolomon
-from zorch.commit.merkle import MerkleTree
-from zorch.hash.compression import Compression, CompressionParams
 
 # Goldilocks::SHIFT — the LDE coset generator pil2-stark evaluates on.
 COSET_SHIFT = 7

@@ -34,14 +34,14 @@ import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
+from zorch.commit.merkle import MerkleTree
+from zorch.pcs.fold import PreFoldKGroupCommitRound
+from zorch.prove import fold_rounds
 
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
-from zorch.commit.merkle import MerkleTree
-from zorch.pcs.fold import PreFoldKGroupCommitRound
-from zorch.prove import fold_rounds
 
 
 @dataclass(frozen=True)
@@ -101,7 +101,9 @@ def prove(
     return FriProof(roots=roots, final_pol=final_pol, layers=layers)
 
 
-def prove_queries(proof: FriProof, query_indices: np.ndarray | list[int]) -> list[list[Array]]:
+def prove_queries(
+    proof: FriProof, query_indices: np.ndarray | list[int]
+) -> list[list[Array]]:
     """`FRI::proveFRIQueries`: open every committed layer at each query. Layer
     `s` opens at `query_index mod 2^(leaf_bits)`, the regrouped height."""
     qi = fnp.asarray(np.asarray(query_indices))
@@ -112,7 +114,4 @@ def prove_queries(proof: FriProof, query_indices: np.ndarray | list[int]) -> lis
         for layer in proof.layers
     ]
     n_q = int(qi.shape[0])
-    return [
-        [per_layer[li][q] for li in range(len(proof.layers))]
-        for q in range(n_q)
-    ]
+    return [[per_layer[li][q] for li in range(len(proof.layers))] for q in range(n_q)]

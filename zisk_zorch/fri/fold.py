@@ -106,8 +106,7 @@ def fold(
     w = pow(_TWO_ADIC_ROOT, 1 << (32 - prev_bits), _GOLDILOCKS_P)
     # s_g^-1 = (shift_eff * w^g)^-1 = shift_eff^-1 * w^-g.
     s_inv = (
-        pow(shift_eff, -1, _GOLDILOCKS_P)
-        * _powers(pow(w, -1, _GOLDILOCKS_P), cur_n)
+        pow(shift_eff, -1, _GOLDILOCKS_P) * _powers(pow(w, -1, _GOLDILOCKS_P), cur_n)
     ) % _GOLDILOCKS_P
     coset_inv = fnp.array(s_inv.astype(np.uint64), dtype=F)
     return fri_fold_k(group, challenge, coset=(coset_inv, _PIL2_GENERATOR))
@@ -127,11 +126,11 @@ def intt(evals: Array, n_bits: int) -> Array:
     low-degree test's vanishing set unchanged."""
     n = 1 << n_bits
     if evals.ndim != 2 or evals.shape[0] != n:
-        raise ValueError(f"evals must be (2^{n_bits}, n_cols) = ({n}, *), got {evals.shape}")
+        raise ValueError(
+            f"evals must be (2^{n_bits}, n_cols) = ({n}, *), got {evals.shape}"
+        )
 
-    return lax.ntt(
-        evals.T, ntt_type="INTT", ntt_length=n, generator=_PIL2_GENERATOR
-    ).T
+    return lax.ntt(evals.T, ntt_type="INTT", ntt_length=n, generator=_PIL2_GENERATOR).T
 
 
 def verify_fold(

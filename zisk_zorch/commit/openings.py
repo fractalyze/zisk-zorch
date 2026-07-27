@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import frx.numpy as fnp
 from frx import Array
-
 from zorch.commit.merkle import MerkleTree, Opening
 
 

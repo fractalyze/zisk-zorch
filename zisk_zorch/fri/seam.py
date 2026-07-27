@@ -30,7 +30,6 @@ import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
-
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.fri.fold import fold, intt, verify_fold
@@ -141,7 +140,8 @@ class Pil2FriCode:
         pol leaves a nonzero coefficient above the bound and is rejected, closing
         the soundness gap a fold-consistency check alone leaves open.
 
-        https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp#L679-L698"""
+        https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp#L679-L698
+        """
         last_bits = self.steps[-1]
         n = 1 << last_bits
         if final.shape != (n,):

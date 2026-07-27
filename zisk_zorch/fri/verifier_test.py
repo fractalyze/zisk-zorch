@@ -122,7 +122,9 @@ class FriVerifierTest(absltest.TestCase):
                 # is rejected by the canonical guard.
                 if nonce > 0:
                     self.assertFalse(
-                        self._verify(case, proof.roots, proof.final_pol, openings, nonce - 1),
+                        self._verify(
+                            case, proof.roots, proof.final_pol, openings, nonce - 1
+                        ),
                         msg="accepted a nonce that fails the grind",
                     )
                 self.assertFalse(
@@ -134,7 +136,9 @@ class FriVerifierTest(absltest.TestCase):
 
                 # Tamper the final polynomial: cascades through the re-derived
                 # query positions and the last fold's consistency check.
-                bad_final = proof.final_pol.at[0].set(proof.final_pol[0] + fnp.ones((), F3))
+                bad_final = proof.final_pol.at[0].set(
+                    proof.final_pol[0] + fnp.ones((), F3)
+                )
                 self.assertFalse(
                     self._verify(case, proof.roots, bad_final, openings, nonce),
                     msg="accepted a tampered final polynomial",
@@ -143,9 +147,13 @@ class FriVerifierTest(absltest.TestCase):
                 # Tamper an opened value: breaks that layer's Merkle opening.
                 bad_openings = [list(per_q) for per_q in openings]
                 first = bad_openings[0][0]
-                bad_openings[0][0] = first.at[0].set(first[0] + fnp.ones((), first.dtype))
+                bad_openings[0][0] = first.at[0].set(
+                    first[0] + fnp.ones((), first.dtype)
+                )
                 self.assertFalse(
-                    self._verify(case, proof.roots, proof.final_pol, bad_openings, nonce),
+                    self._verify(
+                        case, proof.roots, proof.final_pol, bad_openings, nonce
+                    ),
                     msg="accepted a tampered Merkle opening",
                 )
 

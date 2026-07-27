@@ -27,7 +27,7 @@ py_test(
     name = "quotient_test",
     size = "medium",
     srcs = ["quotient_test.py"],
-    data = glob(["testdata/golden/zerofier_inv.json"]),
+    data = ["testdata/golden/zerofier_inv.json"],
     deps = [
         ":quotient",
         "//zisk_zorch:golden",
@@ -41,13 +41,13 @@ py_test(
     size = "medium",
     srcs = ["cexp_ref_test.py"],
     data = [
-        "testdata/arith_constraints.json",
         "testdata/arith_cexp.json",
-        "testdata/binary_constraints.json",
+        "testdata/arith_constraints.json",
         "testdata/binary_cexp.json",
+        "testdata/binary_constraints.json",
         "testdata/golden/cexp_eval.json",
-        "testdata/memalign_readbyte_constraints.json",
         "testdata/memalign_readbyte_cexp.json",
+        "testdata/memalign_readbyte_constraints.json",
     ],
     deps = [
         ":quotient",

@@ -21,7 +21,7 @@ py_test(
     name = "fold_test",
     size = "medium",
     srcs = ["fold_test.py"],
-    data = glob(["testdata/golden/fri_fold.json"]),
+    data = ["testdata/golden/fri_fold.json"],
     deps = [
         ":fold",
         "//zisk_zorch:golden",
@@ -48,7 +48,7 @@ py_test(
     name = "seam_test",
     size = "small",
     srcs = ["seam_test.py"],
-    data = glob(["testdata/golden/fri_final.json"]),
+    data = ["testdata/golden/fri_final.json"],
     deps = [
         ":seam",
         "//zisk_zorch:golden",
@@ -77,10 +77,10 @@ py_test(
     name = "queries_test",
     size = "small",
     srcs = ["queries_test.py"],
-    data = glob([
-        "testdata/golden/query_sample.json",
+    data = [
         "testdata/golden/grinding.json",
-    ]),
+        "testdata/golden/query_sample.json",
+    ],
     deps = [
         ":queries",
         "//zisk_zorch:golden",
@@ -111,7 +111,7 @@ py_test(
     name = "prover_test",
     size = "medium",
     srcs = ["prover_test.py"],
-    data = glob(["testdata/golden/fri_prove.json"]),
+    data = ["testdata/golden/fri_prove.json"],
     deps = [
         ":prover",
         "//zisk_zorch:golden",
@@ -141,7 +141,7 @@ py_test(
     name = "verifier_test",
     size = "medium",
     srcs = ["verifier_test.py"],
-    data = glob(["testdata/golden/fri_prove.json"]),
+    data = ["testdata/golden/fri_prove.json"],
     deps = [
         ":prover",
         ":queries",

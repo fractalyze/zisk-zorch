@@ -96,3 +96,18 @@ include = ["zisk_zorch*"]
 # pip install; there is no such runnable here, and the fixtures are 2.08 MB
 # across 25 files — 12x openvm's 172 KB — so every consumer would pay for data
 # only a source checkout can use.
+
+[tool.mypy]
+python_version = "3.11"
+files = ["zisk_zorch"]
+# Annotations are not required yet; turning these on is a typing pass of its own.
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# Untyped or statically unresolvable third parties. zorch arrives through the
+# bazel git_override, so it is not importable where mypy runs.
+[[tool.mypy.overrides]]
+module = ["frx.*", "frxlib.*", "zk_dtypes.*", "zkbench.*", "absl.*", "zorch.*", "rw_constraints.*"]
+ignore_missing_imports = true
