@@ -31,6 +31,7 @@ import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 from zorch.pcs.deep import deep_composition, open_columns
+from zorch.poly.univariate import powers
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.evals.lev import compute_lev
@@ -94,5 +95,8 @@ def deep_fri_polynomial(
     vf = join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(())
     xis = _ood_points(z, opening_points, n_bits)
     domain = _coset_points(n_bits, blowup_bits)  # (N_ext,) base — DEEP divides on it
-    f = _deep_composition(base_cols, cubic_cols, evals, xis, opening_pos, vf, domain)
+    vf_pows = powers(vf, m)[::-1]
+    f = _deep_composition(
+        base_cols, cubic_cols, evals, xis, opening_pos, vf, domain, vf_pows
+    )
     return f, evals
