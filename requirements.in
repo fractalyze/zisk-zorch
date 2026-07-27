@@ -8,7 +8,7 @@ numpy
 # pyzorch is zorch's PyPI distribution name (the import package stays `zorch`).
 # Direct wheel URL: the index rebuild has no /simple/pyzorch/ page yet; the
 # release asset remains.
-pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260726114757/pyzorch-0.1.0.dev20260726114757-py3-none-any.whl
+pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260727041631/pyzorch-0.1.0.dev20260727041631-py3-none-any.whl
 frx==0.10.0.dev20260723085209
 zk-dtypes==0.0.10
 frxlib==0.10.0.dev20260723085209
