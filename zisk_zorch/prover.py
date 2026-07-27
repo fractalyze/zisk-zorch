@@ -79,9 +79,9 @@ def _opening_deep_jit(
 
     `domain` and `lev_consts` arrive from the eager prologue: an in-trace
     coset feeding the composition's cubic reciprocal is #67's NVPTX crash
-    trigger, and in-trace field constants are the frx miscompile
-    `LevConstants` documents. The zone RETURNS its transcript — the caller's
-    object is not advanced in place across the boundary."""
+    trigger, and field constants enter as arguments per `LevConstants`. The
+    zone RETURNS its transcript — the caller's object is not advanced in
+    place across the boundary."""
     fri_pol, evals = deep_fri_polynomial(
         trace_ext,
         quotient,

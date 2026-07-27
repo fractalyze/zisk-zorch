@@ -21,7 +21,7 @@ extension challenge, so `g * w^-j != 1` and the denominator never vanishes.
 Output is `(N, n_open)` cubic, entry `[k][i]` the k-th coefficient for opening
 point `i` — pil2's row-major `LEv[k*nOpen + i]` layout. Runs eagerly by
 default; inside a jit zone it takes its field constants as arguments
-(`LevConstants` — frx miscompiles in-trace field constants).
+(`LevConstants`).
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp#L243-L279
 """
@@ -69,12 +69,14 @@ _CUBIC_ONE = fnp.array(
 class LevConstants:
     """`compute_lev`'s field constants, materialized in an eager prologue.
 
-    A jit zone wrapping the LEv arithmetic must receive these as ARGUMENTS:
-    frx miscompiles field constants embedded inside a traced region — the
-    `_CUBIC_ONE` family surfaces as an i64 type-inference failure, an
-    `EmitConstant` GOLDILOCKSX3→F64 CHECK crash, or silently wrong values
-    depending on the surrounding fusion. Every field here depends only on
-    `(opening_points, n_bits)`, so the prologue is one-time per shape."""
+    A jit zone wrapping the LEv arithmetic receives these as ARGUMENTS, the
+    same discipline the sp1-zorch zones follow. It is also a safety line: frx
+    below 0.10.1 miscompiled field constants embedded inside a traced region
+    (the `_CUBIC_ONE` family — an i64 type-inference failure, an
+    `EmitConstant` GOLDILOCKSX3→F64 CHECK crash, or silently wrong values,
+    by surrounding fusion), and only the jit-vs-eager byte test catches the
+    silent case. Every field here depends only on `(opening_points, n_bits)`,
+    so the prologue is one-time per shape."""
 
     one: Array  # cubic 1
     inv_n: Array  # N^-1, base

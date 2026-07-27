@@ -87,8 +87,8 @@ def deep_fri_polynomial(
     the LEv constant pack, both computed here when omitted. A caller wrapping
     this whole flow in a jit zone MUST pass both from outside the trace: an
     in-trace coset feeding the composition's cubic reciprocal is exactly #67's
-    NVPTX crash trigger, and in-trace field constants are the frx miscompile
-    `zisk_zorch.evals.lev.LevConstants` documents."""
+    NVPTX crash trigger, and field constants enter as arguments per
+    `zisk_zorch.evals.lev.LevConstants`."""
     base_cols, cubic_cols = _committed_columns(trace_ext, quotient)
     m = base_cols.shape[1] + cubic_cols.shape[1]
     opening_pos = (0,) * m  # all at z; wrapped openings are AIR-specific
