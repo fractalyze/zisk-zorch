@@ -22,7 +22,7 @@ rule), so it lives here.
 trace commit → quotient → DEEP → FRI. The primitives it is built from are
 byte-matched against golden vectors generated from pil2-proofman v1.0.0-alpha's
 `fields` crate ([`tools/fixture-gen/`](https://github.com/fractalyze/zisk-zorch/tree/main/tools/fixture-gen));
-DEEP is the one stage with no golden. No stage is yet byte-matched against a real
+DEEP is the one phase with no golden. No phase is yet byte-matched against a real
 pil2 dump, so the per-stage timings in
 [`docs/development.md`](https://github.com/fractalyze/zisk-zorch/blob/main/docs/development.md)
 are engineering signal, not a sealed baseline. See
@@ -101,7 +101,8 @@ bazel test //...
 
 See [`docs/`](https://github.com/fractalyze/zisk-zorch/blob/main/docs/README.md) —
 the [architecture](https://github.com/fractalyze/zisk-zorch/blob/main/docs/architecture.md)
-(the inner proof as stages over one transcript, plus the pil2 vocabulary they
+(the inner proof as composite Stage roles over one transcript, plus the pil2
+vocabulary they
 mirror), the [development guide](https://github.com/fractalyze/zisk-zorch/blob/main/docs/development.md)
 (environment, testing, fixtures, CI, and the per-stage pil2 baseline), and the
 [conventions](https://github.com/fractalyze/zisk-zorch/blob/main/docs/conventions.md).

@@ -34,7 +34,7 @@ benchmark it see [development.md](development.md).
 commit_trace(trace)           -> root₁     transcript.put(root₁)
                                             alpha = transcript.get_field()   (powers → constraint fold)
 quotient_from_constraints(…)  -> Q         commit Q → rootQ, transcript.put(rootQ)
-deep_fri_polynomial(ctx)      -> fri_pol   ← DEEP stage
+deep_fri_polynomial(ctx)      -> fri_pol   ← DEEP
 fri.prove(fri_pol, …)         -> layers    fold betas squeezed off the same transcript
 sample_query_positions(…)     -> positions finalPol absorb → grind → getPermutations
 prove_queries + group_proof   -> openings  every committed tree opened per query
@@ -43,9 +43,15 @@ prove_queries + group_proof   -> openings  every committed tree opened per query
 The one shared `Transcript` is what makes each challenge depend on the committed
 roots — the property the per-stage benchmarks cannot exercise.
 
-## Stages
+## pil2 phases
 
-| Stage | pil2 name | What it does | Module | Golden |
+The pipeline phase → module map. Phases are pil2's `genProof` vocabulary (the
+grid [development.md](development.md)'s per-stage baseline measures), not
+`zorch.stage` Stages: the quotient phase is the one standalone Stage, DEEP/
+FRI/queries share the terminal `OpeningProver`, and the trace commit is the
+composite's bind.
+
+| Phase | pil2 name | What it does | Module | Golden |
 |---|---|---|---|---|
 | Trace commit | `extendAndMerkelize` (`commitStage(1)`) | INTT each column, coset-7 RS encode to `N·blowup` rows in pil2 domain order, pil2 linear-hash each row to a 4-Goldilocks leaf, k-ary Poseidon2 fold to the root | `commit/` | `lde`, `linear_hash`, `merkle_root`, `merkle_proof`, `stage1_commit`, + a real-program trace root (`testdata/fullprogram/`, see [development.md](development.md#fixtures)) |
 | Constraint ingest | — (rw-exported) | Load each ZisK chip's constraints + bus interactions from the `rw_constraints` wheel (`constraints/zisk/v1`), the same export `sp1-zorch` consumes | `constraints/` | — (pinned by the quotient's byte-match) |
@@ -53,7 +59,7 @@ roots — the property the per-stage benchmarks cannot exercise.
 | DEEP | `calculateFRIPolynomial` | Squeeze the OOD point `z`, open the committed polynomials there (`computeLEv`+`evmap`), absorb, squeeze `vf`, build the DEEP-ALI codeword | `deep/` | — (pinned by the LEv round-trip identity and the FRI low-degree test; a pil2 golden additionally needs the proving key's compiled `friExp` op list) |
 | FRI | `FRI::fold` / `proveQueries` | Fold the codeword down the layer chain committing each layer, grind, open every tree per query | `fri/` | `fri_fold`, `fri_prove`, `fri_final`, `grinding`, `query_sample` |
 
-Each stage's pil2 conventions — the Poseidon2 M4 choice, the NTT domain order,
+Each phase's pil2 conventions — the Poseidon2 M4 choice, the NTT domain order,
 the linear-hash chaining, the transcript's buffer discipline, the opening layout,
 the α-power order — live in the module docstring of the code that implements
 them, per [conventions.md](conventions.md).
