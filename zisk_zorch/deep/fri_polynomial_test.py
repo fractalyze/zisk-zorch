@@ -101,6 +101,31 @@ class DeepCompositionTest(absltest.TestCase):
             domain,
         )
 
+    def test_pil2_power_assignment(self):
+        # The production call site batches with pil2's genProof convention:
+        # column 0 carries the HIGHEST vf power (Horner accumulation), the
+        # last column power 0. Independent fnp construction; field arithmetic
+        # is exact, so equality is byte-level.
+        domain = _coset_points(_N_BITS, _BLOWUP_BITS)
+        vf_pows = powers(self.vf, _N_COLS)[::-1]
+        got = deep_composition(
+            self.base_cols, self.cubic_cols, self.evals, self.xis,
+            self.opening_pos, self.vf, domain, vf_pows,
+        )
+        want = None
+        for j in range(_N_COLS):
+            col = (
+                self.base_cols[:, j]
+                if j < _N_BASE
+                else self.cubic_cols[:, j - _N_BASE]
+            )
+            term = vf_pows[j] * (col - self.evals[j])
+            want = term if want is None else want + term
+        want = want / (domain - self.xis[0])
+        self.assertTrue(
+            bool(fnp.all(got == want)), "pil2 descending assignment mismatch"
+        )
+
     def test_correct_opening_is_low_degree(self):
         high = _high_coeffs(self._compose(self.evals))
         self.assertTrue(np.all(high == 0), "DEEP polynomial exceeded its degree bound")
