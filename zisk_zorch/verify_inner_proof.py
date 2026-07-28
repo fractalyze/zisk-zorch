@@ -201,8 +201,34 @@ def main() -> int:
         + f"DEEP polynomial (multi-opening, {len(openings)} groups)"
     )
 
+    if stage_cols[2] and pre("cm2_base").exists():
+        cm2_base = fnp.array(
+            _u64(pre("cm2_base")).astype(F).reshape(1 << nb, stage_cols[2])
+        )
+        c2 = commit_trace(cm2_base, blowup=1 << (nbe - nb), arity=arity)
+        ok = bool(
+            np.array_equal(
+                np.asarray(c2.extended).astype(np.uint64),
+                np.asarray(bufs[("cm", 2)]).astype(np.uint64),
+            )
+        )
+        ok_all &= ok
+        print(("OK       " if ok else "MISMATCH ") + "stage-2 extension == cm2_ext")
+        ok = bool(
+            np.array_equal(np.asarray(c2.root).astype(np.uint64), _u64(pre("root2")))
+        )
+        ok_all &= ok
+        print(
+            ("OK       " if ok else "MISMATCH ")
+            + "stage-2 commit root (real witness-STD columns)"
+        )
+
     for stage, why in [
-        ("stage-2 commit", "witness-STD hint machinery not wired"),
+        (
+            "stage-2 hint computation",
+            "cm2 columns from cm1+challenges need the"
+            " expressions interpreter (same class as quotient cExp)",
+        ),
         ("quotient", "needs this AIR's cExp extraction (in-repo gate: cexp_ref)"),
     ]:
         print(f"SKIP     {stage}: {why}")
