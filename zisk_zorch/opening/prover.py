@@ -5,7 +5,6 @@ plus the scheme's commit half."""
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from functools import partial
 
 import frx
@@ -18,12 +17,13 @@ from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
 from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
 from zisk_zorch.evals.lev import LevConstants, lev_constants
-from zisk_zorch.fri.prover import FriProof, prove, prove_queries
+from zisk_zorch.fri.prover import prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.quotient.zerofier import _coset_points
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import (
     InnerWitness,
+    OpeningProof,
     OpeningWitness,
     QuotientBoundClaim,
     TraceCommitment,
@@ -65,23 +65,6 @@ def _opening_deep_jit(
         lev_consts=lev_consts,
     )
     return transcript, fri_pol, evals
-
-
-@dataclass(frozen=True)
-class OpeningProof:
-    """Discharges a `QuotientBoundClaim`, leaving nothing to prove: the
-    out-of-domain column openings (`evals`; None under `EchoOpening`, which
-    opens nothing), the FRI fold proof, the grinding
-    nonce, the squeezed query positions, and every committed tree's per-query
-    openings."""
-
-    evals: Array | None
-    fri: FriProof
-    nonce: int
-    positions: np.ndarray
-    trace_openings: list[list[Array]]
-    quotient_openings: list[list[Array]]
-    fri_openings: list[list[Array]]
 
 
 class OpeningProver(

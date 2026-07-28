@@ -98,6 +98,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":seam",
+        "//zisk_zorch:types",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",

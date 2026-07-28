@@ -5,9 +5,8 @@ Everything here is data more than one package reads — a stage's roles
 (`quotient/`, `opening/`) consume and produce these, and the composites in
 `prover.py` / `verifier.py` construct the bound forms after the shared
 transcript operations — so it sits below every stage and a stage never
-imports the composite that runs it. Proof types stay with their roles
-(`OpeningProof` in `opening/prover.py`, `FriProof` in `fri/prover.py`,
-`InnerProof` with the composite), mirroring where each is produced.
+imports the composite that runs it — the proof types included, since a
+proof one role produces is what the other role and the wire consume.
 
 Two lines the docstrings below keep drawing:
 
@@ -24,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 from frx import Array
 
 
@@ -131,3 +131,48 @@ class OpeningWitness:
 
     trace_commit: TraceCommitment
     quotient: QuotientCommitment
+
+
+@dataclass(frozen=True)
+class FriProof:
+    """The fold loop's wire data: the per-layer roots (transcript order) and
+    the final polynomial sent in clear."""
+
+    roots: list[Array]
+    final_pol: Array
+
+
+@dataclass(frozen=True)
+class OpeningProof:
+    """Discharges a `QuotientBoundClaim`, leaving nothing to prove: the
+    out-of-domain column openings (`evals`; None under `EchoOpening`, which
+    opens nothing), the FRI fold proof, the grinding nonce, the squeezed
+    query positions, and every committed tree's per-query openings."""
+
+    evals: Array | None
+    fri: FriProof
+    nonce: int
+    positions: np.ndarray
+    trace_openings: list[list[Array]]
+    quotient_openings: list[list[Array]]
+    fri_openings: list[list[Array]]
+
+
+@dataclass(frozen=True)
+class InnerProof:
+    """What a verifier needs to check an `InnerClaim` without the trace: the
+    per-stage roots the transcript absorbed and the opening stage's discharge,
+    assembled flat for the wire."""
+
+    trace_root: Array
+    quotient_root: Array
+    # The committed columns opened at the out-of-domain point.
+    # None when the opening is EchoOpening (no openings to send).
+    evals: Array | None
+    fri: FriProof
+    final_pol: Array
+    nonce: int
+    query_positions: np.ndarray
+    trace_openings: list[list[Array]]
+    quotient_openings: list[list[Array]]
+    fri_openings: list[list[Array]]

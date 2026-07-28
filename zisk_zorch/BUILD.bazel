@@ -80,7 +80,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":types",
-        "//zisk_zorch/fri:prover",
         "//zisk_zorch/opening:prover",
         "//zisk_zorch/quotient:prover",
         "//zisk_zorch/transcript",

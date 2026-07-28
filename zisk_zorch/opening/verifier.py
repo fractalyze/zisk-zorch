@@ -23,10 +23,9 @@ from zisk_zorch.fri.queries import (
 )
 from zisk_zorch.fri.seam import Pil2SeamTranscript
 from zisk_zorch.fri.verifier import verify_query_layers
-from zisk_zorch.opening.prover import OpeningProof
 from zisk_zorch.quotient.zerofier import _coset_points
 from zisk_zorch.transcript.transcript import Transcript
-from zisk_zorch.types import QuotientBoundClaim
+from zisk_zorch.types import OpeningProof, QuotientBoundClaim
 
 
 class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningProof]):

@@ -34,18 +34,16 @@ See `docs/architecture.md` for the DEEP seam and its byte-match boundary.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 
-import numpy as np
 from frx import Array
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 
-from zisk_zorch.fri.prover import FriProof
 from zisk_zorch.opening.prover import EchoOpening, OpeningProver
 from zisk_zorch.quotient.prover import QuotientProver
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import (
     InnerClaim,
+    InnerProof,
     InnerWitness,
     OpeningWitness,
     TraceBoundClaim,
@@ -75,26 +73,6 @@ def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:
     if not steps or steps[-1] != final_bits:
         steps.append(final_bits)
     return steps
-
-
-@dataclass(frozen=True)
-class InnerProof:
-    """What a verifier needs to check an `InnerClaim` without the trace: the
-    per-stage roots the transcript absorbed and the opening stage's discharge,
-    assembled flat for the wire."""
-
-    trace_root: Array
-    quotient_root: Array
-    # The committed columns opened at the out-of-domain point.
-    # None when the opening is EchoOpening (no openings to send).
-    evals: Array | None
-    fri: FriProof
-    final_pol: Array
-    nonce: int
-    query_positions: np.ndarray
-    trace_openings: list[list[Array]]
-    quotient_openings: list[list[Array]]
-    fri_openings: list[list[Array]]
 
 
 def bind_trace_commitment(transcript: Transcript, root: Array) -> Transcript:

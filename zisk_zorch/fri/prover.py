@@ -42,6 +42,7 @@ from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import FriProof
 
 
 @dataclass(frozen=True)
@@ -52,15 +53,6 @@ class _Layer:
     matrix: Array
     digest_layers: list[Array]
     leaf_bits: int  # log2 of the layer height = the openings' index modulus
-
-
-@dataclass(frozen=True)
-class FriProof:
-    """The fold loop's wire data: the per-layer roots (transcript order) and
-    the final polynomial sent in clear."""
-
-    roots: list[Array]
-    final_pol: Array
 
 
 def prove(
