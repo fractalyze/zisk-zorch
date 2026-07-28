@@ -51,7 +51,7 @@ def _load_inputs(case: dict) -> dict:
         "challenges": challenges,
         "airvalues": airvalues,
         "airgroupvalues": airgroupvalues,
-        "zi": embed(case["zi"]),
+        "zi": {0: embed(case["zi"])},
     }
 
 
@@ -72,10 +72,19 @@ def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int) -> Array:
         return env["airvalues"][s["id"]]
     if t == "airgroupvalue":
         return env["airgroupvalues"][s["id"]]
+    if t == "public":
+        return env["publics"][s["id"]]
+    if t == "proofvalue":
+        return env["proofvalues"][s["id"]]
+    if t == "custom":
+        return fnp.roll(
+            env["custom"][(s.get("commitId", 0), s["id"])],
+            -(s.get("prime", 0) * extend),
+        )
     if t == "tmp":
         return tmp[s["id"]]
     if t == "Zi":
-        return env["zi"]
+        return env["zi"][s.get("boundaryId", 0)]
     raise ValueError(f"unhandled cExp operand type {t!r}")
 
 

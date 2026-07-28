@@ -223,15 +223,78 @@ def main() -> int:
             + "stage-2 commit root (real witness-STD columns)"
         )
 
-    for stage, why in [
+    # -- quotient: interpret the proving key's composite cExp on the dump --
+    import frx as _frx
+    from zisk_zorch.quotient.cexp_ref import _run_block
+    from zisk_zorch.quotient.zerofier import inv_zerofier
+
+    ei = json.loads(
         (
-            "stage-2 hint computation",
-            "cm2 columns from cm1+challenges need the"
-            " expressions interpreter (same class as quotient cExp)",
-        ),
-        ("quotient", "needs this AIR's cExp extraction (in-repo gate: cexp_ref)"),
-    ]:
-        print(f"SKIP     {stage}: {why}")
+            starkinfo.parent / starkinfo.name.replace("starkinfo", "expressionsinfo")
+        ).read_text()
+    )
+    cexp_code = next(e for e in ei["expressionsCode"] if e["expId"] == si["cExpId"])[
+        "code"
+    ]
+
+    def _cubic_scalar(words):
+        return fnp.array(np.asarray(words, dtype=np.uint64).astype(F).view(F3))[0]
+
+    def _values_env(path, vmap):
+        """pil2 packs stage-1 values as one word, stage>=2 as three."""
+        words = _u64(path)
+        out, off = {}, 0
+        for i, v in enumerate(vmap):
+            if v["stage"] == 1:
+                out[i] = _cubic_scalar([words[off], 0, 0])
+                off += 1
+            else:
+                out[i] = _cubic_scalar(words[off : off + 3])
+                off += 3
+        return out
+
+    publics = _u64(pre("publics"))
+    env = {
+        "cm": {
+            i: (
+                entry_col({"type": "cm", "id": i})
+                if cmp_map[i]["dim"] == 3
+                else fnp.array(
+                    bufs[("cm", cmp_map[i]["stage"])][:, cmp_map[i]["stagePos"]]
+                )
+            )
+            for i in range(len(cmp_map))
+        },
+        "const": {
+            i: fnp.array(bufs[("const", 0)][:, i]) for i in range(si["nConstants"])
+        },
+        "custom": {
+            (ci, j): fnp.array(bufs[("custom", ci)][:, j])
+            for ci in range(n_customs)
+            for j in range(bufs[("custom", ci)].shape[1])
+        },
+        "challenges": {i: fnp.array(chals[i : i + 1])[0] for i in range(len(chals))},
+        "publics": {i: _cubic_scalar([publics[i], 0, 0]) for i in range(len(publics))},
+        "airvalues": _values_env(pre("airvalues"), si["airValuesMap"]),
+        "airgroupvalues": _values_env(pre("airgroupvalues"), si["airgroupValuesMap"]),
+        "proofvalues": _values_env(pre("proofvalues"), si["proofValuesMap"]),
+        "zi": {0: inv_zerofier(nb, nbe - nb)},
+    }
+    # env enters as a jit argument: closure-captured arrays lower as in-graph
+    # constants, which crashes the GPU compiler on the zerofier coset (#67).
+    got_q = _frx.jit(lambda e: _run_block(cexp_code, e, stride))(env)
+    want_q = _u64(pre("q_ext"))
+    ok = bool(np.array_equal(np.asarray(split_coeffs(got_q)).reshape(-1), want_q))
+    ok_all &= ok
+    print(
+        ("OK       " if ok else "MISMATCH ")
+        + f"quotient q = cExp/Z_H ({len(cexp_code)} SSA ops, real interpreter output)"
+    )
+
+    print(
+        "SKIP     stage-2 hint computation: hintsInfo num/den expressions "
+        "not yet chained through grand_sum"
+    )
 
     print("inner-proof byte-match: " + ("ALL COVERED LINKS OK" if ok_all else "FAILED"))
     return 0 if ok_all else 1
