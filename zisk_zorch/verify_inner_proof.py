@@ -1,22 +1,28 @@
-"""Byte-match zisk-zorch stages against a real pil2-proofman genProof dump.
+"""Byte-match every zisk-zorch inner-proof stage against a real pil2-proofman
+genProof dump.
 
 Consumes a ``PIL2_DUMP_DIR`` capture (the ``dump/per-stage-genproof`` patch on
-pil2-proofman): one AIR instance's witness trace, stage buffers, roots, and
-transcript-derived challenges from an actual prove. Two links are fully
-byte-gated today:
+pil2-proofman): one AIR instance's witness, stage buffers, roots, and
+transcript-derived challenges from an actual prove. Gates, in proof order:
 
-- **stage-1**: ``commit_trace`` on the dumped witness must reproduce the real
-  prover's stage-1 root — the assembled extend∘leaf-hash∘merkelize path on a
-  real (not synthetic) trace.
-- **FRI**: the production ``fri.fold`` chained over the dumped per-layer betas
-  must reproduce every dumped layer, and layer 0 must equal the dumped DEEP
-  polynomial.
+- stage-1 commit root from the settled witness (``commit_trace``)
+- stage-2 witness columns from cm1 + the proving key alone (hint num/den
+  expressions -> ``im_single``, its running sum -> ``gsum``, and the
+  materialized-denominator ``ImPol``), then the stage-2 extension and root
+- quotient ``q = cExp/Z_H`` via the generalized SSA interpreter
+  (``quotient.cexp_ref``) against the prover's raw ``q`` section
+- evals over every wrapped opening point (``compute_lev`` + committed columns)
+- the DEEP polynomial in pil2's multi-opening double-Horner form
+- the FRI fold chain, layer by layer, with the real per-layer betas
 
-The remaining stages report SKIP with the reason: stage-2 needs the witness-STD
-hint machinery, quotient needs this AIR's cExp extraction, and evals/DEEP are
-multi-opening here (``openingPoints [-1..3]``) — the wired single-opening flow
-does not cover them yet. Those become gates as the pipeline grows; a mismatch
-in the covered links localizes with the per-stage ``verify_*`` runnables.
+Field arithmetic is exact, so each gate is equal-or-wrong. A mismatch
+localizes with the per-stage ``verify_*`` runnables. The two expression-
+interpreter gates are CPU-pinned: the frx GPU backend miscompiles those
+specific large fused graphs (fractalyze/xla#334; the similarly-sized DEEP
+graph is unaffected, so the trigger is graph shape, not op count alone).
+
+Assumes a two-stage AIR with a single everyRow boundary (asserted) — the
+ZisK / fibonacci-square shape.
 
 Run: python -m zisk_zorch.verify_inner_proof --dump=<dir> \
         --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
@@ -63,6 +69,8 @@ def main() -> int:
             starkinfo = pathlib.Path(a.split("=", 1)[1])
     assert dump and instance and starkinfo, "--dump/--instance/--starkinfo required"
     si = json.loads(starkinfo.read_text())
+    assert si["nStages"] == 2, "buffer keys assume a two-stage AIR (quotient = cm3)"
+    assert len(si["boundaries"]) == 1, "only the everyRow zerofier is wired"
     ss = si["starkStruct"]
     nb, nbe = ss["nBits"], ss["nBitsExt"]
     arity = ss["merkleTreeArity"]
@@ -224,7 +232,6 @@ def main() -> int:
         )
 
     # -- quotient: interpret the proving key's composite cExp on the dump --
-    import frx as _frx
     from zisk_zorch.quotient.cexp_ref import _run_block
     from zisk_zorch.quotient.zerofier import inv_zerofier
 
@@ -282,11 +289,11 @@ def main() -> int:
     }
     # env enters as a jit argument: closure-captured arrays lower as in-graph
     # constants, which crashes the GPU compiler on the zerofier coset (#67).
-    # CPU-pinned: the frx GPU backend MISCOMPILES this fused graph past ~80
-    # SSA ops (K=81 diverges from exact reference, K=80 matches; CPU matches
-    # everywhere) — a correctness bug, not perf. Keep on CPU until fixed.
-    with _frx.default_device(_frx.devices("cpu")[0]):
-        got_q = _frx.jit(lambda e: _run_block(cexp_code, e, stride))(env)
+    # CPU-pinned: the GPU backend miscompiles THIS fused graph (its 81-op
+    # prefix diverges from the exact reference, the 80-op prefix matches;
+    # CPU matches everywhere — fractalyze/xla#334). Unpin when #334 closes.
+    with frx.default_device(frx.devices("cpu")[0]):
+        got_q = frx.jit(lambda e: _run_block(cexp_code, e, stride))(env)
     want_q = _u64(pre("q_ext"))
     ok = bool(np.array_equal(np.asarray(split_coeffs(got_q)).reshape(-1), want_q))
     ok_all &= ok
@@ -328,11 +335,12 @@ def main() -> int:
         im_pol = _run_block(exps[im_pol_exp], e, 1)
         return gsum, im_single, im_pol
 
-    # CPU-pinned like the quotient: the division's inverse chain pushes this
-    # fused graph past the ~80-op GPU miscompilation threshold (ImPol came
-    # back wrong on GPU while exact reference and CPU agree).
-    with _frx.default_device(_frx.devices("cpu")[0]):
-        got_cols = _frx.jit(stage2_cols)(env_base)
+    # CPU-pinned like the quotient: this fused graph (division's inverse
+    # chain included) also miscompiles on GPU — ImPol came back wrong while
+    # the exact reference and CPU agree (fractalyze/xla#334).
+    with frx.default_device(frx.devices("cpu")[0]):
+        got_cols = frx.jit(stage2_cols)(env_base)
+    assert pre("cm2_base").exists(), "stage-2 hint gate needs the cm2_base dump"
     cm2_np = _u64(pre("cm2_base")).reshape(1 << nb, stage_cols[2])
     ok = True
     for name, got_col, lo in [
