@@ -180,8 +180,8 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 ### Per-stage comparison
 
 RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-23
-(zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp and quotient
-rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
+(zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp, quotient,
+and evals rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
 commit excludes its extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so
 rows do not sum.
 
@@ -193,7 +193,7 @@ rows do not sum.
 | commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | real-trace root |
 | quotient ⚠️ | 133 ms (synthetic mimic) | 12.1 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
 | LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
-| evals (`evmap`) | 3.73 ms (M=68) | 7.8 ms | **2.1×** | LEv round-trip |
+| evals (`evmap`) | 3.74 ms (M=68) | 3.14 ms | **0.84×** | LEv round-trip |
 | DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 15.3 ms | **1.72×** | low-degree test |
 | FRI total (queries excl.) | 7.88 ms | 6.5 ms | **0.83×** | goldens (`fri_*`) |
 
@@ -209,10 +209,12 @@ How to read the table:
   native `MAIN_EXPR_PATTERN` 133 ms (cv 0.11%), real Main
   12.06 ms — the first number on frx 0.10.1, unchanged from the dev-pin
   measurement.
-- **The evals ratio pairs like-for-like shapes**: native's 3.73 ms opens M=68
-  columns, so its counterpart is the 62+6 run (wired M=39 measures 4.1 ms).
-  The residual on evals/DEEP is the extension-typed reduce and AoS cubic
-  arithmetic (upstream: zorch#512, xla#306, xla_fork#258).
+- **The evals ratio pairs like-for-like shapes**: native's 3.74 ms opens
+  M=68 columns, so its counterpart is the 62+6 run; the wired 38+1 shape
+  measures 1.58 ms. Both sides re-measured 2026-07-28, ours on the current
+  pins — zorch#512's block-form `open_columns` is what took this row from
+  7.8 ms / 2.1× to below native. The DEEP row is not re-measured; its
+  residual is the AoS cubic arithmetic (upstream: xla_fork#258).
 - **The LogUp row is not in the prover's spine** — it pins the grand-sum
   primitive. Its native side was re-measured 2026-07-28 (`gsum_bench` at
   2^22: invfold 2.211 + scan 0.240 = 2.451 ms), confirming the figure the
