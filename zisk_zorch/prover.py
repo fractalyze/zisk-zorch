@@ -71,11 +71,11 @@ def _opening_deep_jit(
     opening_points: tuple[int, ...],
 ) -> tuple[Transcript, Array, Array]:
     """The DEEP leg — z squeeze, column openings, evals absorb, vf squeeze,
-    composition — as one shape-invariant ``@jit`` zone (the sp1-zorch
-    jagged-PCS pattern): the transcript rides through as a traced pytree, so
-    the whole leg is one compiled executable instead of eager transcript hops
-    between the inner `open_columns`/`deep_composition` zones. The compile
-    keys on the committed shapes and the static schedule alone.
+    composition — as one shape-invariant ``@jit`` zone: the transcript rides
+    through as a traced pytree, so the whole leg is one compiled executable
+    instead of eager transcript hops between the inner
+    `open_columns`/`deep_composition` zones. The compile keys on the committed
+    shapes and the static schedule alone.
 
     `domain` and `lev_consts` arrive from the eager prologue: an in-trace
     coset feeding the composition's cubic reciprocal is #67's NVPTX crash

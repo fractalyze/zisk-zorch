@@ -133,10 +133,10 @@ def _transcript_unflatten(aux: tuple, children: tuple) -> Transcript:
 
 
 # A pytree, so a whole absorb/squeeze leg can cross a `frx.jit` boundary as a
-# value (the sp1-zorch jagged-PCS pattern): the zone returns the advanced
-# transcript and the caller threads it forward. Mutation inside the zone acts
-# on the unflattened copy, which is why zones must RETURN their transcript —
-# the caller's object is not updated in place across the boundary.
+# value: the zone returns the advanced transcript and the caller threads it
+# forward. Mutation inside the zone acts on the unflattened copy, which is why
+# zones must RETURN their transcript — the caller's object is not updated in
+# place across the boundary.
 frx.tree_util.register_pytree_node(
     Transcript, _transcript_flatten, _transcript_unflatten
 )

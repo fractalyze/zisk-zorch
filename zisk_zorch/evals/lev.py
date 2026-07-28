@@ -69,13 +69,10 @@ _CUBIC_ONE = fnp.array(
 class LevConstants:
     """`compute_lev`'s field constants, materialized in an eager prologue.
 
-    A jit zone wrapping the LEv arithmetic receives these as ARGUMENTS, the
-    same discipline the sp1-zorch zones follow. It is also a safety line: frx
-    below 0.10.1 miscompiled field constants embedded inside a traced region
-    (the `_CUBIC_ONE` family — an i64 type-inference failure, an
-    `EmitConstant` GOLDILOCKSX3→F64 CHECK crash, or silently wrong values,
-    by surrounding fusion), and only the jit-vs-eager byte test catches the
-    silent case. Every field here depends only on `(opening_points, n_bits)`,
+    A jit zone wrapping the LEv arithmetic receives these as ARGUMENTS rather
+    than closure constants, keeping the traced region free of embedded field
+    constants; the jit-vs-eager byte test in `prover_test` pins the
+    equivalence. Every field here depends only on `(opening_points, n_bits)`,
     so the prologue is one-time per shape."""
 
     one: Array  # cubic 1
