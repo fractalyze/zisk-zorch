@@ -282,7 +282,11 @@ def main() -> int:
     }
     # env enters as a jit argument: closure-captured arrays lower as in-graph
     # constants, which crashes the GPU compiler on the zerofier coset (#67).
-    got_q = _frx.jit(lambda e: _run_block(cexp_code, e, stride))(env)
+    # CPU-pinned: the frx GPU backend MISCOMPILES this fused graph past ~80
+    # SSA ops (K=81 diverges from exact reference, K=80 matches; CPU matches
+    # everywhere) — a correctness bug, not perf. Keep on CPU until fixed.
+    with _frx.default_device(_frx.devices("cpu")[0]):
+        got_q = _frx.jit(lambda e: _run_block(cexp_code, e, stride))(env)
     want_q = _u64(pre("q_ext"))
     ok = bool(np.array_equal(np.asarray(split_coeffs(got_q)).reshape(-1), want_q))
     ok_all &= ok
