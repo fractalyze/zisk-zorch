@@ -182,15 +182,11 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-23
 (zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp, quotient,
 evals, and DEEP rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
-commit excludes its extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so
-rows do not sum.
+`MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 
 | stage | native pil2 | zisk-zorch | ratio | pinned by |
 |---|---|---|---|---|
-| extend cm1 (38 col) | 32.5 ms | 23.6 ms | **0.72×** | golden (`lde`) |
-| extend cm2 (24 col) | 20.4 ms | 14.8 ms | **0.73×** | golden (`lde`) |
-| commit stage1 (38 col) | 37.5 ms | 39.0 ms | **1.04×** | real-trace root |
-| commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | real-trace root |
+| trace commit (extend+merkle, 38+24 col) | 110.7 ms | 98.5 ms | **0.89×** | golden (`lde`) + real-trace root |
 | quotient ⚠️ | 133 ms (synthetic mimic) | 12.1 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
 | LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
 | evals (`evmap`) | 3.74 ms (M=68) | 3.14 ms | **0.84×** | LEv round-trip |
