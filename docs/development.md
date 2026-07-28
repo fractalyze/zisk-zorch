@@ -184,7 +184,7 @@ rows do not sum.
 | commit stage1 (38 col) | 37.5 ms | 39.0 ms | **1.04×** | real-trace root |
 | commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | real-trace root |
 | quotient ⚠️ | 134 ms (synthetic mimic) | 12.0 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
-| LogUp grand-sum (I=8) | 2.45 ms ⚠️ carried | 3.56 ms | **1.45×** | golden (`gsum`) |
+| LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
 | evals (`evmap`) | 3.73 ms (M=68) | 7.8 ms | **2.1×** | LEv round-trip |
 | DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 15.3 ms | **1.72×** | low-degree test |
 | FRI total (queries excl.) | 7.88 ms | 6.5 ms | **0.83×** | goldens (`fri_*`) |
@@ -203,9 +203,9 @@ How to read the table:
   The residual on evals/DEEP is the extension-typed reduce and AoS cubic
   arithmetic (upstream: zorch#512, xla#306, xla_fork#258).
 - **The LogUp row is not in the prover's spine** — it pins the grand-sum
-  primitive — and "carried" marks its native 2.45 ms as carried forward from
-  an earlier session: `gsum_bench` was not re-run on the re-measurement day,
-  so that ratio pairs a fresh zisk-zorch number with a stale native one.
+  primitive. Its native side was re-measured 2026-07-28 (`gsum_bench` at
+  2^22: invfold 2.211 + scan 0.240 = 2.451 ms), confirming the figure the
+  table had carried forward.
 - The FRI fold byte-match requires the compile-time-constant field-divide fix
   first carried in frx `dev20260723085209` (present in 0.10.1); `fold_test` is
   green on GPU and CPU under it.
