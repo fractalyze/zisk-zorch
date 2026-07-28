@@ -203,7 +203,9 @@ How to read the table:
   The residual on evals/DEEP is the extension-typed reduce and AoS cubic
   arithmetic (upstream: zorch#512, xla#306, xla_fork#258).
 - **The LogUp row is not in the prover's spine** — it pins the grand-sum
-  primitive, and the native 2.45 ms is a carried figure.
+  primitive — and "carried" marks its native 2.45 ms as carried forward from
+  an earlier session: `gsum_bench` was not re-run on the re-measurement day,
+  so that ratio pairs a fresh zisk-zorch number with a stale native one.
 - The FRI fold byte-match requires the compile-time-constant field-divide fix
   first carried in frx `dev20260723085209` (present in 0.10.1); `fold_test` is
   green on GPU and CPU under it.
