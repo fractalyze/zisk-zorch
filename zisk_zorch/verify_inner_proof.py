@@ -295,10 +295,61 @@ def main() -> int:
         + f"quotient q = cExp/Z_H ({len(cexp_code)} SSA ops, real interpreter output)"
     )
 
-    print(
-        "SKIP     stage-2 hint computation: hintsInfo num/den expressions "
-        "not yet chained through grand_sum"
+    # -- stage-2 hint chaining: reproduce cm2's columns from cm1 + the key --
+    exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
+    const_base = np.fromfile(
+        starkinfo.parent / starkinfo.name.replace(".starkinfo.json", ".const"),
+        dtype=np.uint64,
+    ).reshape(1 << nb, si["nConstants"])
+    trace_np = np.asarray(trace).astype(np.uint64)
+    env_base = dict(
+        env,
+        cm={i: fnp.array(trace_np[:, i].astype(F)) for i in range(n_cols)},
+        const={
+            i: fnp.array(const_base[:, i].astype(F)) for i in range(si["nConstants"])
+        },
+        zi={},
     )
+    hints = {h["name"]: h for h in ei["hintsInfo"]}
+
+    def _hint_exp(hint, field):
+        v = next(f for f in hints[hint]["fields"] if f["name"] == field)
+        return exps[v["values"][0]["id"]]
+
+    im_pol_exp = next(
+        p["expId"] for i, p in enumerate(cmp_map) if p["stage"] == 2 and p.get("imPol")
+    )
+
+    def stage2_cols(e):
+        num = _run_block(_hint_exp("im_col", "numerator"), e, 1)
+        den = _run_block(_hint_exp("im_col", "denominator"), e, 1)
+        im_single = num / den
+        gsum = fnp.cumsum(im_single)
+        im_pol = _run_block(exps[im_pol_exp], e, 1)
+        return gsum, im_single, im_pol
+
+    # CPU-pinned like the quotient: the division's inverse chain pushes this
+    # fused graph past the ~80-op GPU miscompilation threshold (ImPol came
+    # back wrong on GPU while exact reference and CPU agree).
+    with _frx.default_device(_frx.devices("cpu")[0]):
+        got_cols = _frx.jit(stage2_cols)(env_base)
+    cm2_np = _u64(pre("cm2_base")).reshape(1 << nb, stage_cols[2])
+    ok = True
+    for name, got_col, lo in [
+        ("gsum", got_cols[0], 0),
+        ("im_single", got_cols[1], 3),
+        ("ImPol", got_cols[2], 6),
+    ]:
+        want_col = np.ascontiguousarray(cm2_np[:, lo : lo + 3]).reshape(-1)
+        this = bool(
+            np.array_equal(np.asarray(split_coeffs(got_col)).reshape(-1), want_col)
+        )
+        ok &= this
+        print(
+            ("OK       " if this else "MISMATCH ")
+            + f"stage-2 witness column {name} (hint expressions)"
+        )
+    ok_all &= ok
 
     print("inner-proof byte-match: " + ("ALL COVERED LINKS OK" if ok_all else "FAILED"))
     return 0 if ok_all else 1
