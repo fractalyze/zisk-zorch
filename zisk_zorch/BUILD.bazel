@@ -133,3 +133,19 @@ py_test(
         requirement("zk_dtypes"),
     ],
 )
+
+# Shared plumbing for the per-stage `verify_*` byte-match runnables: the
+# check_match reporter and the pil2 reference-dump loaders.
+py_library(
+    name = "dump",
+    srcs = [
+        "__init__.py",
+        "dump.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)

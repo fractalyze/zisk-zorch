@@ -108,6 +108,21 @@ elements either match or they don't.
   Larger AIRs follow the same recipe but stay uncommitted — drop the
   regenerated dir under `testdata/fullprogram/` locally and the test runs
   every fixture dir present.
+- **Per-stage `verify_*` runnables** (fractalyze/zisk-zorch#59) byte-match an
+  assembled stage against a dump of pil2-stark's **real CUDA kernels** — the
+  code ZisK runs on GPU, not the `fields`-crate reconstruction. First slice:
+  [`../zisk_zorch/commit/verify_trace_commit.py`](../zisk_zorch/commit/verify_trace_commit.py)
+  runs `commit_trace` on the exact trace a
+  [`../golden/pil2_dump/`](../golden/pil2_dump/) capture committed (the ZisK
+  analog of SP1's `SP1_DUMP_PHASES`) and gates on the commitment root — one
+  Poseidon2 image seals the assembled `extend ∘ leaf-hash ∘ merkelize` path.
+  Later stages follow the same shape on
+  [`../zisk_zorch/dump.py`](../zisk_zorch/dump.py)'s plumbing.
+
+  ```sh
+  bazel run //zisk_zorch/commit:verify_trace_commit          # committed fixture
+  bazel run //zisk_zorch/commit:verify_trace_commit -- --dump=<real dump>
+  ```
 
 ## Per-stage baseline against native pil2
 

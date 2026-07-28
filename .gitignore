@@ -35,3 +35,6 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# Compiled pil2 dump harness (built locally via golden/pil2_dump/build.sh)
+golden/pil2_dump/pil2_dump_stage1

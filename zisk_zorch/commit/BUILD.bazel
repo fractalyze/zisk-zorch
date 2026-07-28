@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # pil2's chained linear hash — the Merkle leaf hasher (NOT a zorch Sponge).
@@ -66,6 +66,21 @@ py_test(
         "//zisk_zorch:golden",
         requirement("absl_py"),
         requirement("zk_dtypes"),
+    ],
+)
+
+# Stage-1 byte-match runnable: commit_trace vs a real pil2-proofman dump.
+py_binary(
+    name = "verify_trace_commit",
+    srcs = ["verify_trace_commit.py"],
+    data = glob([
+        "testdata/dump/stage1/commit.json",
+        "testdata/dump/stage1/trace.bin",
+    ]),
+    deps = [
+        ":trace_commit",
+        "//zisk_zorch:dump",
+        requirement("absl_py"),
     ],
 )
 
