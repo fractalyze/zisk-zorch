@@ -18,7 +18,7 @@ rule), so it lives here.
 
 ## Status
 
-`prove_inner` runs the inner proof end to end over one Fiat-Shamir transcript —
+`InnerProver` runs the inner proof end to end over one Fiat-Shamir transcript —
 trace commit → quotient → DEEP → FRI. The primitives it is built from are
 byte-matched against golden vectors generated from pil2-proofman v1.0.0-alpha's
 `fields` crate ([`tools/fixture-gen/`](https://github.com/fractalyze/zisk-zorch/tree/main/tools/fixture-gen));

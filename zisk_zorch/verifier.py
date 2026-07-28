@@ -27,7 +27,7 @@ from zisk_zorch.opening.verifier import OpeningVerifier
 from zisk_zorch.prover import _fold_steps, bind_trace_commitment
 from zisk_zorch.quotient.verifier import QuotientVerifier
 from zisk_zorch.transcript.transcript import Transcript
-from zisk_zorch.types import InnerClaim, InnerProof, OpeningProof, TraceBoundClaim
+from zisk_zorch.types import InnerClaim, InnerProof, TraceBoundClaim
 
 
 class InnerVerifier(VerifierStage[InnerClaim, TrivialClaim, InnerProof]):
@@ -72,63 +72,8 @@ class InnerVerifier(VerifierStage[InnerClaim, TrivialClaim, InnerProof]):
         bound = TraceBoundClaim(inner=claim, trace_root=proof.trace_root)
         quotient = self.quotient.verify(bound, proof.quotient_root, transcript)
         opening = self.opening.verify(
-            quotient.reduced_claim,
-            OpeningProof(
-                evals=proof.evals,
-                fri=proof.fri,
-                nonce=proof.nonce,
-                positions=proof.query_positions,
-                trace_openings=proof.trace_openings,
-                quotient_openings=proof.quotient_openings,
-                fri_openings=proof.fri_openings,
-            ),
-            quotient.transcript,
+            quotient.reduced_claim, proof.opening, quotient.transcript
         )
         return VerifyResult(
             TrivialClaim(), opening.transcript, quotient.ok & opening.ok
         )
-
-
-def verify_inner(
-    proof: InnerProof,
-    eval_fn: Callable[[Array], Array],
-    *,
-    n_constraints: int,
-    n_bits: int,
-    blowup_bits: int = 1,
-    arity: int = 2,
-    fold_bits: int = 3,
-    final_bits: int = 5,
-    pow_bits: int = 16,
-    opening_points: Sequence[int] = (0,),
-    transcript: Transcript | None = None,
-) -> bool:
-    """Whether `proof` is a valid inner proof of the AIR `eval_fn` over a
-    `2^n_bits`-row trace — `prove_inner`'s dual, run through `InnerVerifier`.
-
-    `transcript` must be seeded exactly as the prover's was. The keyword
-    parameters are the prover's, and are the verifier's half of the statement:
-    they fix the fold schedule and the domain, so passing different ones
-    checks a different claim."""
-    if proof.evals is None:
-        raise ValueError(
-            "proof carries no out-of-domain openings — it was built with "
-            "EchoOpening, which opens nothing and so cannot be verified"
-        )
-    # The committed columns are the trace's base columns then the one cubic
-    # quotient column (`deep._committed_columns`), so the openings pin the
-    # claim's width.
-    n_cols = proof.evals.shape[0] - 1
-    verifier = InnerVerifier(
-        eval_fn,
-        n_bits=n_bits,
-        blowup_bits=blowup_bits,
-        arity=arity,
-        fold_bits=fold_bits,
-        final_bits=final_bits,
-        pow_bits=pow_bits,
-        opening_points=opening_points,
-    )
-    claim = InnerClaim(n_bits=n_bits, n_cols=n_cols, n_constraints=n_constraints)
-    result = verifier.verify(claim, proof, transcript or Transcript())
-    return bool(result.ok)

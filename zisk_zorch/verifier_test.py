@@ -10,15 +10,16 @@ verifier turns its case red rather than passing unnoticed.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
 
 import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import prove_inner
-from zisk_zorch.verifier import verify_inner
+from zisk_zorch.prover import InnerProver
+from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import InnerClaim, InnerWitness
+from zisk_zorch.verifier import InnerVerifier
 
 _N_BITS = 6
 _N_FREE = 4  # freely chosen columns; each constraint pins one derived column
@@ -63,31 +64,46 @@ def _random_trace(seed: int) -> fnp.ndarray:
     return fnp.array(ints.astype(np.uint64), dtype=F)
 
 
-_KW: dict[str, Any] = dict(
-    n_constraints=_N_CONSTRAINTS,
-    blowup_bits=_BLOWUP_BITS,
-    arity=_ARITY,
-    fold_bits=_FOLD_BITS,
-    final_bits=_FINAL_BITS,
-    pow_bits=_POW_BITS,
-)
+def _claim(n_constraints: int = _N_CONSTRAINTS) -> InnerClaim:
+    return InnerClaim(n_bits=_N_BITS, n_cols=_N_COLS, n_constraints=n_constraints)
+
+
+def _prove_trace(trace: fnp.ndarray, echo_deep: bool = False, jit: bool = True):
+    prover = InnerProver(
+        _eval_fn,
+        n_bits=_N_BITS,
+        blowup_bits=_BLOWUP_BITS,
+        arity=_ARITY,
+        fold_bits=_FOLD_BITS,
+        final_bits=_FINAL_BITS,
+        pow_bits=_POW_BITS,
+        n_queries=_N_QUERIES,
+        echo_deep=echo_deep,
+        jit=jit,
+    )
+    result = prover.prove(_claim(), InnerWitness(trace), Transcript())
+    return result.reduction_proof
 
 
 def _prove(seed: int = 0, jit: bool = True):
     """An honest proof through the real opening — the echo placeholder opens
     no columns, so it produces nothing a verifier could check."""
-    return prove_inner(
-        _trace(seed),
+    return _prove_trace(_trace(seed), jit=jit)
+
+
+def _accepts(proof, n_constraints: int = _N_CONSTRAINTS) -> bool:
+    verifier = InnerVerifier(
         _eval_fn,
-        n_queries=_N_QUERIES,
-        echo_deep=False,
-        jit=jit,
-        **_KW,
+        n_bits=_N_BITS,
+        blowup_bits=_BLOWUP_BITS,
+        arity=_ARITY,
+        fold_bits=_FOLD_BITS,
+        final_bits=_FINAL_BITS,
+        pow_bits=_POW_BITS,
+        opening_points=(0,),
     )
-
-
-def _accepts(proof) -> bool:
-    return verify_inner(proof, _eval_fn, n_bits=_N_BITS, opening_points=(0,), **_KW)
+    result = verifier.verify(_claim(n_constraints), proof, Transcript())
+    return bool(result.ok)
 
 
 def _bump(value):
@@ -96,7 +112,13 @@ def _bump(value):
     return value + fnp.ones((), value.dtype)
 
 
-class VerifyInnerTest(absltest.TestCase):
+def _tamper(proof, **fields):
+    """`proof` with the named opening-section fields replaced — every tamper
+    below rewrites the opening discharge, never the committed roots."""
+    return replace(proof, opening=replace(proof.opening, **fields))
+
+
+class InnerVerifierTest(absltest.TestCase):
     def test_accepts_an_honest_proof(self) -> None:
         self.assertTrue(_accepts(_prove()))
 
@@ -107,83 +129,64 @@ class VerifyInnerTest(absltest.TestCase):
     def test_rejects_a_tampered_nonce(self) -> None:
         """Breaks the grind, before any position is read."""
         proof = _prove()
-        self.assertFalse(_accepts(replace(proof, nonce=proof.nonce - 1)))
+        self.assertFalse(_accepts(_tamper(proof, nonce=proof.opening.nonce - 1)))
 
     def test_rejects_a_tampered_trace_opening(self) -> None:
         """Breaks that row's Merkle path against the stage-1 root."""
         proof = _prove()
-        openings = [list(o) for o in proof.trace_openings]
+        openings = [list(o) for o in proof.opening.trace_openings]
         first = openings[0][0]
         openings[0][0] = first.at[0].set(_bump(first[0]))
-        self.assertFalse(_accepts(replace(proof, trace_openings=openings)))
+        self.assertFalse(_accepts(_tamper(proof, trace_openings=openings)))
 
     def test_rejects_a_tampered_quotient_opening(self) -> None:
         proof = _prove()
-        openings = [list(o) for o in proof.quotient_openings]
+        openings = [list(o) for o in proof.opening.quotient_openings]
         first = openings[0][0]
         openings[0][0] = first.at[0].set(_bump(first[0]))
-        self.assertFalse(_accepts(replace(proof, quotient_openings=openings)))
+        self.assertFalse(_accepts(_tamper(proof, quotient_openings=openings)))
 
     def test_rejects_tampered_evals(self) -> None:
         """The openings are absorbed before `vf` is squeezed, so changing them
         re-derives a different batching challenge and every later check moves
         with it — the transcript binding, not one comparison."""
         proof = _prove()
-        evals = proof.evals.at[0].set(_bump(proof.evals[0]))
-        self.assertFalse(_accepts(replace(proof, evals=evals)))
+        evals = proof.opening.evals.at[0].set(_bump(proof.opening.evals[0]))
+        self.assertFalse(_accepts(_tamper(proof, evals=evals)))
 
     def test_rejects_a_tampered_final_polynomial(self) -> None:
         proof = _prove()
-        final = proof.final_pol.at[0].set(_bump(proof.final_pol[0]))
-        self.assertFalse(
-            _accepts(
-                replace(proof, final_pol=final, fri=replace(proof.fri, final_pol=final))
-            )
-        )
+        fri = proof.opening.fri
+        final = fri.final_pol.at[0].set(_bump(fri.final_pol[0]))
+        self.assertFalse(_accepts(_tamper(proof, fri=replace(fri, final_pol=final))))
 
     def test_rejects_a_proof_of_a_different_trace(self) -> None:
         """Roots from one trace, openings from another: each half is internally
         well-formed, so only cross-checking them catches it."""
         honest, other = _prove(seed=0), _prove(seed=1)
-        self.assertFalse(_accepts(replace(honest, trace_openings=other.trace_openings)))
+        self.assertFalse(
+            _accepts(_tamper(honest, trace_openings=other.opening.trace_openings))
+        )
 
     def test_rejects_an_unsatisfied_air(self) -> None:
         """A random trace commits, folds, and opens perfectly well — but its
         constraints do not vanish on the base domain, so the zerofier division
         is not exact and the AIR identity at `z` fails. The other three checks
         cannot see this: it is the constraint check's whole reason to exist."""
-        proof = prove_inner(
-            _random_trace(0),
-            _eval_fn,
-            n_queries=_N_QUERIES,
-            echo_deep=False,
-            **_KW,
-        )
-        self.assertFalse(_accepts(proof))
+        self.assertFalse(_accepts(_prove_trace(_random_trace(0))))
 
     def test_rejects_a_wrong_constraint_count(self) -> None:
         """`n_constraints` is the verifier's half of the statement: folding by
         a different alpha vector checks a different claim."""
         proof = _prove()
         with self.assertRaises(ValueError):
-            verify_inner(
-                proof,
-                _eval_fn,
-                n_bits=_N_BITS,
-                **{**_KW, "n_constraints": _N_CONSTRAINTS - 1},
-            )
+            _accepts(proof, n_constraints=_N_CONSTRAINTS - 1)
 
     def test_refuses_an_unverifiable_echo_proof(self) -> None:
         """`EchoOpening` opens no columns, so there is nothing to bind the FRI
         instance to the trace. Refusing beats returning True vacuously."""
-        proof = prove_inner(
-            _trace(0),
-            _eval_fn,
-            n_queries=_N_QUERIES,
-            echo_deep=True,
-            **_KW,
-        )
-        self.assertIsNone(proof.evals)
+        proof = _prove_trace(_trace(0), echo_deep=True)
+        self.assertIsNone(proof.opening.evals)
         with self.assertRaises(ValueError):
             _accepts(proof)
 

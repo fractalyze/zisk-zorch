@@ -161,18 +161,10 @@ class OpeningProof:
 @dataclass(frozen=True)
 class InnerProof:
     """What a verifier needs to check an `InnerClaim` without the trace: the
-    per-stage roots the transcript absorbed and the opening stage's discharge,
-    assembled flat for the wire."""
+    per-stage roots the transcript absorbed, then the opening stage's
+    discharge as its own section. The quotient stage's reduction proof
+    carries prover data, so only its root goes on the wire."""
 
     trace_root: Array
     quotient_root: Array
-    # The committed columns opened at the out-of-domain point.
-    # None when the opening is EchoOpening (no openings to send).
-    evals: Array | None
-    fri: FriProof
-    final_pol: Array
-    nonce: int
-    query_positions: np.ndarray
-    trace_openings: list[list[Array]]
-    quotient_openings: list[list[Array]]
-    fri_openings: list[list[Array]]
+    opening: OpeningProof

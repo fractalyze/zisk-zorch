@@ -150,67 +150,12 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
             OpeningWitness(commitment, quotient.reduction_proof),
             quotient.transcript,
         )
-        proof = opening.reduction_proof
         return ProveResult(
             TrivialClaim(),
             InnerProof(
                 trace_root=commitment.root,
                 quotient_root=quotient.reduction_proof.root,
-                evals=proof.evals,
-                fri=proof.fri,
-                final_pol=proof.fri.final_pol,
-                nonce=proof.nonce,
-                query_positions=proof.positions,
-                trace_openings=proof.trace_openings,
-                quotient_openings=proof.quotient_openings,
-                fri_openings=proof.fri_openings,
+                opening=opening.reduction_proof,
             ),
             opening.transcript,
         )
-
-
-def prove_inner(
-    trace: Array,
-    eval_fn: Callable[[Array], Array],
-    *,
-    n_constraints: int,
-    blowup_bits: int = 1,
-    arity: int = 2,
-    fold_bits: int = 3,
-    final_bits: int = 5,
-    pow_bits: int = 16,
-    n_queries: int = 64,
-    echo_deep: bool = False,
-    jit: bool = True,
-    transcript: Transcript | None = None,
-) -> InnerProof:
-    """Run `InnerProver` over one shared `Transcript` and return the proof.
-
-    `trace` is the `(2^n_bits, n_cols)` base-field evaluation matrix; `eval_fn`
-    produces the `n_constraints` constraints in its trailing axis.
-    `echo_deep` swaps the opening for the trivial `EchoOpening` fallback that
-    skips the OOD opening."""
-    if trace.ndim != 2:
-        raise ValueError(f"trace must be 2-D (rows, cols), got ndim={trace.ndim}")
-    n = trace.shape[0]
-    if n & (n - 1):
-        raise ValueError(f"trace height must be a power of two, got {n}")
-    n_bits = n.bit_length() - 1
-
-    prover = InnerProver(
-        eval_fn,
-        n_bits=n_bits,
-        blowup_bits=blowup_bits,
-        arity=arity,
-        fold_bits=fold_bits,
-        final_bits=final_bits,
-        pow_bits=pow_bits,
-        n_queries=n_queries,
-        echo_deep=echo_deep,
-        jit=jit,
-    )
-    claim = InnerClaim(
-        n_bits=n_bits, n_cols=int(trace.shape[1]), n_constraints=n_constraints
-    )
-    result = prover.prove(claim, InnerWitness(trace), transcript or Transcript())
-    return result.reduction_proof

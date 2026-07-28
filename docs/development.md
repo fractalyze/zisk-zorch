@@ -225,7 +225,7 @@ How to read the table:
   first carried in frx `dev20260723085209` (present in 0.10.1); `fold_test` is
   green on GPU and CPU under it.
 
-### End-to-end (`prove_inner`)
+### End-to-end (`InnerProver`)
 
 Whole-proof peaks through the real DEEP combiner, this RTX 5090
 (`XLA_PYTHON_CLIENT_MEM_FRACTION` raised to fit), one fresh process per row;
@@ -257,7 +257,7 @@ production's shape (111 AIR instances per block):
   our 30.6 s warm — a ~100× gap that is entirely the host-bound spine.
   Derived, not measured — do not quote as a benchmark row.
 
-Proofs verify: `verifier.verify_inner` replays the transcript and checks
+Proofs verify: `verifier.InnerVerifier` replays the transcript and checks
 Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
 (`verifier_test` round-trips prove → verify, honest and tampered).
 

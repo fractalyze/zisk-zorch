@@ -13,7 +13,9 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import _fold_steps, prove_inner
+from zisk_zorch.prover import InnerProver, _fold_steps
+from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import InnerClaim, InnerWitness
 
 _N_BITS = 6
 _N_COLS = 8
@@ -47,10 +49,9 @@ def _eval_fn(trace: fnp.ndarray) -> fnp.ndarray:
 
 
 def _prove(seed: int = 0, echo_deep: bool = True, jit: bool = True):
-    return prove_inner(
-        _trace(seed),
+    prover = InnerProver(
         _eval_fn,
-        n_constraints=_N_CONSTRAINTS,
+        n_bits=_N_BITS,
         blowup_bits=_BLOWUP_BITS,
         arity=_ARITY,
         fold_bits=_FOLD_BITS,
@@ -60,6 +61,9 @@ def _prove(seed: int = 0, echo_deep: bool = True, jit: bool = True):
         echo_deep=echo_deep,
         jit=jit,
     )
+    claim = InnerClaim(n_bits=_N_BITS, n_cols=_N_COLS, n_constraints=_N_CONSTRAINTS)
+    result = prover.prove(claim, InnerWitness(_trace(seed)), Transcript())
+    return result.reduction_proof
 
 
 class FoldStepsTest(absltest.TestCase):
@@ -83,29 +87,30 @@ class FoldStepsTest(absltest.TestCase):
         self.assertEqual(_fold_steps(11, 3, 5), [11, 8, 5])
 
 
-class ProveInnerTest(absltest.TestCase):
+class InnerProverTest(absltest.TestCase):
     def test_spine_shapes(self):
         proof = _prove()
+        opening = proof.opening
         n_bits_ext = _N_BITS + _BLOWUP_BITS
         # 4-element Poseidon2 roots for every committed tree.
         self.assertEqual(proof.trace_root.shape, (4,))
         self.assertEqual(proof.quotient_root.shape, (4,))
-        for root in proof.fri.roots:
+        for root in opening.fri.roots:
             self.assertEqual(root.shape, (4,))
         # Final polynomial is the last FRI layer, sent uncompressed.
-        self.assertEqual(proof.final_pol.shape, (1 << _FINAL_BITS,))
+        self.assertEqual(opening.fri.final_pol.shape, (1 << _FINAL_BITS,))
         # Every query opens every committed tree exactly once.
-        self.assertEqual(len(proof.query_positions), _N_QUERIES)
-        self.assertEqual(len(proof.trace_openings), _N_QUERIES)
-        self.assertEqual(len(proof.quotient_openings), _N_QUERIES)
-        self.assertEqual(len(proof.fri_openings), _N_QUERIES)
+        self.assertEqual(len(opening.positions), _N_QUERIES)
+        self.assertEqual(len(opening.trace_openings), _N_QUERIES)
+        self.assertEqual(len(opening.quotient_openings), _N_QUERIES)
+        self.assertEqual(len(opening.fri_openings), _N_QUERIES)
         # Positions land inside the extended domain.
-        self.assertTrue(np.all(proof.query_positions < (1 << n_bits_ext)))
+        self.assertTrue(np.all(opening.positions < (1 << n_bits_ext)))
 
     def test_deterministic_transcript(self):
         a, b = _prove(0), _prove(0)
-        np.testing.assert_array_equal(a.query_positions, b.query_positions)
-        self.assertEqual(a.nonce, b.nonce)
+        np.testing.assert_array_equal(a.opening.positions, b.opening.positions)
+        self.assertEqual(a.opening.nonce, b.opening.nonce)
         np.testing.assert_array_equal(
             np.asarray(a.trace_root), np.asarray(b.trace_root)
         )
@@ -124,8 +129,8 @@ class ProveInnerTest(absltest.TestCase):
         # columns at the OOD point, absorbs, batches) — exercise the whole pil2
         # spine, not just the quotient-passthrough fallback.
         proof = _prove(echo_deep=False)
-        self.assertEqual(proof.final_pol.shape, (1 << _FINAL_BITS,))
-        self.assertEqual(len(proof.query_positions), _N_QUERIES)
+        self.assertEqual(proof.opening.fri.final_pol.shape, (1 << _FINAL_BITS,))
+        self.assertEqual(len(proof.opening.positions), _N_QUERIES)
 
     def test_jit_zone_matches_eager_bytes(self):
         # The DEEP-leg jit zone threads the transcript through the boundary as
@@ -140,10 +145,14 @@ class ProveInnerTest(absltest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(a.quotient_root), np.asarray(b.quotient_root)
         )
-        np.testing.assert_array_equal(np.asarray(a.evals), np.asarray(b.evals))
-        np.testing.assert_array_equal(np.asarray(a.final_pol), np.asarray(b.final_pol))
-        np.testing.assert_array_equal(a.query_positions, b.query_positions)
-        self.assertEqual(a.nonce, b.nonce)
+        np.testing.assert_array_equal(
+            np.asarray(a.opening.evals), np.asarray(b.opening.evals)
+        )
+        np.testing.assert_array_equal(
+            np.asarray(a.opening.fri.final_pol), np.asarray(b.opening.fri.final_pol)
+        )
+        np.testing.assert_array_equal(a.opening.positions, b.opening.positions)
+        self.assertEqual(a.opening.nonce, b.opening.nonce)
 
 
 if __name__ == "__main__":
