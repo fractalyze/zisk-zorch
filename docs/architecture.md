@@ -11,24 +11,28 @@ v1.0.0-alpha's `fields` crate via [`../tools/fixture-gen/`](../tools/fixture-gen
 
 ## Stages and claims in this repo
 
-- **Stage** — one claim reduction with paired roles
-  (`zorch.stage.ProverStage`): `QuotientProver` reduces `InnerClaim` (some
-  trace satisfies the AIR) to `QuotientBoundClaim` (the committed pair is
-  consistent), and `OpeningProver` discharges that to the trivial claim.
-  pil2's DEEP, FRI, and query phases are one terminal stage: each sub-step
-  consumes a challenge the previous one squeezed and produces the next one's
-  prover input, so their seams are prover-data seams, not claim boundaries.
+- **Stage** — one claim reduction with paired roles, each stage's pair in its
+  own package: `quotient/prover.py`'s `QuotientProver` reduces `InnerClaim`
+  (some trace satisfies the AIR) to `QuotientBoundClaim` (the committed pair
+  is consistent), and `opening/prover.py`'s `OpeningProver` discharges that to
+  the trivial claim. pil2's DEEP, FRI, and query phases are one terminal
+  stage: each sub-step consumes a challenge the previous one squeezed and
+  produces the next one's prover input, so their seams are prover-data seams,
+  not claim boundaries.
 - **Claim** — what crosses a stage seam: only data both roles derive (the
-  verifier from the wire), never prover-only state. The committed trees'
-  prover data — the extended trace, the quotient codeword and layers — rides
-  witness wrappers (`OpeningWitness`) the composite assembles. Static config
-  (arity, the fold schedule, `eval_fn`) lives on the role instances, the
-  statement on the claim, the trace on the witness.
-- **Verifier duals** — every Stage's `VerifierStage` role lives in
-  [`../zisk_zorch/verifier.py`](../zisk_zorch/verifier.py): `QuotientVerifier`
-  and `OpeningVerifier` consume the same claims over the same transcript
-  schedule, and the composite `InnerVerifier` mirrors `InnerProver` step for
-  step (Merkle, DEEP, FRI, and the AIR constraint check at the OOD point).
+  verifier from the wire), never prover-only state. The claims live in
+  [`../zisk_zorch/claims.py`](../zisk_zorch/claims.py), below every stage.
+  The committed trees' prover data — the extended trace, the quotient
+  codeword and layers — rides witness wrappers (`OpeningWitness`) the
+  composite assembles. Static config (arity, the fold schedule, `eval_fn`)
+  lives on the role instances, the statement on the claim, the trace on the
+  witness.
+- **Verifier duals** — every Stage's `VerifierStage` role sits beside its
+  prover twin (`quotient/verifier.py`, `opening/verifier.py`), consuming the
+  same claims over the same transcript schedule; the composite
+  `InnerVerifier` ([`../zisk_zorch/verifier.py`](../zisk_zorch/verifier.py))
+  mirrors `InnerProver` step for step (Merkle, DEEP, FRI, and the AIR
+  constraint check at the OOD point).
 
 For coding style see [conventions.md](conventions.md); to build, test, and
 benchmark it see [development.md](development.md).

@@ -64,19 +64,24 @@ py_test(
 # End-to-end inner proof: one Transcript threading commit -> quotient -> FRI ->
 # queries. The DEEP FRI-polynomial stage is an injected seam (no byte-match
 # primitive exists), so this wires the spine, not a pil2-conformant proof.
+# The claims crossing the stage seams; below every stage so a stage's roles
+# never import the composite that runs them.
+py_library(
+    name = "claims",
+    srcs = ["claims.py"],
+    visibility = ["//visibility:public"],
+    deps = [requirement("frx")],
+)
+
 py_library(
     name = "prover",
     srcs = ["prover.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//zisk_zorch/commit:openings",
-        "//zisk_zorch/commit:trace_commit",
-        "//zisk_zorch/deep:fri_polynomial",
-        "//zisk_zorch/evals:lev",
+        ":claims",
         "//zisk_zorch/fri:prover",
-        "//zisk_zorch/fri:queries",
-        "//zisk_zorch/fri:seam",
-        "//zisk_zorch/quotient",
+        "//zisk_zorch/opening:prover",
+        "//zisk_zorch/quotient:prover",
         "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("numpy"),
@@ -104,19 +109,14 @@ py_library(
     srcs = ["verifier.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":claims",
         ":prover",
-        "//zisk_zorch/commit:openings",
-        "//zisk_zorch/commit:trace_commit",
-        "//zisk_zorch/deep:fri_polynomial",
-        "//zisk_zorch/fri:queries",
-        "//zisk_zorch/fri:seam",
-        "//zisk_zorch/fri:verifier",
-        "//zisk_zorch/quotient",
+        "//zisk_zorch/opening:prover",
+        "//zisk_zorch/opening:verifier",
+        "//zisk_zorch/quotient:verifier",
         "//zisk_zorch/transcript",
         requirement("frx"),
-        requirement("numpy"),
         requirement("pyzorch"),
-        requirement("zk_dtypes"),
     ],
 )
 

@@ -1,0 +1,51 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# The opening stage: pil2's DEEP + FRI + query phases as one terminal Stage,
+# plus the trace-commit half that brackets the inner proof.
+py_library(
+    name = "prover",
+    srcs = [
+        "__init__.py",
+        "prover.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//zisk_zorch:claims",
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/deep:fri_polynomial",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/fri:prover",
+        "//zisk_zorch/fri:queries",
+        "//zisk_zorch/quotient",
+        "//zisk_zorch/quotient:prover",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+    ],
+)
+
+# The opening stage's VerifierStage dual.
+py_library(
+    name = "verifier",
+    srcs = ["verifier.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":prover",
+        "//zisk_zorch:claims",
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/deep:fri_polynomial",
+        "//zisk_zorch/fri:queries",
+        "//zisk_zorch/fri:seam",
+        "//zisk_zorch/fri:verifier",
+        "//zisk_zorch/quotient",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
