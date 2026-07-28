@@ -110,6 +110,7 @@ py_library(
         "//zisk_zorch/deep:fri_polynomial",
         "//zisk_zorch/fri:queries",
         "//zisk_zorch/fri:seam",
+        "//zisk_zorch/fri:verifier",
         "//zisk_zorch/quotient",
         "//zisk_zorch/transcript",
         requirement("frx"),

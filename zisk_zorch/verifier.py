@@ -50,8 +50,6 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
-from zorch.commit.merkle import Opening
-from zorch.pcs.fold import verify_group_fold_chain
 from zorch.poly.univariate import powers
 from zorch.stage import TrivialClaim, VerifierStage, VerifyResult
 from zorch.utils.field import join_coeffs, split_coeffs
@@ -64,7 +62,8 @@ from zisk_zorch.fri.queries import (
     grinding_seed_challenge,
     query_positions_for,
 )
-from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
+from zisk_zorch.fri.seam import Pil2SeamTranscript
+from zisk_zorch.fri.verifier import verify_query_layers
 from zisk_zorch.prover import (
     InnerClaim,
     InnerProof,
@@ -170,9 +169,7 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
         vf = join_coeffs(t.get_field().reshape(-1, 3), F3).reshape(())
 
         # FRI betas chain off the same transcript, one per committed layer.
-        steps = self._steps
-        code = Pil2FriCode(tuple(steps))
-        num_rounds = len(steps) - 1
+        num_rounds = len(self._steps) - 1
         seam = Pil2SeamTranscript(t)
         betas = []
         for layer in range(num_rounds):
@@ -189,13 +186,13 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
             t.width,
             proof.nonce,
             n_queries=len(proof.fri_openings),
-            n_bits_ext=steps[0],
+            n_bits_ext=self._steps[0],
         )
 
         evals = proof.evals
         ok = self._check_constraint_at_z(evals, claim.alpha, z, n_bits)
         ok = ok and self._check_queries(claim, proof, evals, z, vf, positions)
-        ok = ok and self._check_fri_chain(proof, code, betas, positions, n_bits)
+        ok = ok and self._check_fri_chain(proof, betas, positions, n_bits)
         return VerifyResult(TrivialClaim(), t, fnp.asarray(ok))
 
     def _check_constraint_at_z(
@@ -281,45 +278,22 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
     def _check_fri_chain(
         self,
         proof: OpeningProof,
-        code: Pil2FriCode,
         betas: list[Array],
         positions: np.ndarray,
         n_bits: int,
     ) -> bool:
-        """The FRI half, mirroring `fri.verifier.verify`: every layer's opened
-        group hashes to that layer's root, folds onto the next layer's opening,
-        and the in-clear final polynomial is below the degree bound."""
-        steps = self._steps
-        num_rounds = len(steps) - 1
-        tree = merkle_tree(self._arity)
-        idx = positions.astype(np.int64)
-        leaf_indices = code.group_layer_positions(idx, num_rounds)
-
-        openings_seam: list[Opening] = []
-        for layer in range(num_rounds):
-            n_cols = (1 << (steps[layer] - steps[layer + 1])) * 3
-            rows = []
-            for q in range(len(idx)):
-                opening = proof.fri_openings[q][layer]
-                if not verify_group_proof(
-                    tree,
-                    proof.fri.roots[layer],
-                    int(leaf_indices[layer][q]),
-                    opening,
-                    n_cols,
-                ):
-                    return False
-                rows.append(join_coeffs(opening[:n_cols].reshape(-1, 3), F3))
-            openings_seam.append(Opening(row=fnp.stack(rows), path=[]))
-
-        ok = verify_group_fold_chain(
-            code,
-            openings_seam,
-            betas,
-            [fnp.asarray(i) for i in leaf_indices],
+        """The FRI half — `fri.verifier.verify_query_layers`, the one
+        definition this and the standalone FRI verifier share."""
+        return verify_query_layers(
+            proof.fri.roots,
             proof.fri.final_pol,
+            proof.fri_openings,
+            positions,
+            betas,
+            steps=self._steps,
+            arity=self._arity,
+            n_bits=n_bits,
         )
-        return bool(ok) and bool(code.check_final(proof.fri.final_pol, n_bits))
 
 
 class InnerVerifier(VerifierStage[InnerClaim, TrivialClaim, InnerProof]):
