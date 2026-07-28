@@ -22,12 +22,20 @@ bazel test //...                 # hermetic, sandboxed; FRX_PLATFORMS=cpu defaul
 
 For iterative dev outside Bazel: `export PYTHONPATH="$PWD"`.
 
-**A venv from `requirements.in` has no GPU.** The pins name `frx-cuda12-plugin`,
-but `frx_plugins/xla_cuda12` resolves its CUDA extensions by importing
-`jax_cuda13_plugin` / `jax_cuda12_plugin` / `jaxlib.cuda` — never
-`frx_cuda12_plugin`. `initialize()` then asserts on `cuda_versions is None`, the
-`cuda` backend never registers, and work silently runs on the CPU. Assert the
-device before trusting any GPU number:
+**A venv from `requirements.in` has no GPU.** The `cuda` backend registers
+only when the `nvidia-*` runtime wheels the plugin dlopens are present, and
+the lock does not carry them — a bare `frx-cuda12-plugin` install leaves the
+backend unregistered and work silently runs on the CPU. Install the extra:
+
+```sh
+pip install 'frx-cuda12-plugin[with-cuda]==<pinned version>'
+```
+
+(pip skips extras when the base requirement is already satisfied, so install
+the extra form first — or force it after the fact.) On the pinned frx the
+sm_120 card runs the full path: backend init, the LDE `lax.ntt`, the DEEP jit
+zone, and a prove → verify round trip. Assert the device before trusting any
+GPU number:
 
 ```sh
 python -c 'import frx; print(frx.devices())'   # must show CudaDevice, not CpuDevice
@@ -172,8 +180,8 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 ### Per-stage comparison
 
 RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-23
-(zorch `dev20260722235316`, frx `dev20260723085209`; not yet re-measured on
-frx 0.10.1). Each row brackets a different span (FRI excludes the query phase;
+(zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp and quotient
+rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
 commit excludes its extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so
 rows do not sum.
 
@@ -183,7 +191,7 @@ rows do not sum.
 | extend cm2 (24 col) | 20.4 ms | 14.8 ms | **0.73×** | golden (`lde`) |
 | commit stage1 (38 col) | 37.5 ms | 39.0 ms | **1.04×** | real-trace root |
 | commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | real-trace root |
-| quotient ⚠️ | 134 ms (synthetic mimic) | 12.0 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
+| quotient ⚠️ | 133 ms (synthetic mimic) | 12.1 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
 | LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
 | evals (`evmap`) | 3.73 ms (M=68) | 7.8 ms | **2.1×** | LEv round-trip |
 | DEEP composition | 8.91 ms (`friExp`, 62+6 col) | 15.3 ms | **1.72×** | low-degree test |
@@ -197,7 +205,10 @@ How to read the table:
   `quotient_from_constraints` — a direct measurement at 2^23, register/
   bandwidth-resident, peak memory linear. Reproduce with
   `--stages=quotient --chip=main`. A true head-to-head needs pil2's per-air
-  quotient timer under a real witness.
+  quotient timer under a real witness. Both sides re-measured 2026-07-28:
+  native `MAIN_EXPR_PATTERN` 133 ms (cv 0.11%), real Main
+  12.06 ms — the first number on frx 0.10.1, unchanged from the dev-pin
+  measurement.
 - **The evals ratio pairs like-for-like shapes**: native's 3.73 ms opens M=68
   columns, so its counterpart is the 62+6 run (wired M=39 measures 4.1 ms).
   The residual on evals/DEEP is the extension-typed reduce and AoS cubic
