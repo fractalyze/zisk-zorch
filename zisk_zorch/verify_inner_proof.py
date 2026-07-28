@@ -34,8 +34,14 @@ from zk_dtypes import goldilocks as F, goldilocksx3 as F3
 
 from zorch.utils.field import split_coeffs
 
+import frx
+
 from zisk_zorch.commit.trace_commit import commit_trace
+from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
+from zisk_zorch.quotient.zerofier import _coset_points, _root
+
+P = 0xFFFFFFFF00000001
 
 
 def _u64(path: pathlib.Path) -> np.ndarray:
@@ -102,10 +108,102 @@ def main() -> int:
         if not ok:
             break
 
+    # -- multi-opening evals + DEEP against the dumped extended sections --
+    ne = 1 << nbe
+    stride = 1 << (nbe - nb)
+    cmp_map = si["cmPolsMap"]
+    ev_map = si["evMap"]
+    openings = si["openingPoints"]
+    stage_cols = {1: n_cols, 2: si["mapSectionsN"].get("cm2", 0)}
+    bufs = {
+        ("cm", 1): _u64(pre("cm1_ext")).astype(F).reshape(ne, n_cols),
+        ("const", 0): _u64(pre("const_ext")).astype(F).reshape(ne, si["nConstants"]),
+    }
+    if stage_cols[2]:
+        bufs[("cm", 2)] = _u64(pre("cm2_ext")).astype(F).reshape(ne, stage_cols[2])
+    bufs[("cm", 3)] = (
+        _u64(pre("quotient_cm"))
+        .astype(F)
+        .reshape(ne, si["mapSectionsN"]["cm" + str(si["nStages"] + 1)])
+    )
+    n_customs = len(si.get("customCommits", []))
+    for ci in range(n_customs):
+        name = si["customCommits"][ci]["name"] + "0"
+        bufs[("custom", ci)] = (
+            _u64(pre(f"custom{ci}_ext")).astype(F).reshape(ne, si["mapSectionsN"][name])
+        )
+
+    def entry_col(e):
+        """The evMap entry's committed column over the extended domain, cubic
+        entries joined from their three contiguous gl64 lanes."""
+        if e["type"] == "cm":
+            pm = cmp_map[e["id"]]
+            buf = bufs[("cm", pm["stage"])]
+            if pm["dim"] == 1:
+                return fnp.array(buf[:, pm["stagePos"]])
+            lanes = np.ascontiguousarray(buf[:, pm["stagePos"] : pm["stagePos"] + 3])
+            return fnp.array(lanes.view(F3).reshape(ne))
+        if e["type"] == "const":
+            return fnp.array(bufs[("const", 0)][:, e["id"]])
+        return fnp.array(bufs[("custom", e["commitId"])][:, e["id"]])
+
+    chals = _u64(pre("challenges")).astype(F).view(F3).reshape(-1)
+    name_of = {c.get("name", str(i)): i for i, c in enumerate(si["challengesMap"])}
+    z = fnp.array(chals[name_of["std_xi"] : name_of["std_xi"] + 1])[0].reshape(())
+    vf1 = fnp.array(chals[name_of["std_vf1"] : name_of["std_vf1"] + 1])[0].reshape(())
+    vf2 = fnp.array(chals[name_of["std_vf2"] : name_of["std_vf2"] + 1])[0].reshape(())
+
+    lev = compute_lev(z, list(openings), nb)
+    cols = [entry_col(e) for e in ev_map]
+    got_evals = fnp.stack(
+        [
+            fnp.sum(lev[:, e["openingPos"]] * col[::stride])
+            for e, col in zip(ev_map, cols)
+        ]
+    )
+    want_evals = _u64(pre("evals"))
+    ok = bool(
+        np.array_equal(np.asarray(split_coeffs(got_evals)).reshape(-1), want_evals)
+    )
+    ok_all &= ok
+    print(
+        ("OK       " if ok else "MISMATCH ")
+        + f"evals ({len(ev_map)} openings over {len(openings)} points)"
+    )
+
+    g = int(np.asarray(_root(nb)))
+    evals_arr = fnp.array(want_evals.astype(F).view(F3).reshape(-1))
+    domain = _coset_points(nb, nbe - nb)
+
+    def deep(cols, evals_arr, z, vf1, vf2, domain):
+        """pil2 computeFRIExpression semantics: vf2-Horner within an opening
+        group (evMap order), one reciprocal per group, vf1-Horner across
+        groups in openingPoints order."""
+        fri = None
+        for k, prime in enumerate(openings):
+            acc = None
+            for i, e in enumerate(ev_map):
+                if e["openingPos"] != k:
+                    continue
+                term = cols[i] - evals_arr[i]
+                acc = term if acc is None else acc * vf2 + term
+            xi = z * fnp.array(np.uint64(pow(g, prime % (1 << nb), P)).astype(F))
+            group = acc / (domain - xi)
+            fri = group if fri is None else fri * vf1 + group
+        return fri
+
+    got_f = frx.jit(deep)(cols, evals_arr, z, vf1, vf2, domain)
+    want_f = _u64(pre("deep_f"))
+    ok = bool(np.array_equal(np.asarray(split_coeffs(got_f)).reshape(-1), want_f))
+    ok_all &= ok
+    print(
+        ("OK       " if ok else "MISMATCH ")
+        + f"DEEP polynomial (multi-opening, {len(openings)} groups)"
+    )
+
     for stage, why in [
         ("stage-2 commit", "witness-STD hint machinery not wired"),
         ("quotient", "needs this AIR's cExp extraction (in-repo gate: cexp_ref)"),
-        ("evals/DEEP", "multi-opening (openingPoints span) not wired"),
     ]:
         print(f"SKIP     {stage}: {why}")
 
