@@ -141,8 +141,23 @@ class InnerClaim:
 
 
 @dataclass(frozen=True, kw_only=True)
+class TraceBoundClaim:
+    """The trace committed under `trace_root` satisfies `inner`'s AIR.
+
+    What `InnerClaim` becomes once the opening scheme's commit half runs and
+    the composite binds the root: the existential is discharged — one concrete
+    trace is now named by its commitment. Both roles derive it, the prover
+    from committing, the verifier from the root on the wire, which is why the
+    composite (not a stage) constructs it after `bind_trace_commitment`.
+    """
+
+    inner: InnerClaim
+    trace_root: Array
+
+
+@dataclass(frozen=True, kw_only=True)
 class QuotientBoundClaim:
-    """The codeword committed under `quotient_root` is the alpha-fold of
+    """The codeword committed under `quotient_root` is the `alpha`-fold of
     `inner`'s AIR constraints on the trace committed under `trace_root`,
     divided by the zerofier.
 
@@ -153,14 +168,17 @@ class QuotientBoundClaim:
     `inner` is the source statement the reduction conditions on — the opening
     still needs its shape to size what it opens. Both roles hold the roots —
     the prover from committing, the verifier off the wire — so they are claim
-    data: they name what the opening is checked against. The fields are
-    keyword-only so the two same-shaped roots cannot be passed to each
-    other's slot.
+    data: they name what the opening is checked against. `alpha` (the folding
+    challenge's power vector) is likewise derived by both roles from the
+    transcript; the opening's verifier folds the out-of-domain constraint
+    check with it. The fields are keyword-only so the two same-shaped roots
+    cannot be passed to each other's slot.
     """
 
     inner: InnerClaim
     trace_root: Array
     quotient_root: Array
+    alpha: Array
 
 
 @dataclass(frozen=True)
@@ -247,7 +265,9 @@ def bind_trace_commitment(transcript: Transcript, root: Array) -> Transcript:
 
 
 class QuotientProver(
-    ProverStage[InnerClaim, TraceCommitment, QuotientBoundClaim, QuotientCommitment]
+    ProverStage[
+        TraceBoundClaim, TraceCommitment, QuotientBoundClaim, QuotientCommitment
+    ]
 ):
     """pil2 `calculateQuotientPolynomial` as one claim reduction: squeeze
     alpha, fold the constraints by its powers, divide by the zerofier, commit
@@ -275,7 +295,7 @@ class QuotientProver(
 
     def prove(
         self,
-        claim: InnerClaim,
+        claim: TraceBoundClaim,
         witness: TraceCommitment,
         transcript: Transcript,
     ) -> ProveResult[QuotientBoundClaim, QuotientCommitment]:
@@ -283,13 +303,13 @@ class QuotientProver(
         # challenge — exactly the coefficient vector `zorch.constraint_eval` takes.
         alpha = powers(
             join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(()),
-            claim.n_constraints,
+            claim.inner.n_constraints,
         )
         quotient = quotient_from_constraints(
             self._eval_fn,
             witness.extended,
             alpha,
-            claim.n_bits,
+            claim.inner.n_bits,
             self._blowup_bits,
         )
         matrix = split_coeffs(quotient)
@@ -300,7 +320,10 @@ class QuotientProver(
         )
         return ProveResult(
             QuotientBoundClaim(
-                inner=claim, trace_root=witness.root, quotient_root=root
+                inner=claim.inner,
+                trace_root=claim.trace_root,
+                quotient_root=root,
+                alpha=alpha,
             ),
             commitment,
             transcript,
@@ -536,7 +559,8 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
         ), "claim's trace shape does not match the witness"
         commitment = self.opening.commit(witness)
         transcript = bind_trace_commitment(transcript, commitment.root)
-        quotient = self.quotient.prove(claim, commitment, transcript)
+        bound = TraceBoundClaim(inner=claim, trace_root=commitment.root)
+        quotient = self.quotient.prove(bound, commitment, transcript)
         opening = self.opening.prove(
             quotient.reduced_claim,
             OpeningWitness(commitment, quotient.reduction_proof),

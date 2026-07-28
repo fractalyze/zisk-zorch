@@ -24,6 +24,11 @@ v1.0.0-alpha's `fields` crate via [`../tools/fixture-gen/`](../tools/fixture-gen
   witness wrappers (`OpeningWitness`) the composite assembles. Static config
   (arity, the fold schedule, `eval_fn`) lives on the role instances, the
   statement on the claim, the trace on the witness.
+- **Verifier duals** — every Stage's `VerifierStage` role lives in
+  [`../zisk_zorch/verifier.py`](../zisk_zorch/verifier.py): `QuotientVerifier`
+  and `OpeningVerifier` consume the same claims over the same transcript
+  schedule, and the composite `InnerVerifier` mirrors `InnerProver` step for
+  step (Merkle, DEEP, FRI, and the AIR constraint check at the OOD point).
 
 For coding style see [conventions.md](conventions.md); to build, test, and
 benchmark it see [development.md](development.md).

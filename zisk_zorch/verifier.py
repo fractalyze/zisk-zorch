@@ -1,0 +1,426 @@
+"""End-to-end inner-proof verifier — the dual roles of `prover.InnerProver`.
+
+Each prover Stage has its `zorch.stage.VerifierStage` dual here, consuming the
+same claims: `QuotientVerifier` re-derives the reduction `QuotientProver`
+committed, and `OpeningVerifier` discharges the resulting `QuotientBoundClaim`
+— the composite `InnerVerifier` walks the same chain over the same transcript
+schedule, so the two composites cannot drift on the Fiat-Shamir stream (they
+share `bind_trace_commitment` and the claim constructors).
+
+The verifier replays the prover's transcript from a clean seed and re-derives
+every challenge the prover claimed to have been bound by: the constraint-fold
+`alpha`, the out-of-domain point `z`, the DEEP batching challenge `vf`, the
+FRI fold betas, and the query positions. Nothing challenge-shaped is read from
+the proof — only the committed roots, the openings, and the grinding nonce,
+each of which the replay then checks.
+
+Four things must hold, and they are independent: a proof that satisfies three
+still fails.
+
+- **Merkle.** Every opened trace row, quotient row, and FRI layer group hashes
+  to the root its stage committed.
+- **Constraint.** The openings at `z` satisfy the AIR: `Σ_k alpha^k c_k(z) ==
+  Q(z)·(z^N − 1)`. This is what makes the proof about the AIR at all — the
+  other three only say the prover committed to *something* low-degree and
+  consistent. It is `OpeningVerifier`'s check because it is the content of the
+  `QuotientBoundClaim` the opening discharges, and it needs `z` and the
+  openings, which exist only there.
+- **DEEP.** At each query the opened trace and quotient values rebuild the FRI
+  codeword's value at that point — without it a prover could fold an unrelated
+  low-degree codeword.
+- **FRI.** Each layer's opened group folds to the next layer's opening, and
+  the in-clear final polynomial is below the degree bound.
+
+The constraint check evaluates `eval_fn` on the opened row at `z` rather than
+over a column, which works because an AIR's constraint expression is row-wise.
+
+Degree bound: the single committed quotient column is opened as a degree-`< N`
+polynomial, so with `blowup_bits=1` the AIR's constraint degree is capped at 2
+(`deg Q = deg C − N < N`). Higher-degree AIRs need pil2's quotient splitting
+(`qDeg` degree-`< N` parts), which neither prover nor verifier implements yet.
+
+https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+
+import frx.numpy as fnp
+import numpy as np
+from frx import Array
+from zk_dtypes import goldilocksx3 as F3
+from zorch.commit.merkle import Opening
+from zorch.pcs.fold import verify_group_fold_chain
+from zorch.poly.univariate import powers
+from zorch.stage import TrivialClaim, VerifierStage, VerifyResult
+from zorch.utils.field import join_coeffs, split_coeffs
+
+from zisk_zorch.commit.openings import verify_group_proof
+from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.deep.fri_polynomial import _ood_points
+from zisk_zorch.fri.queries import (
+    grind_is_valid,
+    grinding_seed_challenge,
+    query_positions_for,
+)
+from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
+from zisk_zorch.prover import (
+    InnerClaim,
+    InnerProof,
+    OpeningProof,
+    QuotientBoundClaim,
+    TraceBoundClaim,
+    _fold_steps,
+    bind_trace_commitment,
+)
+from zisk_zorch.quotient.zerofier import _coset_points
+from zisk_zorch.transcript.transcript import Transcript
+
+
+class QuotientVerifier(VerifierStage[TraceBoundClaim, QuotientBoundClaim, Array]):
+    """`QuotientProver`'s dual: replay the alpha squeeze, absorb the committed
+    quotient root off the wire, and derive the same `QuotientBoundClaim`.
+
+    The verdict is structurally true: this stage's reduction has no content a
+    verifier can check on its own — the claim it produces is conditional, and
+    `OpeningVerifier` discharges it (the constraint check at `z` is exactly
+    the check of this reduction, runnable only once `z` and the openings
+    exist). What this stage contributes is the Fiat-Shamir binding: alpha is
+    squeezed before the quotient root is absorbed, mirroring the prover."""
+
+    def verify(
+        self,
+        claim: TraceBoundClaim,
+        reduction_proof: Array,
+        transcript: Transcript,
+    ) -> VerifyResult[QuotientBoundClaim]:
+        alpha = powers(
+            join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(()),
+            claim.inner.n_constraints,
+        )
+        transcript.put(reduction_proof)
+        return VerifyResult(
+            QuotientBoundClaim(
+                inner=claim.inner,
+                trace_root=claim.trace_root,
+                quotient_root=reduction_proof,
+                alpha=alpha,
+            ),
+            transcript,
+            fnp.asarray(True),
+        )
+
+
+class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningProof]):
+    """`OpeningProver`'s dual: discharge a `QuotientBoundClaim` from the proof
+    alone — the constraint check at `z`, then the Merkle, DEEP, and FRI checks
+    at the re-derived query positions.
+
+    `eval_fn` is this role's configuration and not the prover role's: the
+    opening's prover never evaluates constraints, but discharging the claim
+    means checking the committed pair actually encodes the AIR, so the
+    verifier needs the circuits. The query positions are NOT trusted from the
+    proof; they are re-derived from the transcript (final-pol absorb +
+    grinding-seed squeeze + reseed with challenge++nonce), with the prover's
+    nonce bound by the O(1) grind check first."""
+
+    def __init__(
+        self,
+        eval_fn: Callable[[Array], Array],
+        *,
+        blowup_bits: int,
+        steps: list[int],
+        arity: int,
+        pow_bits: int,
+        opening_points: Sequence[int] = (0,),
+    ) -> None:
+        self._eval_fn = eval_fn
+        self._blowup_bits = blowup_bits
+        self._steps = steps
+        self._arity = arity
+        self._pow_bits = pow_bits
+        self._opening_points = opening_points
+
+    def verify(
+        self,
+        claim: QuotientBoundClaim,
+        reduction_proof: OpeningProof,
+        transcript: Transcript,
+    ) -> VerifyResult[TrivialClaim]:
+        proof = reduction_proof
+        if proof.evals is None:
+            raise ValueError(
+                "proof carries no out-of-domain openings — it was built with "
+                "EchoOpening, which opens nothing and so cannot be verified"
+            )
+        n_bits = claim.inner.n_bits
+        n_cols = claim.inner.n_cols
+        if proof.evals.shape[0] != n_cols + 1:
+            raise ValueError(
+                f"proof opens {proof.evals.shape[0]} columns, the claim's "
+                f"trace shape implies {n_cols + 1} (trace columns + quotient)"
+            )
+
+        # Replay the DEEP head exactly as the prover: squeeze z, absorb the
+        # openings, squeeze the batching challenge.
+        t = transcript
+        z = t.get_field()
+        t.put(split_coeffs(proof.evals).reshape(-1))
+        vf = join_coeffs(t.get_field().reshape(-1, 3), F3).reshape(())
+
+        # FRI betas chain off the same transcript, one per committed layer.
+        steps = self._steps
+        code = Pil2FriCode(tuple(steps))
+        num_rounds = len(steps) - 1
+        seam = Pil2SeamTranscript(t)
+        betas = []
+        for layer in range(num_rounds):
+            seam, beta = seam.observe(proof.fri.roots[layer]).sample()
+            betas.append(beta)
+
+        # The grind binds the nonce before any position is read, so a prover
+        # cannot search for query positions that miss its lie.
+        challenge = grinding_seed_challenge(t, proof.fri.final_pol)
+        if not grind_is_valid(challenge, proof.nonce, self._pow_bits):
+            return VerifyResult(TrivialClaim(), t, fnp.asarray(False))
+        positions = query_positions_for(
+            challenge,
+            t.width,
+            proof.nonce,
+            n_queries=len(proof.fri_openings),
+            n_bits_ext=steps[0],
+        )
+
+        evals = proof.evals
+        ok = self._check_constraint_at_z(evals, claim.alpha, z, n_bits)
+        ok = ok and self._check_queries(claim, proof, evals, z, vf, positions)
+        ok = ok and self._check_fri_chain(proof, code, betas, positions, n_bits)
+        return VerifyResult(TrivialClaim(), t, fnp.asarray(ok))
+
+    def _check_constraint_at_z(
+        self, evals: Array, alpha: Array, z: Array, n_bits: int
+    ) -> bool:
+        """The AIR identity at the out-of-domain point: `Σ_k alpha^k c_k(z)`
+        must equal `Q(z)·(z^N − 1)`.
+
+        `QuotientProver` built `Q = C·Zi` with `Zi = 1/(x^N − 1)`, so
+        multiplying the claimed `Q(z)` back by the zerofier recovers the
+        composite the prover claims. An AIR's constraint expression is
+        row-wise, so `eval_fn` takes the opened row directly — a `(1, n_cols)`
+        cubic matrix."""
+        n_cols = evals.shape[0] - 1
+        trace_at_z = evals[:n_cols].reshape(1, n_cols)
+        constraints = self._eval_fn(trace_at_z)
+        if constraints.shape[-1] != alpha.shape[0]:
+            raise ValueError(
+                f"eval_fn produced {constraints.shape[-1]} constraints, "
+                f"n_constraints={alpha.shape[0]}"
+            )
+        composite = fnp.sum(constraints.reshape(-1) * alpha)
+        zc = join_coeffs(z.reshape(-1, 3), F3).reshape(())
+        zerofier = zc ** (1 << n_bits) - fnp.ones((), zc.dtype)
+        return bool(composite == evals[n_cols] * zerofier)
+
+    def _check_queries(
+        self,
+        claim: QuotientBoundClaim,
+        proof: OpeningProof,
+        evals: Array,
+        z: Array,
+        vf: Array,
+        positions: np.ndarray,
+    ) -> bool:
+        """Per query: the trace and quotient openings hash to the claim's
+        roots, and the DEEP composition rebuilt from them equals the value FRI
+        folded — what binds the FRI instance to the committed columns."""
+        n_bits = claim.inner.n_bits
+        n_cols = claim.inner.n_cols
+        steps = self._steps
+        ext_mask = (1 << steps[0]) - 1
+        trace_tree = merkle_tree(self._arity)
+        quotient_tree = merkle_tree(self._arity)
+        x = _coset_points(n_bits, self._blowup_bits)
+        xis = _ood_points(z, self._opening_points, n_bits)
+        # Every column opens at `z`; wrapped openings are AIR-specific,
+        # matching `deep_fri_polynomial`'s `opening_pos`.
+        xi = xis[0]
+        vf_pows = powers(vf, n_cols + 1)
+
+        for q, idx in enumerate(positions):
+            row = int(idx) & ext_mask
+            trace_open = proof.trace_openings[q][0]
+            quotient_open = proof.quotient_openings[q][0]
+            if not verify_group_proof(
+                trace_tree, claim.trace_root, row, trace_open, n_cols
+            ):
+                return False
+            if not verify_group_proof(
+                quotient_tree, claim.quotient_root, row, quotient_open, 3
+            ):
+                return False
+            # Rebuild f(x) at this row. Layer 0's opening is the whole k-group
+            # whose fold lands at `row mod 2^steps[1]`; this query's own
+            # element sits at `row >> steps[1]` within it — the strided order
+            # `Pil2FriCode.group_indices` lays down.
+            numer = fnp.zeros((), evals.dtype)
+            for m in range(n_cols):
+                # base − cubic promotes
+                numer = numer + vf_pows[m] * (trace_open[m] - evals[m])
+            q_value = join_coeffs(quotient_open[:3].reshape(-1, 3), F3).reshape(())
+            numer = numer + vf_pows[-1] * (q_value - evals[-1])
+            expected = numer / (x[row] - xi)
+            group_width = (1 << (steps[0] - steps[1])) * 3
+            group = join_coeffs(
+                proof.fri_openings[q][0][:group_width].reshape(-1, 3), F3
+            )
+            if not bool(expected == group[row >> steps[1]]):
+                return False
+        return True
+
+    def _check_fri_chain(
+        self,
+        proof: OpeningProof,
+        code: Pil2FriCode,
+        betas: list[Array],
+        positions: np.ndarray,
+        n_bits: int,
+    ) -> bool:
+        """The FRI half, mirroring `fri.verifier.verify`: every layer's opened
+        group hashes to that layer's root, folds onto the next layer's opening,
+        and the in-clear final polynomial is below the degree bound."""
+        steps = self._steps
+        num_rounds = len(steps) - 1
+        tree = merkle_tree(self._arity)
+        idx = positions.astype(np.int64)
+        leaf_indices = code.group_layer_positions(idx, num_rounds)
+
+        openings_seam: list[Opening] = []
+        for layer in range(num_rounds):
+            n_cols = (1 << (steps[layer] - steps[layer + 1])) * 3
+            rows = []
+            for q in range(len(idx)):
+                opening = proof.fri_openings[q][layer]
+                if not verify_group_proof(
+                    tree,
+                    proof.fri.roots[layer],
+                    int(leaf_indices[layer][q]),
+                    opening,
+                    n_cols,
+                ):
+                    return False
+                rows.append(join_coeffs(opening[:n_cols].reshape(-1, 3), F3))
+            openings_seam.append(Opening(row=fnp.stack(rows), path=[]))
+
+        ok = verify_group_fold_chain(
+            code,
+            openings_seam,
+            betas,
+            [fnp.asarray(i) for i in leaf_indices],
+            proof.fri.final_pol,
+        )
+        return bool(ok) and bool(code.check_final(proof.fri.final_pol, n_bits))
+
+
+class InnerVerifier(VerifierStage[InnerClaim, TrivialClaim, InnerProof]):
+    """The ZisK inner verifier: the trace-root bind, then two Stage duals.
+
+    The mirror of `InnerProver.prove`, step for step: bind the trace root off
+    the wire, derive `TraceBoundClaim`, run `QuotientVerifier`, and discharge
+    its reduced claim with `OpeningVerifier` — the same claims, the same
+    transcript schedule, no witness anywhere. The verdict is the AND of the
+    stage verdicts."""
+
+    def __init__(
+        self,
+        eval_fn: Callable[[Array], Array],
+        *,
+        n_bits: int,
+        blowup_bits: int = 1,
+        arity: int = 2,
+        fold_bits: int = 3,
+        final_bits: int = 5,
+        pow_bits: int = 16,
+        opening_points: Sequence[int] = (0,),
+    ) -> None:
+        self.quotient = QuotientVerifier()
+        self.opening = OpeningVerifier(
+            eval_fn,
+            blowup_bits=blowup_bits,
+            steps=_fold_steps(n_bits + blowup_bits, fold_bits, final_bits),
+            arity=arity,
+            pow_bits=pow_bits,
+            opening_points=opening_points,
+        )
+
+    def verify(
+        self,
+        claim: InnerClaim,
+        reduction_proof: InnerProof,
+        transcript: Transcript,
+    ) -> VerifyResult[TrivialClaim]:
+        proof = reduction_proof
+        transcript = bind_trace_commitment(transcript, proof.trace_root)
+        bound = TraceBoundClaim(inner=claim, trace_root=proof.trace_root)
+        quotient = self.quotient.verify(bound, proof.quotient_root, transcript)
+        opening = self.opening.verify(
+            quotient.reduced_claim,
+            OpeningProof(
+                evals=proof.evals,
+                fri=proof.fri,
+                nonce=proof.nonce,
+                positions=proof.query_positions,
+                trace_openings=proof.trace_openings,
+                quotient_openings=proof.quotient_openings,
+                fri_openings=proof.fri_openings,
+            ),
+            quotient.transcript,
+        )
+        return VerifyResult(
+            TrivialClaim(), opening.transcript, quotient.ok & opening.ok
+        )
+
+
+def verify_inner(
+    proof: InnerProof,
+    eval_fn: Callable[[Array], Array],
+    *,
+    n_constraints: int,
+    n_bits: int,
+    blowup_bits: int = 1,
+    arity: int = 2,
+    fold_bits: int = 3,
+    final_bits: int = 5,
+    pow_bits: int = 16,
+    opening_points: Sequence[int] = (0,),
+    transcript: Transcript | None = None,
+) -> bool:
+    """Whether `proof` is a valid inner proof of the AIR `eval_fn` over a
+    `2^n_bits`-row trace — `prove_inner`'s dual, run through `InnerVerifier`.
+
+    `transcript` must be seeded exactly as the prover's was. The keyword
+    parameters are the prover's, and are the verifier's half of the statement:
+    they fix the fold schedule and the domain, so passing different ones
+    checks a different claim."""
+    if proof.evals is None:
+        raise ValueError(
+            "proof carries no out-of-domain openings — it was built with "
+            "EchoOpening, which opens nothing and so cannot be verified"
+        )
+    # The committed columns are the trace's base columns then the one cubic
+    # quotient column (`deep._committed_columns`), so the openings pin the
+    # claim's width.
+    n_cols = proof.evals.shape[0] - 1
+    verifier = InnerVerifier(
+        eval_fn,
+        n_bits=n_bits,
+        blowup_bits=blowup_bits,
+        arity=arity,
+        fold_bits=fold_bits,
+        final_bits=final_bits,
+        pow_bits=pow_bits,
+        opening_points=opening_points,
+    )
+    claim = InnerClaim(n_bits=n_bits, n_cols=n_cols, n_constraints=n_constraints)
+    result = verifier.verify(claim, proof, transcript or Transcript())
+    return bool(result.ok)
