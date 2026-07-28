@@ -437,7 +437,9 @@ class OpeningProver(
         transcript: Transcript,
     ) -> ProveResult[TrivialClaim, OpeningProof]:
         fri_pol, evals, transcript = self._fri_input(claim, witness, transcript)
-        fri = prove(fri_pol, self._steps, arity=self._arity, transcript=transcript)
+        fri, fri_layers = prove(
+            fri_pol, self._steps, arity=self._arity, transcript=transcript
+        )
         n_bits_ext = claim.inner.n_bits + self._blowup_bits
         positions, nonce = sample_query_positions(
             transcript,
@@ -470,7 +472,7 @@ class OpeningProver(
         )(idx_ext)
         trace_openings = [[trace_batched[q]] for q in range(len(positions))]
         quotient_openings = [[quotient_batched[q]] for q in range(len(positions))]
-        fri_openings = prove_queries(fri, positions)
+        fri_openings = prove_queries(fri_layers, positions)
         return ProveResult(
             TrivialClaim(),
             OpeningProof(

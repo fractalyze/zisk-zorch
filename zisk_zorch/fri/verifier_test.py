@@ -69,7 +69,7 @@ class FriVerifierTest(absltest.TestCase):
     def _prove(self, case: dict):
         transcript = Transcript()
         transcript.put(u64(case["seed"]))
-        proof = prove(
+        proof, layers = prove(
             u64x3(case["init_pol"]),
             case["steps"],
             arity=case["arity"],
@@ -85,7 +85,7 @@ class FriVerifierTest(absltest.TestCase):
             n_queries=len(case["queries"]),
             n_bits_ext=case["steps"][0],
         )
-        return proof, prove_queries(proof, indices), nonce
+        return proof, prove_queries(layers, indices), nonce
 
     def _verify(self, case, roots, final_pol, openings, nonce) -> bool:
         transcript = Transcript()
@@ -172,7 +172,7 @@ class FriVerifierTest(absltest.TestCase):
         fri_pol = _low_degree_codeword(n_bits, n_bits_ext, seed=0xF1)
         transcript = Transcript()
         transcript.put(seed)
-        proof = prove(fri_pol, steps, arity=arity, transcript=transcript)
+        proof, layers = prove(fri_pol, steps, arity=arity, transcript=transcript)
         indices, nonce = sample_query_positions(
             transcript,
             proof.final_pol,
@@ -180,7 +180,7 @@ class FriVerifierTest(absltest.TestCase):
             n_queries=4,
             n_bits_ext=steps[0],
         )
-        openings = prove_queries(proof, indices)
+        openings = prove_queries(layers, indices)
 
         def vfy(n_bits_arg: int) -> bool:
             t = Transcript()

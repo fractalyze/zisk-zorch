@@ -26,7 +26,7 @@ class FriProveTest(absltest.TestCase):
             with self.subTest(steps=case["steps"], arity=case["arity"]):
                 transcript = Transcript()  # width 12 == pil2 transcriptArity 3
                 transcript.put(u64(case["seed"]))
-                proof = prove(
+                proof, layers = prove(
                     u64x3(case["init_pol"]),
                     case["steps"],
                     arity=case["arity"],
@@ -43,7 +43,7 @@ class FriProveTest(absltest.TestCase):
                         bool(fnp.array_equal(got, u64(want))), msg=f"root {layer}"
                     )
 
-                openings = prove_queries(proof, [q["query"] for q in case["queries"]])
+                openings = prove_queries(layers, [q["query"] for q in case["queries"]])
                 for q, per_layer in zip(case["queries"], openings):
                     self.assertEqual(len(per_layer), len(q["layers"]))
                     for layer, (got, want) in enumerate(zip(per_layer, q["layers"])):

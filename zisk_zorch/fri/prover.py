@@ -56,12 +56,11 @@ class _Layer:
 
 @dataclass(frozen=True)
 class FriProof:
-    """Output of the fold loop: the per-layer roots (transcript order), the
-    final polynomial sent in clear, and the layers retained for opening."""
+    """The fold loop's wire data: the per-layer roots (transcript order) and
+    the final polynomial sent in clear."""
 
     roots: list[Array]
     final_pol: Array
-    layers: list[_Layer]
 
 
 def prove(
@@ -70,10 +69,14 @@ def prove(
     *,
     arity: int,
     transcript: Transcript,
-) -> FriProof:
+) -> tuple[FriProof, list[_Layer]]:
     """Fold `fri_pol` (cubic, length `2^steps[0]`) down the layer chain,
     committing each intermediate layer and squeezing challenges from
-    `transcript`. `steps[0]` is the extended-domain log size (`nBitsExt`)."""
+    `transcript`. `steps[0]` is the extended-domain log size (`nBitsExt`).
+
+    Returns the wire proof and the committed layers separately: the layers
+    hold full matrices and digest paths, which only `prove_queries` reads —
+    they stay prover-side, and only the per-query group proofs cross."""
     code = Pil2FriCode(tuple(steps))  # validates the step schedule
     tree = merkle_tree(arity)  # validates arity; fixed across layers, build once.
     n_bits_ext = steps[0]
@@ -97,11 +100,11 @@ def prove(
         _Layer(tree, layer.leaves, layer.digest_layers, steps[i + 1])
         for i, layer in enumerate(state.layers)
     ]
-    return FriProof(roots=roots, final_pol=state.codeword, layers=layers)
+    return FriProof(roots=roots, final_pol=state.codeword), layers
 
 
 def prove_queries(
-    proof: FriProof, query_indices: np.ndarray | list[int]
+    layers: list[_Layer], query_indices: np.ndarray | list[int]
 ) -> list[list[Array]]:
     """`FRI::proveFRIQueries`: open every committed layer at each query. Layer
     `s` opens at `query_index mod 2^(leaf_bits)`, the regrouped height."""
@@ -110,7 +113,7 @@ def prove_queries(
         frx.vmap(partial(group_proof, layer.tree, layer.matrix, layer.digest_layers))(
             qi % (1 << layer.leaf_bits)
         )
-        for layer in proof.layers
+        for layer in layers
     ]
     n_q = int(qi.shape[0])
-    return [[per_layer[li][q] for li in range(len(proof.layers))] for q in range(n_q)]
+    return [[per_layer[li][q] for li in range(len(layers))] for q in range(n_q)]
