@@ -1,6 +1,6 @@
-"""The opening stage's prover role — pil2's `calculateFRIPolynomial`,
-`FRI::fold`, and `proveQueries` as the terminal stage discharging a
-`QuotientBoundClaim`, plus the scheme's commit half."""
+"""The opening stage's prover role — the DEEP composition, FRI fold, and
+query openings as the terminal stage discharging a `QuotientBoundClaim`,
+plus the scheme's commit half."""
 
 from __future__ import annotations
 
@@ -75,9 +75,9 @@ class OpeningWitness:
 
 @dataclass(frozen=True)
 class OpeningProof:
-    """Discharges a `QuotientBoundClaim`, leaving nothing to prove: pil2's
-    `evals` section (the out-of-domain column openings; None under
-    `EchoOpening`, which opens nothing), the FRI fold proof, the grinding
+    """Discharges a `QuotientBoundClaim`, leaving nothing to prove: the
+    out-of-domain column openings (`evals`; None under `EchoOpening`, which
+    opens nothing), the FRI fold proof, the grinding
     nonce, the squeezed query positions, and every committed tree's per-query
     openings."""
 
@@ -93,8 +93,8 @@ class OpeningProof:
 class OpeningProver(
     ProverStage[QuotientBoundClaim, OpeningWitness, TrivialClaim, OpeningProof]
 ):
-    """pil2's whole opening — `calculateFRIPolynomial`, `FRI::fold`,
-    `proveQueries` — as the terminal stage discharging a `QuotientBoundClaim`.
+    """The whole opening — the DEEP composition, the FRI fold, and the
+    query openings — as the terminal stage discharging a `QuotientBoundClaim`.
 
     The two halves bracket the inner proof: `commit` binds the trace before
     any challenge exists, `prove` is the open. Only the open reduces a claim,
@@ -139,10 +139,10 @@ class OpeningProver(
         self._jit = jit
 
     def commit(self, witness: InnerWitness) -> TraceCommitment:
-        """Commit the trace — pil2 `extendAndMerkelize`: LDE onto the coset,
-        Merkle-commit the rows. The commit half of the scheme whose open half
-        is `prove`; only the open reduces a claim, so only the open is the
-        Stage role, and `TraceCommitment` is what commit hands forward.
+        """Commit the trace: LDE onto the coset, Merkle-commit the rows —
+        the commit half of the scheme whose open half is `prove`; only the
+        open reduces a claim, so only the open is the Stage role, and
+        `TraceCommitment` is what commit hands forward.
 
         No transcript argument: committing is not a transcript operation. The
         composite absorbs the returned root through `bind_trace_commitment`,
@@ -159,7 +159,7 @@ class OpeningProver(
         transcript: Transcript,
     ) -> tuple[Array, Array | None, Transcript]:
         """The codeword FRI folds, the OOD openings the proof transmits, and
-        the advanced transcript — pil2 `calculateFRIPolynomial`. `EchoOpening`
+        the advanced transcript — the DEEP composition. `EchoOpening`
         overrides this hook.
 
         Under the `jit` knob the leg runs as the `_opening_deep_jit` zone,
@@ -254,8 +254,7 @@ class EchoOpening(OpeningProver):
     valid cubic FRI input, so this drives the spine end to end for
     wiring/shape tests — but with no OOD openings the quotient's consistency
     with the committed trace is never tested, so it proves nothing about the
-    trace and a proof built with it does not byte-match pil2. Not for
-    conformance."""
+    trace. Not for conformance."""
 
     def _fri_input(
         self,

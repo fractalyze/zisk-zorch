@@ -14,8 +14,6 @@ the proof — only the committed roots, the openings, and the grinding nonce,
 each of which the replay then checks. The four independent checks (Merkle,
 constraint at `z`, DEEP, FRI) live on `opening.OpeningVerifier`, which
 discharges the `QuotientBoundClaim`.
-
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/stark_verify.hpp
 """
 
 from __future__ import annotations

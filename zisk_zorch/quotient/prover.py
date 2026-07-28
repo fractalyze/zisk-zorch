@@ -1,5 +1,5 @@
-"""The quotient stage's prover role — pil2 `calculateQuotientPolynomial` as
-one claim reduction over `zorch.stage.ProverStage`."""
+"""The quotient stage's prover role — one claim reduction over
+`zorch.stage.ProverStage`."""
 
 from __future__ import annotations
 
@@ -23,9 +23,9 @@ class QuotientCommitment:
     """The quotient stage's reduction proof, the quotient analogue of
     ``TraceCommitment``. Its wire projection is `root`; the cubic codeword the
     DEEP batch opens and the base-limb `matrix`/`layers` the query phase opens
-    the committed tree with ride along as prover data — pil2 commits the
-    quotient mid-transcript (alpha precedes it), so unlike a PCS trace commit
-    this cannot be split into a pre-transcript commit half."""
+    the committed tree with ride along as prover data — the quotient commits
+    mid-transcript (alpha precedes it), so unlike a PCS trace commit this
+    cannot be split into a pre-transcript commit half."""
 
     codeword: Array
     root: Array
@@ -38,9 +38,8 @@ class QuotientProver(
         TraceBoundClaim, TraceCommitment, QuotientBoundClaim, QuotientCommitment
     ]
 ):
-    """pil2 `calculateQuotientPolynomial` as one claim reduction: squeeze
-    alpha, fold the constraints by its powers, divide by the zerofier, commit
-    `Q`, absorb its root.
+    """One claim reduction: squeeze alpha, fold the constraints by its
+    powers, divide by the zerofier, commit `Q`, absorb its root.
 
     What it proves: every constraint evaluates to zero on every trace row —
     conditionally on the reduced claim, which the opening stage discharges.
@@ -48,8 +47,7 @@ class QuotientProver(
     coset, where the zerofier is invertible). The statement's shape — domain
     size, constraint count — is read off the claim; only the AIR's circuits
     and the protocol parameters are configuration. Cubic rows commit as 3
-    contiguous base limbs (pil2 `FIELD_EXTENSION` layout), so the leaf hash
-    matches the FRI seam."""
+    contiguous base limbs, so the leaf hash matches the FRI seam."""
 
     def __init__(
         self,
@@ -68,7 +66,7 @@ class QuotientProver(
         witness: TraceCommitment,
         transcript: Transcript,
     ) -> ProveResult[QuotientBoundClaim, QuotientCommitment]:
-        # pil2 folds the K constraints by powers of the stage-`nStages+1`
+        # The K constraints fold by ascending powers of the squeezed
         # challenge — exactly the coefficient vector `zorch.constraint_eval` takes.
         alpha = powers(
             join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(()),

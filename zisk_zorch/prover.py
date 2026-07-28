@@ -1,9 +1,9 @@
 """End-to-end inner-proof prover — the inner proof as composite Stage roles.
 
 `InnerProver` reduces the inner statement to the trivial claim over one duplex
-`Transcript`, the byte stream pil2-proofman's `genProof` drives: the opening
-scheme's commit half binds the witness, then two `zorch.stage.ProverStage`
-roles — quotient, opening — each discharge the claim the one before produced,
+`Transcript`: the opening scheme's commit half binds the witness, then two
+`zorch.stage.ProverStage` roles — quotient, opening — each discharge the
+claim the one before produced,
 so what crosses a seam is a claim both roles derive rather than a shared
 mutable carry.
 
@@ -22,15 +22,13 @@ they exchange in `claims.py`:
 - Static configuration (the AIR's `eval_fn`, arity, the fold schedule) lives
   on the role instances, the statement on the claim, the trace on the witness.
 
-pil2's DEEP, FRI, and query phases are ONE terminal stage
+The DEEP, FRI, and query phases are ONE terminal stage
 (`opening.OpeningProver`): each of those sub-steps consumes a challenge the
 previous one squeezed and produces the next one's prover input, so their
 seams are prover-data seams, not claim boundaries a `ProverStage` pair could
 meet at.
 
 See `docs/architecture.md` for the DEEP seam and its byte-match boundary.
-
-https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp
 """
 
 from __future__ import annotations
@@ -82,7 +80,7 @@ class InnerProof:
 
     trace_root: Array
     quotient_root: Array
-    # pil2's `evals` section: the committed columns opened at the OOD point.
+    # The committed columns opened at the out-of-domain point.
     # None when the opening is EchoOpening (no openings to send).
     evals: Array | None
     fri: FriProof
@@ -95,8 +93,8 @@ class InnerProof:
 
 
 def bind_trace_commitment(transcript: Transcript, root: Array) -> Transcript:
-    """Bind the committed trace into the stream — pil2's stage-1 root absorb,
-    what sits between the opening scheme's commit half and the first squeeze.
+    """Bind the committed trace into the stream — the root absorb sitting
+    between the opening scheme's commit half and the first squeeze.
 
     A transcript-only schedule operation, so it is one shared function both
     roles call rather than a stage: the prover and the verifier dual reach the
@@ -206,9 +204,9 @@ def prove_inner(
     """Run `InnerProver` over one shared `Transcript` and return the proof.
 
     `trace` is the `(2^n_bits, n_cols)` base-field evaluation matrix; `eval_fn`
-    produces the `n_constraints` constraints in its trailing axis (pil2's cExp
-    order). `echo_deep` swaps the opening for the trivial `EchoOpening`
-    fallback that skips the OOD opening."""
+    produces the `n_constraints` constraints in its trailing axis.
+    `echo_deep` swaps the opening for the trivial `EchoOpening` fallback that
+    skips the OOD opening."""
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D (rows, cols), got ndim={trace.ndim}")
     n = trace.shape[0]
