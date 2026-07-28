@@ -64,11 +64,12 @@ py_test(
 # End-to-end inner proof: one Transcript threading commit -> quotient -> FRI ->
 # queries. The DEEP FRI-polynomial stage is an injected seam (no byte-match
 # primitive exists), so this wires the spine, not a pil2-conformant proof.
-# The claims crossing the stage seams; below every stage so a stage's roles
-# never import the composite that runs them.
+# The inner proof's shared data types (statement, witnesses, claims, commit
+# handoffs); below every stage so a stage's roles never import the composite
+# that runs them.
 py_library(
-    name = "claims",
-    srcs = ["claims.py"],
+    name = "types",
+    srcs = ["types.py"],
     visibility = ["//visibility:public"],
     deps = [requirement("frx")],
 )
@@ -78,7 +79,7 @@ py_library(
     srcs = ["prover.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":claims",
+        ":types",
         "//zisk_zorch/fri:prover",
         "//zisk_zorch/opening:prover",
         "//zisk_zorch/quotient:prover",
@@ -109,8 +110,8 @@ py_library(
     srcs = ["verifier.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":claims",
         ":prover",
+        ":types",
         "//zisk_zorch/opening:prover",
         "//zisk_zorch/opening:verifier",
         "//zisk_zorch/quotient:verifier",

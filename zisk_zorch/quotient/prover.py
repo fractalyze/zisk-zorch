@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from frx import Array
 from zk_dtypes import goldilocksx3 as F3
@@ -12,25 +11,15 @@ from zorch.poly.univariate import powers
 from zorch.stage import ProveResult, ProverStage
 from zorch.utils.field import join_coeffs, split_coeffs
 
-from zisk_zorch.claims import QuotientBoundClaim, TraceBoundClaim
-from zisk_zorch.commit.trace_commit import TraceCommitment, merkle_tree
+from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.quotient.quotient import quotient_from_constraints
 from zisk_zorch.transcript.transcript import Transcript
-
-
-@dataclass(frozen=True)
-class QuotientCommitment:
-    """The quotient stage's reduction proof, the quotient analogue of
-    ``TraceCommitment``. Its wire projection is `root`; the cubic codeword the
-    DEEP batch opens and the base-limb `matrix`/`layers` the query phase opens
-    the committed tree with ride along as prover data — the quotient commits
-    mid-transcript (alpha precedes it), so unlike a PCS trace commit this
-    cannot be split into a pre-transcript commit half."""
-
-    codeword: Array
-    root: Array
-    matrix: Array
-    layers: list[Array]
+from zisk_zorch.types import (
+    QuotientBoundClaim,
+    QuotientCommitment,
+    TraceBoundClaim,
+    TraceCommitment,
+)
 
 
 class QuotientProver(

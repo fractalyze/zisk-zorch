@@ -10,8 +10,8 @@ from zorch.poly.univariate import powers
 from zorch.stage import VerifierStage, VerifyResult
 from zorch.utils.field import join_coeffs
 
-from zisk_zorch.claims import QuotientBoundClaim, TraceBoundClaim
 from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import QuotientBoundClaim, TraceBoundClaim
 
 
 class QuotientVerifier(VerifierStage[TraceBoundClaim, QuotientBoundClaim, Array]):

@@ -14,8 +14,6 @@ it (hash family, leaf convention, arity-to-width map) rides in via the blocks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import frx.numpy as fnp
 from frx import Array
 from zk_dtypes import goldilocks as F
@@ -26,6 +24,7 @@ from zorch.hash.compression import Compression, CompressionParams
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.quotient.zerofier import _PIL2_GENERATOR
+from zisk_zorch.types import TraceCommitment
 
 # Goldilocks::SHIFT — the LDE coset generator pil2-stark evaluates on.
 COSET_SHIFT = 7
@@ -77,16 +76,6 @@ def merkle_tree(arity: int) -> MerkleTree:
         LinearHash(perm),
         Compression(perm, CompressionParams(arity=arity, chunk=DIGEST_ELEMS)),
     )
-
-
-@dataclass(frozen=True)
-class TraceCommitment:
-    """Stage-1 output: the 4-element root, the digest layers (for the query
-    phase's openings), and the extended matrix (the FRI witness)."""
-
-    root: Array
-    digest_layers: list[Array]
-    extended: Array
 
 
 def commit_trace(trace: Array, *, blowup: int, arity: int) -> TraceCommitment:

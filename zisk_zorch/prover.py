@@ -9,7 +9,7 @@ mutable carry.
 
 Each stage's roles live in its own package — `quotient/prover.py`,
 `opening/prover.py` (with their verifier duals alongside) — and the claims
-they exchange in `claims.py`:
+they exchange in `types.py`:
 
 - **Claim** — the statement a stage consumes and reduces (`InnerClaim`,
   `TraceBoundClaim`, `QuotientBoundClaim`, `zorch.stage.TrivialClaim`).
@@ -40,11 +40,16 @@ import numpy as np
 from frx import Array
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 
-from zisk_zorch.claims import InnerClaim, InnerWitness, TraceBoundClaim
 from zisk_zorch.fri.prover import FriProof
-from zisk_zorch.opening.prover import EchoOpening, OpeningProver, OpeningWitness
+from zisk_zorch.opening.prover import EchoOpening, OpeningProver
 from zisk_zorch.quotient.prover import QuotientProver
 from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import (
+    InnerClaim,
+    InnerWitness,
+    OpeningWitness,
+    TraceBoundClaim,
+)
 
 
 def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:

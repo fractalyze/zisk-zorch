@@ -21,7 +21,8 @@ v1.0.0-alpha's `fields` crate via [`../tools/fixture-gen/`](../tools/fixture-gen
   not claim boundaries.
 - **Claim** — what crosses a stage seam: only data both roles derive (the
   verifier from the wire), never prover-only state. The claims live in
-  [`../zisk_zorch/claims.py`](../zisk_zorch/claims.py), below every stage.
+  [`../zisk_zorch/types.py`](../zisk_zorch/types.py), below every stage,
+  alongside the commit-data handoffs and witness types.
   The committed trees' prover data — the extended trace, the quotient
   codeword and layers — rides witness wrappers (`OpeningWitness`) the
   composite assembles. Static config (arity, the fold schedule, `eval_fn`)

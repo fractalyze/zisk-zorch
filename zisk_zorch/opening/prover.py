@@ -14,16 +14,20 @@ import numpy as np
 from frx import Array
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 
-from zisk_zorch.claims import InnerWitness, QuotientBoundClaim
 from zisk_zorch.commit.openings import group_proof
-from zisk_zorch.commit.trace_commit import TraceCommitment, commit_trace, merkle_tree
+from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
 from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
 from zisk_zorch.evals.lev import LevConstants, lev_constants
 from zisk_zorch.fri.prover import FriProof, prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
-from zisk_zorch.quotient.prover import QuotientCommitment
 from zisk_zorch.quotient.zerofier import _coset_points
 from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import (
+    InnerWitness,
+    OpeningWitness,
+    QuotientBoundClaim,
+    TraceCommitment,
+)
 
 
 @partial(frx.jit, static_argnames=("n_bits", "blowup_bits", "opening_points"))
@@ -61,16 +65,6 @@ def _opening_deep_jit(
         lev_consts=lev_consts,
     )
     return transcript, fri_pol, evals
-
-
-@dataclass(frozen=True)
-class OpeningWitness:
-    """What discharging a `QuotientBoundClaim` takes: both committed trees'
-    prover data — the extended trace and quotient codeword the DEEP batch
-    reads, and the digest layers the query phase opens."""
-
-    trace_commit: TraceCommitment
-    quotient: QuotientCommitment
 
 
 @dataclass(frozen=True)

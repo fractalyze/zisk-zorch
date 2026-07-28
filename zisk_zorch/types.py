@@ -1,11 +1,23 @@
-"""The claims crossing the inner proof's stage seams, plus the top witness.
+"""The inner proof's shared data types: the statement, its witnesses, the
+claims crossing the stage seams, and the commit-data handoffs.
 
-A claim holds only what both roles can derive — the verifier from the wire,
-the prover from its own run — never prover-only data; each stage's roles
+Everything here is data more than one package reads — a stage's roles
 (`quotient/`, `opening/`) consume and produce these, and the composites in
 `prover.py` / `verifier.py` construct the bound forms after the shared
-transcript operations. They live here, below every stage, so a stage never
-imports the composite that runs it.
+transcript operations — so it sits below every stage and a stage never
+imports the composite that runs it. Proof types stay with their roles
+(`OpeningProof` in `opening/prover.py`, `FriProof` in `fri/prover.py`,
+`InnerProof` with the composite), mirroring where each is produced.
+
+Two lines the docstrings below keep drawing:
+
+- **Claim data vs configuration.** A claim holds only what both roles can
+  derive — the verifier from the wire, the prover from its own run. What is
+  fixed for every instance (the AIR's circuits, arity, the fold schedule) is
+  role configuration instead.
+- **Claim data vs prover data.** Commitments' wire projection (a root) is
+  claim data; the matrices and digest layers behind it are prover data,
+  riding commitment/witness types the composite hands between stages.
 """
 
 from __future__ import annotations
@@ -82,3 +94,40 @@ class QuotientBoundClaim:
     trace_root: Array
     quotient_root: Array
     alpha: Array
+
+
+@dataclass(frozen=True)
+class TraceCommitment:
+    """What the opening scheme's commit half hands forward: the 4-element
+    root (the wire projection the composite binds), the digest layers the
+    query phase opens with, and the extended matrix every later stage
+    evaluates or opens against — the latter two prover data."""
+
+    root: Array
+    digest_layers: list[Array]
+    extended: Array
+
+
+@dataclass(frozen=True)
+class QuotientCommitment:
+    """The quotient stage's reduction proof, the quotient analogue of
+    ``TraceCommitment``. Its wire projection is `root`; the cubic codeword the
+    DEEP batch opens and the base-limb `matrix`/`layers` the query phase opens
+    the committed tree with ride along as prover data — the quotient commits
+    mid-transcript (alpha precedes it), so unlike a PCS trace commit this
+    cannot be split into a pre-transcript commit half."""
+
+    codeword: Array
+    root: Array
+    matrix: Array
+    layers: list[Array]
+
+
+@dataclass(frozen=True)
+class OpeningWitness:
+    """What discharging a `QuotientBoundClaim` takes: both committed trees'
+    prover data — the extended trace and quotient codeword the DEEP batch
+    reads, and the digest layers the query phase opens."""
+
+    trace_commit: TraceCommitment
+    quotient: QuotientCommitment

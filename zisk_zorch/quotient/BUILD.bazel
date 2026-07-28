@@ -96,7 +96,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":quotient",
-        "//zisk_zorch:claims",
+        "//zisk_zorch:types",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",
         requirement("frx"),
@@ -111,7 +111,7 @@ py_library(
     srcs = ["verifier.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//zisk_zorch:claims",
+        "//zisk_zorch:types",
         "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("pyzorch"),

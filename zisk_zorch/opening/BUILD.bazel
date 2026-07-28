@@ -11,7 +11,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//zisk_zorch:claims",
+        "//zisk_zorch:types",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/deep:fri_polynomial",
@@ -34,7 +34,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":prover",
-        "//zisk_zorch:claims",
+        "//zisk_zorch:types",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/deep:fri_polynomial",

@@ -13,7 +13,6 @@ from zorch.poly.univariate import powers
 from zorch.stage import TrivialClaim, VerifierStage, VerifyResult
 from zorch.utils.field import join_coeffs, split_coeffs
 
-from zisk_zorch.claims import QuotientBoundClaim
 from zisk_zorch.commit.openings import verify_group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.deep.fri_polynomial import _ood_points
@@ -27,6 +26,7 @@ from zisk_zorch.fri.verifier import verify_query_layers
 from zisk_zorch.opening.prover import OpeningProof
 from zisk_zorch.quotient.zerofier import _coset_points
 from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import QuotientBoundClaim
 
 
 class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningProof]):
