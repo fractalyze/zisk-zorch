@@ -19,7 +19,7 @@ py_library(
         requirement("frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -32,7 +32,7 @@ py_test(
         ":quotient",
         "//zisk_zorch:golden",
         requirement("absl_py"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -86,5 +86,35 @@ py_test(
         "//zisk_zorch:golden",
         "//zisk_zorch/constraints:chip_loader",
         requirement("absl_py"),
+    ],
+)
+
+# The quotient stage's ProverStage role (and its reduction-proof type).
+py_library(
+    name = "prover",
+    srcs = ["prover.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":quotient",
+        "//zisk_zorch:types",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# The quotient stage's VerifierStage dual.
+py_library(
+    name = "verifier",
+    srcs = ["verifier.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//zisk_zorch:types",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
     ],
 )

@@ -35,13 +35,14 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zorch.commit.merkle import MerkleTree
-from zorch.pcs.fold import PreFoldKGroupCommitRound
+from zorch.pcs.fold import FoldState, PreFoldKGroupCommitRound
 from zorch.prove import fold_rounds
 
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.types import FriProof
 
 
 @dataclass(frozen=True)
@@ -54,26 +55,20 @@ class _Layer:
     leaf_bits: int  # log2 of the layer height = the openings' index modulus
 
 
-@dataclass(frozen=True)
-class FriProof:
-    """Output of the fold loop: the per-layer roots (transcript order), the
-    final polynomial sent in clear, and the layers retained for opening."""
-
-    roots: list[Array]
-    final_pol: Array
-    layers: list[_Layer]
-
-
 def prove(
     fri_pol: Array,
     steps: list[int],
     *,
     arity: int,
     transcript: Transcript,
-) -> FriProof:
+) -> tuple[FriProof, list[_Layer]]:
     """Fold `fri_pol` (cubic, length `2^steps[0]`) down the layer chain,
     committing each intermediate layer and squeezing challenges from
-    `transcript`. `steps[0]` is the extended-domain log size (`nBitsExt`)."""
+    `transcript`. `steps[0]` is the extended-domain log size (`nBitsExt`).
+
+    Returns the wire proof and the committed layers separately: the layers
+    hold full matrices and digest paths, which only `prove_queries` reads —
+    they stay prover-side, and only the per-query group proofs cross."""
     code = Pil2FriCode(tuple(steps))  # validates the step schedule
     tree = merkle_tree(arity)  # validates arity; fixed across layers, build once.
     n_bits_ext = steps[0]
@@ -84,25 +79,24 @@ def prove(
     num_rounds = len(steps) - 1
 
     # Each round commits the current layer's next-fold cosets, squeezes the cubic
-    # challenge, and folds — the carry is the running codeword (pil2's `f`), and
-    # the last round's carry is the final polynomial.
-    final_pol, _, layers_msg = fold_rounds(
+    # challenge, and folds — the carry is the running codeword (pil2's `f`) plus
+    # the committed layers, and the last round's codeword is the final polynomial.
+    state, _, roots = fold_rounds(
         PreFoldKGroupCommitRound(code, tree),
-        fri_pol,
+        FoldState(fri_pol),
         Pil2SeamTranscript(transcript),
         num_rounds,
     )
 
-    roots = [msg.root for msg in layers_msg]
     layers = [
-        _Layer(tree, msg.leaves, msg.digest_layers, steps[i + 1])
-        for i, msg in enumerate(layers_msg)
+        _Layer(tree, layer.leaves, layer.digest_layers, steps[i + 1])
+        for i, layer in enumerate(state.layers)
     ]
-    return FriProof(roots=roots, final_pol=final_pol, layers=layers)
+    return FriProof(roots=roots, final_pol=state.codeword), layers
 
 
 def prove_queries(
-    proof: FriProof, query_indices: np.ndarray | list[int]
+    layers: list[_Layer], query_indices: np.ndarray | list[int]
 ) -> list[list[Array]]:
     """`FRI::proveFRIQueries`: open every committed layer at each query. Layer
     `s` opens at `query_index mod 2^(leaf_bits)`, the regrouped height."""
@@ -111,7 +105,7 @@ def prove_queries(
         frx.vmap(partial(group_proof, layer.tree, layer.matrix, layer.digest_layers))(
             qi % (1 << layer.leaf_bits)
         )
-        for layer in proof.layers
+        for layer in layers
     ]
     n_q = int(qi.shape[0])
-    return [[per_layer[li][q] for li in range(len(proof.layers))] for q in range(n_q)]
+    return [[per_layer[li][q] for li in range(len(layers))] for q in range(n_q)]

@@ -11,7 +11,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -22,11 +22,12 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":linear_hash",
+        "//zisk_zorch:types",
         "//zisk_zorch/poseidon2:goldilocks",
         "//zisk_zorch/quotient",
         requirement("frx"),
         requirement("zk_dtypes"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 
@@ -37,7 +38,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
-        requirement("zorch"),
+        requirement("pyzorch"),
     ],
 )
 

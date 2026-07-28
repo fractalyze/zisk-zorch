@@ -16,6 +16,7 @@ byte-match requires pil2's exact buffer discipline).
 
 from __future__ import annotations
 
+import frx
 import frx.numpy as fnp
 import numpy as np
 import zk_dtypes
@@ -107,3 +108,35 @@ class Transcript:
                     cur_field += 1
             out[i] = acc
         return out
+
+
+def _transcript_flatten(t: Transcript) -> tuple[tuple, tuple]:
+    # Leaves: the duplex state and any pending absorbs (traced through a jit
+    # zone); aux: the width and squeeze cursor, which evolve host-side on the
+    # fixed absorb/squeeze schedule, so they are static per call site — two
+    # zones whose schedules leave different pending/cursor shapes compile
+    # separately, as they must.
+    return (t._state, t._out, tuple(t._pending)), (t.width, t._out_cursor)
+
+
+def _transcript_unflatten(aux: tuple, children: tuple) -> Transcript:
+    width, cursor = aux
+    state, out, pending = children
+    t = object.__new__(Transcript)
+    t._perm = goldilocks_perm(width)  # cached per width — no rebuild cost
+    t.width = width
+    t._state = state
+    t._out = out
+    t._pending = list(pending)
+    t._out_cursor = cursor
+    return t
+
+
+# A pytree, so a whole absorb/squeeze leg can cross a `frx.jit` boundary as a
+# value: the zone returns the advanced transcript and the caller threads it
+# forward. Mutation inside the zone acts on the unflattened copy, which is why
+# zones must RETURN their transcript — the caller's object is not updated in
+# place across the boundary.
+frx.tree_util.register_pytree_node(
+    Transcript, _transcript_flatten, _transcript_unflatten
+)

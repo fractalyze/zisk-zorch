@@ -33,7 +33,7 @@ from zk_dtypes import goldilocksx3 as F3
 from zorch.pcs.deep import deep_composition, open_columns
 from zorch.utils.field import join_coeffs, split_coeffs
 
-from zisk_zorch.evals.lev import compute_lev
+from zisk_zorch.evals.lev import LevConstants, compute_lev
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 # Safe to jit despite #67: its trigger is a coset built *inside* the trace, and
@@ -67,6 +67,8 @@ def deep_fri_polynomial(
     n_bits: int,
     blowup_bits: int,
     opening_points: Sequence[int] = (0,),
+    domain: Array | None = None,
+    lev_consts: LevConstants | None = None,
 ) -> tuple[Array, Array]:
     """The real DEEP flow, threading the transcript exactly as pil2's `genProof`:
     squeeze the OOD `z`, open the committed columns, absorb the openings, squeeze
@@ -79,13 +81,20 @@ def deep_fri_polynomial(
     section) because the transcript absorbs them before squeezing `vf`: a
     verifier replaying the transcript cannot recompute them — it has no trace —
     so without them every later challenge diverges. `z` is not returned; it is
-    squeezed, so the verifier re-derives it."""
+    squeezed, so the verifier re-derives it.
+
+    `domain` is the extended coset (`zerofier._coset_points`) and `lev_consts`
+    the LEv constant pack, both computed here when omitted. A caller wrapping
+    this whole flow in a jit zone MUST pass both from outside the trace: an
+    in-trace coset feeding the composition's cubic reciprocal is exactly #67's
+    NVPTX crash trigger, and field constants enter as arguments per
+    `zisk_zorch.evals.lev.LevConstants`."""
     base_cols, cubic_cols = _committed_columns(trace_ext, quotient)
     m = base_cols.shape[1] + cubic_cols.shape[1]
     opening_pos = (0,) * m  # all at z; wrapped openings are AIR-specific
     z = transcript.get_field()  # OOD point (pil2 stage nStages+2, stageId 0)
     zc = join_coeffs(z.reshape(-1, 3), F3).reshape(())
-    lev = compute_lev(zc, list(opening_points), n_bits)
+    lev = compute_lev(zc, list(opening_points), n_bits, consts=lev_consts)
     evals = _open_columns(
         base_cols, cubic_cols, lev, opening_pos, stride=1 << blowup_bits
     )
@@ -93,6 +102,7 @@ def deep_fri_polynomial(
     # batching challenge
     vf = join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(())
     xis = _ood_points(z, opening_points, n_bits)
-    domain = _coset_points(n_bits, blowup_bits)  # (N_ext,) base — DEEP divides on it
+    if domain is None:
+        domain = _coset_points(n_bits, blowup_bits)  # (N_ext,) base coset
     f = _deep_composition(base_cols, cubic_cols, evals, xis, opening_pos, vf, domain)
     return f, evals

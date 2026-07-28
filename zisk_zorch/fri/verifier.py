@@ -77,8 +77,6 @@ def verify(
     holds, every Merkle opening verifies, every fold lands on the next layer's
     opening (or the final polynomial), and the final polynomial is low-degree.
     `transcript` must be seeded exactly as the prover's was."""
-    code = Pil2FriCode(tuple(steps))
-    tree = merkle_tree(arity)
     num_rounds = len(steps) - 1
 
     # Replay the fold challenges: observe each layer root, squeeze a cubic — the
@@ -105,12 +103,47 @@ def verify(
         n_queries=len(query_openings),
         n_bits_ext=steps[0],
     )
+    return verify_query_layers(
+        roots,
+        final_pol,
+        query_openings,
+        query_indices,
+        betas,
+        steps=steps,
+        arity=arity,
+        n_bits=n_bits,
+    )
+
+
+def verify_query_layers(
+    roots: list[Array],
+    final_pol: Array,
+    query_openings: list[list[Array]],
+    positions: np.ndarray,
+    betas: list[Array],
+    *,
+    steps: list[int],
+    arity: int,
+    n_bits: int,
+) -> bool:
+    """The query-phase core, given re-derived positions and betas: every
+    layer's opened group hashes to its layer root, folds onto the next layer's
+    opening (or the final polynomial), and the in-clear final polynomial is
+    below the degree bound.
+
+    Shared by `verify` and the inner proof's `OpeningVerifier`: their
+    transcript replays differ (the inner proof derives its positions after the
+    DEEP head), but the layer checks must not drift, so both call this one
+    definition."""
+    code = Pil2FriCode(tuple(steps))
+    tree = merkle_tree(arity)
+    num_rounds = len(steps) - 1
 
     # Query indices stay on the host for the Merkle loop — indexing a JAX array
     # per (query, layer) would force a device→host sync each time. They cross to
     # JAX only for the fold-chain check below.
-    positions = query_indices.astype(np.int64)  # (Q,)
-    leaf_indices = code.group_layer_positions(positions, num_rounds)  # per layer (Q,)
+    host_positions = positions.astype(np.int64)  # (Q,)
+    leaf_indices = code.group_layer_positions(host_positions, num_rounds)
 
     # Merkle: each query opens layer `layer` at `query mod 2^steps[layer+1]`; the
     # flat group-proof must rebuild that layer's root. Width = the cubic group's
@@ -119,7 +152,7 @@ def verify(
     for layer in range(num_rounds):
         n_cols = (1 << (steps[layer] - steps[layer + 1])) * 3
         rows = []
-        for q in range(len(positions)):
+        for q in range(len(host_positions)):
             proof = query_openings[q][layer]
             open_idx = int(leaf_indices[layer][q])
             if not verify_group_proof(tree, roots[layer], open_idx, proof, n_cols):

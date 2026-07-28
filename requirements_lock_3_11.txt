@@ -11,22 +11,24 @@ absl-py==2.5.0 \
     --hash=sha256:0f17b89f2a4eaaedc4f28c622998aa690564b3012a396a4ffad0821007fe03ba
     # via
     #   -r requirements.in
-    #   zorch
-frx==0.10.0.dev20260723085209 \
-    --hash=sha256:9173cdb7e55185f1205bbcfde8b7101873ccca954b4774d8bd9c5b297fabcb82
+    #   pyzorch
+frx==0.10.1 \
+    --hash=sha256:46b9e1071c8f5e24bd4310bcfe87495b26036fca7a254fcfeea60317c4404b54
     # via
     #   -r requirements.in
+    #   pyzorch
     #   rw-constraints
-frx-cuda12-pjrt==0.10.0.dev20260723085209 \
-    --hash=sha256:799b1701fdc935e23cda44e5bd5a3428544ef11d84aa63a3e5da718ca68648ad
+frx-cuda12-pjrt==0.10.1 \
+    --hash=sha256:9621f066ee17ae77e76a2b10c89da901cf98b4c77fc84ee90a30f8d3b38594b8
     # via
     #   -r requirements.in
     #   frx-cuda12-plugin
-frx-cuda12-plugin==0.10.0.dev20260723085209 \
-    --hash=sha256:cd3c7794af1eaaee56c6eaf3a2e96bd5594b26b9f6d12b839d93fbb47ab8fa57
+frx-cuda12-plugin==0.10.1 \
+    --hash=sha256:4620366570c84531fee40afc22bac58b5effc8d008cc55cb0e14d89af82446ad
     # via -r requirements.in
-frxlib==0.10.0.dev20260723085209 \
-    --hash=sha256:2bc8030b3310536343d72d40f697ec6c75ef7e639786a2f14f78e2075ea4030e
+frxlib==0.10.1 \
+    --hash=sha256:50b88211f8d32f3ca1f7b2e1f27616e6b159a8f0c7696021ddd7c536c807ce33 \
+    --hash=sha256:bd1f5c5c85240bd075ba50034f25dcb90881d70063ff5c2b5e8c67571742916c
     # via
     #   -r requirements.in
     #   frx
@@ -152,15 +154,18 @@ numpy==2.4.6 \
     #   frx
     #   frxlib
     #   ml-dtypes
+    #   pyzorch
     #   rw-constraints
     #   scipy
     #   zk-dtypes
     #   zkbench
-    #   zorch
 opt-einsum==3.4.0 \
     --hash=sha256:69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd \
     --hash=sha256:96ca72f1b886d148241348783498194c577fa30a8faac108586b14f1ba4473ac
     # via frx
+pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260727041631/pyzorch-0.1.0.dev20260727041631-py3-none-any.whl \
+    --hash=sha256:2bf9bf1f0599a9f922031204e5f8b3f84041b440876670df0cdb07468d50a11c
+    # via -r requirements.in
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl \
     --hash=sha256:d29f0d7422531aa45491535b6e91bb109b385236a67a3f55d41fdfbddb4cb5f1
     # via -r requirements.in
@@ -238,7 +243,4 @@ zk-dtypes==0.0.10 \
     #   frx
 zkbench @ https://github.com/fractalyze/pypi/releases/download/zkbench-py-v0.5.0/zkbench-0.5.0-py3-none-any.whl \
     --hash=sha256:1c6020d02504f43aa6b7cfa62e7ba300cf6305abab771ff83626cae912352bb3
-    # via -r requirements.in
-zorch==0.1.0.dev20260722235316 \
-    --hash=sha256:759d451b5cdd73c8a367a222d0a2ee5c87b0f234ce1dd1eb1763be6ef1840232
     # via -r requirements.in
