@@ -182,15 +182,11 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-23
 (zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp, quotient,
 evals, and DEEP rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
-commit excludes its extend; `MAIN_EXPR` excludes the INTT-back and Merkle), so
-rows do not sum.
+`MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
 
 | stage | native pil2 | zisk-zorch | ratio | pinned by |
 |---|---|---|---|---|
-| extend cm1 (38 col) | 32.5 ms | 23.6 ms | **0.72×** | golden (`lde`) |
-| extend cm2 (24 col) | 20.4 ms | 14.8 ms | **0.73×** | golden (`lde`) |
-| commit stage1 (38 col) | 37.5 ms | 39.0 ms | **1.04×** | real-trace root |
-| commit stage2 (24 col) | 20.3 ms | 21.1 ms | **1.04×** | real-trace root |
+| trace commit (extend+merkle, 38+24 col) | 110.7 ms | 98.5 ms | **0.89×** | golden (`lde`) + real-trace root |
 | quotient ⚠️ | 133 ms (synthetic mimic) | 12.1 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
 | LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
 | evals (`evmap`) | 3.74 ms (M=68) | 3.14 ms | **0.84×** | LEv round-trip |
@@ -228,23 +224,28 @@ How to read the table:
 ### End-to-end (`InnerProver`)
 
 Whole-proof peaks through the real DEEP combiner, this RTX 5090
-(`XLA_PYTHON_CLIENT_MEM_FRACTION` raised to fit), one fresh process per row;
-"warm re-prove" is the second prove of the same size in that process — the
-marginal per-proof cost in a compile-once, prove-many server, which is
-production's shape (111 AIR instances per block):
+(`XLA_PYTHON_CLIENT_MEM_FRACTION=0.95` to fit), one fresh process per row,
+re-measured 2026-07-28 on the merged pins (pyzorch `dev20260727041631`,
+frx 0.10.1); "warm re-prove" is the second prove of the same size in that
+process — the marginal per-proof cost in a compile-once, prove-many server,
+which is production's shape (111 AIR instances per block):
 
 | base | N_ext | full prove (cold) | warm re-prove | peak |
 |---|---|---|---|---|
-| 2^20 | 2^21 | 68.8 s | 28.4 s | 2.69 GiB |
-| 2^21 | 2^22 | 70.7 s | 28.6 s | 5.38 GiB |
-| 2^22 | 2^23 | 73.2 s | **30.6 s** | **10.75 GiB** |
+| 2^20 | 2^21 | 89.0 s | 0.6 s | 3.03 GiB |
+| 2^21 | 2^22 | 89.0 s | 0.5 s | 5.38 GiB |
+| 2^22 | 2^23 | 87.8 s | **0.7 s** | **10.75 GiB** |
 | 2^23 | 2^24 | — | — | OOM (see below) |
 
-- **The warm wall is host-bound, and that is the e2e story**: ~30 s and nearly
-  flat from 2^20 to 2^22, while the per-stage GPU table sums to ~0.2 s at
-  production size. The warm prove is ~99% eager per-op dispatch and Python
-  sequencing; per-stage kernel ratios are second-order until the spine itself
-  is batched/jitted or moved off Python.
+- **The 30 s host-bound warm wall is gone**: 30.6 s → **0.7 s** at 2^22. The
+  collapse is the accumulated spine work — vmapped query openings (#88),
+  shared jit cache keys (#92), frx 0.10.1 — not the DEEP jit zone alone: an
+  eager (`jit=False`) warm prove also lands at 0.7 s, so the zone's warm
+  delta is noise. The remainder is still flat across sizes (dispatch, not
+  kernels — the per-stage table sums to ~0.2 s), just 40× smaller.
+- **Cold is compile time**: ~88–89 s and flat from 2^20 to 2^22 (up from
+  ~70 s as more of the spine jits), so the cold column prices the
+  compile-once half of the server shape, not the proving.
 - **The 2^23 ceiling is the stage-1 LDE forward NTT**, whose lowering holds
   two full ping-pong copies of the `(38, 2^24)` matrix as one 9.50 GiB
   scratch allocation. The traceback blames the query grind only because the
@@ -254,12 +255,15 @@ production's shape (111 AIR instances per block):
 - **No measured whole-proof ratio exists**: the only native total covers 111
   AIRs. The bracket from the native per-stage sum (~0.27 s) and the
   block-level average (~0.22 s) puts native at ~0.2–0.3 s per proof against
-  our 30.6 s warm — a ~100× gap that is entirely the host-bound spine.
-  Derived, not measured — do not quote as a benchmark row.
+  our 0.7 s warm — a ~2–3× gap. Derived, not measured — do not quote as a
+  benchmark row.
 
 Proofs verify: `verifier.InnerVerifier` replays the transcript and checks
 Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
-(`verifier_test` round-trips prove → verify, honest and tampered).
+(`verifier_test` round-trips prove → verify, honest and tampered). An
+accepting verify at 2^22 with 64 queries measures 825.7 s first / 765.1 s
+repeated — the verifier's per-query host loops are now the minutes-scale
+wall, and the next per-stage issue candidate.
 
 ### Measure shipped code
 
