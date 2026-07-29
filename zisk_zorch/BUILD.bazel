@@ -134,6 +134,26 @@ py_test(
     ],
 )
 
+# Timing twin of verify_inner_proof: same dump, same stages, warm medians.
+py_binary(
+    name = "bench_prove_e2e",
+    srcs = ["bench_prove_e2e.py"],
+    deps = [
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/fri:prover",
+        "//zisk_zorch/fri:queries",
+        "//zisk_zorch/poseidon2:goldilocks",
+        "//zisk_zorch/quotient",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 # Composed 16-gate byte-match of the full inner proof vs a real pil2-proofman
 # genProof dump — a runnable, never a test (sp1-zorch's verify_prove_shard
 # pattern: gates that need a host-provided native artifact stay out of CI).

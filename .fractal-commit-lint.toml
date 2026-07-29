@@ -48,5 +48,9 @@ exempt_paths = [
 [scopes]
 prover = ["zisk_zorch/prover.py", "zisk_zorch/prover_test.py"]
 golden = ["zisk_zorch/golden.py"]
-bench = ["zisk_zorch/bench_inner_proof.py", "zisk_zorch/bench_inner_proof_test.py"]
+bench = [
+  "zisk_zorch/bench_inner_proof.py",
+  "zisk_zorch/bench_inner_proof_test.py",
+  "zisk_zorch/bench_prove_e2e.py",
+]
 release = ["zisk_zorch/__init__.py"]
