@@ -143,11 +143,11 @@ elements either match or they don't.
 
 A wall-clock comparison against ZisK's native pil2-stark CUDA reference means
 something only when both sides prove the **same instance**, at the **same
-scope**, and produce the **same output**. Only the trace commit meets the
-output half today (the `fullprogram/` fixtures match the native root for a
-real trace); every other stage is pinned by `tools/fixture-gen`'s synthetic
-inputs. The ratios below are engineering signal — do not quote one as
-"zisk-zorch is Nx pil2" outside this page.
+scope**, and produce the **same output**. The fibonacci-square instance below
+is the one basis meeting all three for every stage: both sides prove the same
+real witness and every timed stage byte-matches the native dump. Quote
+ratios only from that table; the Main-shape microbenches further down are
+engineering signal for per-stage issues, not baselines.
 
 > **Retracted numbers — never re-quote:** "45 ms quotient" (a 1/55th-density
 > proxy), "~270 ms quotient" (an extrapolation the proxy cannot reach),
@@ -155,7 +155,7 @@ inputs. The ratios below are engineering signal — do not quote one as
 > against the 24.6 s `GENERATING_INNER_PROOFS` (that phase covers **111 AIR
 > instances**; this bench times one — a ~111× scope error).
 
-### zisk-zorch side — `bench_inner_proof`
+### Main-shape microbenches — zisk-zorch side (`bench_inner_proof`)
 
 ```sh
 CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_PREALLOCATE=false \
@@ -184,7 +184,7 @@ zkbench owns warmup (3) + timed iterations (20) and reports warm `latency`,
 - The report's `output_hash` is a self-consistency hash across zisk-zorch
   runs — *not* a pil2 byte-match.
 
-### Native pil2 side
+### Main-shape microbenches — native pil2 side
 
 **Full inner proof** — the only recorded invocation (#30): `cargo-zisk 0.18.0
 [gpu] --emulator --no-aggregation` on mainnet block 24654300 → ~47 s wall, 111
@@ -203,53 +203,58 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
   ./main_bench --benchmark_filter='MAIN_EXPR_PATTERN|MAIN_LDE_CM1|MAIN_LDE_CM2|MAIN_MERKLE' \
     --benchmark_min_time=5x --benchmark_repetitions=3 --benchmark_report_aggregates_only=true
 ./fri_bench     # no flags; arity 4 and [23,20,17,14,11,8,5] compiled in
-./gsum_bench    # no flags; sweeps log2N, I=8
-./evmap_bench; ./friexp_bench   # each prints 1-opening THEN 2-opening — the rows below use 1
+./evmap_bench; ./friexp_bench   # each prints 1-opening THEN 2-opening; use 1
 ```
 
-### Per-stage comparison
+For per-stage timings of a real native prove, no ad-hoc binary is needed:
+pil2's CUDA-event stage timers (`LOG_TIME_GPU` is compiled in) print per
+instance at `-vv` — the same-instance table below is built from them.
 
-RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-23
-(zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp, quotient,
-evals, and DEEP rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
-`MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
+### Per-stage comparison — same instance, proof order
 
-| stage | native pil2 | zisk-zorch | ratio | pinned by |
-|---|---|---|---|---|
-| trace commit (extend+merkle, 38+24 col) | 110.7 ms | 98.5 ms | **0.89×** | golden (`lde`) + real-trace root |
-| quotient ⚠️ | 133 ms (synthetic mimic) | 12.1 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
-| LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
-| evals (`evmap`) | 3.74 ms (M=68) | 3.14 ms | **0.84×** | LEv round-trip |
-| DEEP composition | 8.88 ms (`friExp`, 62+6 col) | 15.5 ms | **1.75×** | low-degree test |
-| FRI total (queries excl.) | 7.88 ms | 6.5 ms | **0.83×** | goldens (`fri_*`) |
+fibonacci-square FibonacciSquare @2^22 → 2^23, RTX 5090, measured
+2026-07-29. Rows are the proof's stages in transcript order and each side's
+rows sum to its total. Native numbers are pil2's own CUDA-event stage
+timers (`TimerGPU`, printed at `-vv`, medians of 3 runs, cv < 1%; the
+0.4 ms `STARK_STEP_0` transcript setup is the only part not in a row); ours
+are `bench_prove_e2e --backend=device` warm medians, every row byte-gated
+against the native dump in the same run.
+
+| stage (proof order) | native pil2 | zisk-zorch | native timer |
+|---|---|---|---|
+| stage-1 commit (extend + merkle) | 15.0 ms | 14.9 ms | `STARK_COMMIT_STAGE_1` |
+| stage-2 witness (STD hints → im, gsum, ImPol) | 1.6 ms | 0.8 ms | `WITNESS_STD` + `IM_POLS` |
+| stage-2 commit | 18.0 ms | 17.6 ms | `STARK_COMMIT_STAGE_2` |
+| quotient (cExp eval + commit Q) | 22.3 ms | 16.2 ms | `STARK_STEP_Q` |
+| evals (LEv + openings) | 11.4 ms | 5.8 ms | `STARK_STEP_EVALS` |
+| DEEP + FRI + queries | 16.2 ms | 14.4 ms | `STARK_STEP_FRI` |
+| **total** | **85.0 ms** (device events) | **69.6 ms** (stage sum) | `STARK_GPU_PROOF` |
 
 How to read the table:
 
-- **The quotient row has no ratio and cannot get one from these tools** (#66):
-  pil2's `MAIN_EXPR_PATTERN` hardcodes a density ~370× the real Main air, and
-  our 12.0 ms is the real air folded through the production
-  `quotient_from_constraints` — a direct measurement at 2^23, register/
-  bandwidth-resident, peak memory linear. Reproduce with
-  `--stages=quotient --chip=main`. A true head-to-head needs pil2's per-air
-  quotient timer under a real witness. Both sides re-measured 2026-07-28:
-  native `MAIN_EXPR_PATTERN` 133 ms (cv 0.11%), real Main
-  12.06 ms — the first number on frx 0.10.1, unchanged from the dev-pin
-  measurement.
-- **The evals ratio pairs like-for-like shapes**: native's 3.74 ms opens
-  M=68 columns, so its counterpart is the 62+6 run; the wired 38+1 shape
-  measures 1.58 ms. Both sides re-measured 2026-07-28, ours on the current
-  pins — zorch#512's block-form `open_columns` is what took this row from
-  7.8 ms / 2.1× to below native. The DEEP row, re-measured
-  2026-07-28 on the same pins (native 8.88, ours 15.5 median), is unchanged —
-  it has no `open_columns` in it, so zorch#512 and frx 0.10.1 move nothing;
-  its residual is the AoS cubic arithmetic (upstream: xla_fork#258).
-- **The LogUp row is not in the prover's spine** — it pins the grand-sum
-  primitive. Its native side was re-measured 2026-07-28 (`gsum_bench` at
-  2^22: invfold 2.211 + scan 0.240 = 2.451 ms), confirming the figure the
-  table had carried forward.
-- The FRI fold byte-match requires the compile-time-constant field-divide fix
-  first carried in frx `dev20260723085209` (present in 0.10.1); `fold_test` is
-  green on GPU and CPU under it.
+- **The 49 ms `GEN_PROOF` wall and the 85 ms device total are both real.**
+  The Rust-side `GEN_PROOF` bracket (49 ms) returns while ~36 ms of the
+  instance's kernels are still draining on the stream — the tail overlaps
+  the next instance's host work, which is how the six-instance program
+  proves in 166 ms. The event-timed 85 ms is what the stages actually cost
+  on the device; it is the apples-to-apples side for our synchronized
+  stage sum. Against the pipelined wall we are 69.6/49 ≈ 1.4×; against
+  device time we are 69.6/85 ≈ **0.82× — ahead of native**.
+- **Native's total carries ~13 ms of `H2D_COPY`** (witness upload lands in
+  its commit rows); our bracket starts from a device-resident witness.
+  Netting it out puts native at ~72 ms — parity with our 69.6.
+- Where the stages differ: the two commits and stage-1 are hash-bound and
+  identical (both sides sit at the same ~1.3 G perms/s Poseidon2 floor);
+  our wins are the quotient (their `STARK_QUOTIENT_POLYNOMIAL` expression
+  pass alone is 6.3 ms vs our whole interpreter at 4.6 ms), evals (11.4 →
+  5.8), and the stage-2 hint chain (1.6 → 0.8). Their DEEP polynomial
+  (`STARK_FRI_POLYNOMIAL`, 6.3 ms) ≈ ours (5.9 ms).
+- The old Main-shape rows this table replaced (trace commit 0.89×, LogUp
+  grand-sum, evmap, friExp, fri_bench) were cross-harness comparisons at
+  mixed shapes — the LogUp row in particular benched the grand-sum
+  *primitive* at I=8, not a proof stage. Their history lives in #58–#70;
+  re-measure with the Main-shape microbenches below when a per-stage issue
+  needs them, at production shapes only.
 
 ### End-to-end (`InnerProver`)
 
@@ -282,11 +287,12 @@ which is production's shape (111 AIR instances per block):
   transcript is device-resident, so the grind's `_canonical` is the first
   host sync in the chain. Splitting the LDE into column blocks (exact — the
   transform is per-column) is the known fix, currently parked.
-- **No measured whole-proof ratio exists**: the only native total covers 111
-  AIRs. The bracket from the native per-stage sum (~0.27 s) and the
-  block-level average (~0.22 s) puts native at ~0.2–0.3 s per proof against
-  our 0.7 s warm — a ~2–3× gap. Derived, not measured — do not quote as a
-  benchmark row.
+- **No measured whole-proof ratio exists at ZisK shape**: the only native
+  total covers 111 AIRs. The bracket from the native per-stage sum (~0.27 s)
+  and the block-level average (~0.22 s) puts native at ~0.2–0.3 s per proof
+  against our 0.7 s warm — a ~2–3× gap. Derived, not measured — do not quote
+  as a benchmark row. The measured whole-proof ratio that does exist is on
+  the fibonacci-square instance below.
 
 Proofs verify: `verifier.InnerVerifier` replays the transcript and checks
 Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
@@ -294,6 +300,132 @@ Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
 accepting verify at 2^22 with 64 queries measures 825.7 s first / 765.1 s
 repeated — the verifier's per-query host loops are now the minutes-scale
 wall, and the next per-stage issue candidate.
+
+### End-to-end vs native pil2 — same instance (fibonacci-square)
+
+The one whole-proof pairing that meets this page's bar — same instance, same
+scope, same output — is pil2-proofman's own `fibonacci-square` example:
+FibonacciSquare at N=2^22 → N_ext=2^23 (5 cm1 + 9 cm2 columns, arity 4, FRI
+schedule `[23,20,17,14,11,8,5]`, 229 queries, 16 grinding bits). It is the
+instance `verify_inner_proof` byte-gates 16/16 against a real `genProof`
+dump, so every timed stage below produced byte-identical output first.
+
+**Bracket** — runtime only, on both sides. Native: the per-instance CUDA
+event timers (settled witness in, proof out; setup load, const-tree
+regeneration, and witness computation excluded), with the host-side
+`GEN_PROOF` wall shown alongside. Ours:
+`zisk_zorch/bench_prove_e2e.py`, the timing twin of `verify_inner_proof` —
+production stage functions in proof order on the same dump, each jitted
+once, one compiling warmup, median of the warm repetitions. Neither side
+includes compile time; a stage timing is reported only when its byte-gate
+passed in the same run.
+
+RTX 5090 / 16-core host, measured 2026-07-29 (native at v1.0.0-alpha plus
+the non-perturbing `dump/per-stage-genproof` hooks, disarmed):
+
+| side | GPU | CPU |
+|---|---|---|
+| native pil2, device time (`STARK_GPU_PROOF`) | **85.0 ms** | — |
+| native pil2, pipelined wall (`GEN_PROOF`) | 49 ms | 2685 ms |
+| zisk-zorch, all-device (stage sum, warm) | **69.6 ms** | 70.5 s |
+
+The per-stage split of both GPU columns is the same-instance table above:
+against native's device time we are **0.82×**; the 49 ms wall is native's
+host bracket whose async kernel tail overlaps the next instance, so
+matching it is a pipelining property (prove-many overlap), not a per-proof
+compute gap — our composed wall (no per-stage syncs) is 73 ms and would
+overlap the same way across instances.
+
+The device row needs frx `0.10.1.dev20260729002119`+ (the xla#335 field-mul
+outlining fix and xla#327 stride-aware unroll gating) with
+`XLA_FLAGS=--xla_gpu_experimental_max_unroll_factor=1`, plus two
+workarounds the harness carries (below). On the shipped 0.10.1 pins the
+same pipeline runs GPU-hybrid — quotient and stage-2 CPU-pinned per
+xla#334 — at 1373 ms, which is the shipped-pins number until the next frx
+bump.
+
+What the campaign from 1373 ms pulled, in order of yield:
+
+- **xla#335 unpin** (−812 ms): both interpreter stages onto the device —
+  stage-2 witness 242→0.8, quotient 570→4.6.
+- **Device-paced query phase** (−347 ms): the production phase is
+  host-paced (`_GRIND_CHUNK = 256` → ~256 round-trips for pow 16, Python
+  bit-unpack in `get_permutations`, per-call re-`vmap` of every tree
+  opening). Same math jitted once, 2^17-nonce grind batches, vectorized
+  unpack — 373→2.0 ms, byte-checked against `sample_query_positions`.
+- **`--xla_gpu_experimental_max_unroll_factor=1`** (−13 ms): DEEP
+  17.7→6.0. The #327 structural gate catches slice-strided fusions but not
+  the goldilocksx3 AoS limb interleave this fold reads (the known gl
+  residual); the flag closes it.
+- **Montgomery batch inversion in DEEP** (−6 ms): one Fermat chain for all
+  five opening-group denominators instead of five, 24.1→17.7 pre-flag.
+- **Fused evals** (−5 ms): `compute_lev` traced into the sums jit via its
+  `LevConstants` prologue, 11.1→6.0.
+
+**The floor, and the one lever left.** The four Merkle trees (three commits
++ FRI's layers) hash ~49M Poseidon2-width-12 permutations ≈ 39 ms of the
+69.6 — and that is *pil2's own* floor: native's commit rows match ours to
+within 0.5 ms, and its merkle benches at identical shape (11.4 ms at 5
+cols / 36.4 ms at 38 cols, 2^23) put its CUDA at the same ~1.2–1.3 G
+perms/s as frx's Poseidon2Fusion emitter. Pushing the total further down
+therefore needs the permutation itself faster — an emitter/occupancy
+project (utilization is single-digit % of the card's int throughput, so
+headroom exists in principle for both sides), not a model-level change.
+Every other stage is at or below native's counterpart and within ~2 ms of
+its measured device floor.
+
+Reading the CPU column: pil2's CPU prover is AVX2 + OpenMP across 16 cores;
+70.5 s of ours is 59.6 s of Poseidon2 Merkle commits on the frx CPU backend.
+The CPU path is a correctness lane, not a performance target.
+
+Reproduce (native — the GPU build is `make starks_lib_gpu` at sm_120 plus a
+cargo build *without* `proofman-starks-lib-c/cpu-only`):
+
+```sh
+# per-instance GEN_PROOF timers are debug-level (-vv); -t 1 serializes the
+# streams so per-instance walls don't overlap; -g selects the GPU
+./target/release/proofman-cli prove -g -t 1 -vv \
+  --witness-lib ./target/release/libfibonacci_square.so \
+  --proving-key examples/fibonacci-square/build2/provingKey/ \
+  --public-inputs examples/fibonacci-square/src/inputs.json \
+  --custom-commits rom=examples/fibonacci-square/build2/rom.bin \
+  --output-dir examples/fibonacci-square/build2/proofs -y
+```
+
+```sh
+# ours: --backend=device on a post-#335 frx; --backend=hybrid on the
+# shipped 0.10.1 pins; FRX_PLATFORMS=cpu + --backend=cpu for the CPU row
+CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  XLA_FLAGS=--xla_gpu_experimental_max_unroll_factor=1 \
+  python -m zisk_zorch.bench_prove_e2e --dump=<PIL2_DUMP_DIR capture> \
+    --instance=ag0_air0_inst0 --starkinfo=<...FibonacciSquare.starkinfo.json> \
+    --backend=device --reps=5
+```
+
+Caveats that keep this row honest:
+
+- **FibonacciSquare is not a ZisK AIR** — 5+9 columns vs Main's 38+24, so
+  this measures the *pipeline* (per-proof overheads, stage seams, hashing),
+  not ZisK-shape arithmetic throughput. The ZisK-shape counterpart stays
+  open until a ziskup-key native per-instance timing exists.
+- **Ours is a stage sum, not one integrated prove**: challenges are replayed
+  from the dump (the wired `InnerProver` has no stage-2 slot yet), and
+  transcript squeezes / proof serialization are excluded — both µs-scale
+  next to the stages.
+- **The device row carries a rotation workaround**: even post-#335, a fused
+  cubic graph containing a row rotation miscompiles one limb at the wrap
+  row, value-dependently (needs the real witness — random data passes; the
+  divergence is exact and deterministic per compile). Filed as
+  fractalyze/xla#340 with a self-contained repro. The harness's
+  `_defuse_rotations` materializes every rotated column as its own kernel
+  before the fused graph reads it — byte-exact, sub-ms — unpin when #340
+  closes.
+- **Native GPU quirk**: with `-g`, every instance verifies ✓ individually
+  yet the run exits 1 with "Basic proofs were not verified" — a
+  verified-flag bookkeeping issue in the GPU path, not a proof failure.
+  Timings and per-proof verification are unaffected.
+- All six fibsq instances, for scale: native GPU proves the whole program in
+  166 ms (9 concurrent streams; 245 ms serialized), native CPU in 5.4 s.
 
 ### Measure shipped code
 
