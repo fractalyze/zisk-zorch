@@ -1,9 +1,0 @@
-{
-  "n_bits": 10,
-  "extend_bits": 1,
-  "cm1": 38,
-  "cm2": 0,
-  "cm3": 1,
-  "n_opening_points": 1,
-  "lcg_seed": "0x2e2ac13ef8e8d673"
-}

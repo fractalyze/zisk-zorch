@@ -134,28 +134,13 @@ py_test(
     ],
 )
 
-# Shared plumbing for the per-stage `verify_*` byte-match runnables: the
-# check_match reporter and the pil2 reference-dump loaders.
-py_library(
-    name = "dump",
-    srcs = [
-        "__init__.py",
-        "dump.py",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("frx"),
-        requirement("numpy"),
-        requirement("zk_dtypes"),
-    ],
-)
-
 # Composed 16-gate byte-match of the full inner proof vs a real pil2-proofman
 # genProof dump (--dump/--instance/--starkinfo; the dump is captured by the
 # PIL2_DUMP_DIR patch, not committed — a runnable, never a test).
 py_binary(
     name = "verify_inner_proof",
     srcs = ["verify_inner_proof.py"],
+    data = glob(["testdata/fibsq_specifiedranges/**"]),
     deps = [
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/evals:lev",
@@ -163,7 +148,27 @@ py_binary(
         "//zisk_zorch/quotient",
         requirement("frx"),
         requirement("numpy"),
-        requirement("zk_dtypes"),
         requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# The same byte-gate as a CI test: argless, so it runs on the committed
+# SpecifiedRanges capture — a real genProof, 164 KB.
+py_test(
+    name = "verify_inner_proof_test",
+    size = "medium",
+    srcs = ["verify_inner_proof.py"],
+    data = glob(["testdata/fibsq_specifiedranges/**"]),
+    main = "verify_inner_proof.py",
+    deps = [
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/fri:fold",
+        "//zisk_zorch/quotient",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
     ],
 )

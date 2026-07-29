@@ -69,21 +69,6 @@ py_test(
     ],
 )
 
-# Stage-1 byte-match runnable: commit_trace vs a real pil2-proofman dump.
-py_binary(
-    name = "verify_trace_commit",
-    srcs = ["verify_trace_commit.py"],
-    data = glob([
-        "testdata/dump/stage1/commit.json",
-        "testdata/dump/stage1/trace.bin",
-    ]),
-    deps = [
-        ":trace_commit",
-        "//zisk_zorch:dump",
-        requirement("absl_py"),
-    ],
-)
-
 py_test(
     name = "trace_commit_test",
     size = "large",
@@ -113,19 +98,3 @@ py_test(
     ],
 )
 
-# The stage-1 byte-gate as a CI test: no --dump, so it runs on the committed
-# n_bits=8 fixture (the flag's default).
-py_test(
-    name = "verify_trace_commit_test",
-    srcs = ["verify_trace_commit.py"],
-    data = glob([
-        "testdata/dump/stage1/commit.json",
-        "testdata/dump/stage1/trace.bin",
-    ]),
-    main = "verify_trace_commit.py",
-    deps = [
-        ":trace_commit",
-        "//zisk_zorch:dump",
-        requirement("absl_py"),
-    ],
-)
