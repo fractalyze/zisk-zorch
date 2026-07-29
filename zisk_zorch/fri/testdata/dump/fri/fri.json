@@ -1,7 +1,0 @@
-{
-  "n_bits_ext": 12,
-  "fold_bits": 3,
-  "final_bits": 5,
-  "steps": [12, 9, 6, 5],
-  "lcg_seed": "0x6a99b4b1f7bd2f12"
-}

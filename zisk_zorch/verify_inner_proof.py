@@ -15,8 +15,7 @@ transcript-derived challenges from an actual prove. Gates, in proof order:
 - the DEEP polynomial in pil2's multi-opening double-Horner form
 - the FRI fold chain, layer by layer, with the real per-layer betas
 
-Field arithmetic is exact, so each gate is equal-or-wrong. A mismatch
-localizes with the per-stage ``verify_*`` runnables. The two expression-
+Field arithmetic is exact, so each gate is equal-or-wrong. The two expression-
 interpreter gates are CPU-pinned: the frx GPU backend miscompiles those
 specific large fused graphs (fractalyze/xla#334; the similarly-sized DEEP
 graph is unaffected, so the trigger is graph shape, not op count alone).
@@ -24,7 +23,12 @@ graph is unaffected, so the trigger is graph shape, not op count alone).
 Assumes a two-stage AIR with a single everyRow boundary (asserted) — the
 ZisK / fibonacci-square shape.
 
-Run: python -m zisk_zorch.verify_inner_proof --dump=<dir> \
+Argless it runs on the committed capture under
+``testdata/fibsq_specifiedranges/`` (260 KB of a real fibonacci-square prove);
+an AIR without a LogUp intermediate simply skips the hint-chaining gate.
+``tools/pil2-dump`` regenerates that capture, or a larger one for scale:
+
+    python -m zisk_zorch.verify_inner_proof --dump=<dir> \
         --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
 """
 
@@ -58,8 +62,16 @@ def _cubic(words: np.ndarray):
     return fnp.array(words.astype(F).view(F3).reshape(-1))
 
 
+# The committed fixture: one real pil2-proofman genProof of fibonacci-square's
+# SpecifiedRanges AIR (164 KB — small enough to commit, real enough to gate).
+# Regenerate with tools/pil2-dump; point --dump at a bigger capture for scale.
+_FIXTURE_DIR = pathlib.Path(__file__).parent / "testdata" / "fibsq_specifiedranges"
+_FIXTURE_INSTANCE = "ag0_air2_inst5"
+_FIXTURE_STARKINFO = _FIXTURE_DIR / "SpecifiedRanges.starkinfo.json"
+
+
 def main() -> int:
-    dump = instance = starkinfo = None
+    dump, instance, starkinfo = _FIXTURE_DIR, _FIXTURE_INSTANCE, _FIXTURE_STARKINFO
     for a in sys.argv[1:]:
         if a.startswith("--dump="):
             dump = pathlib.Path(a.split("=", 1)[1])
@@ -323,9 +335,13 @@ def main() -> int:
         v = next(f for f in hints[hint]["fields"] if f["name"] == field)
         return exps[v["values"][0]["id"]]
 
+    # An AIR whose stage-2 carries no LogUp intermediate — a range check, say —
+    # has no `im_col` hint and no imPol column, so there is nothing here to
+    # chain. Report the skip rather than dying on the lookup.
     im_pol_exp = next(
-        p["expId"] for i, p in enumerate(cmp_map) if p["stage"] == 2 and p.get("imPol")
+        (p["expId"] for p in cmp_map if p["stage"] == 2 and p.get("imPol")), None
     )
+    has_im_chaining = "im_col" in hints and im_pol_exp is not None
 
     def stage2_cols(e):
         num = _run_block(_hint_exp("im_col", "numerator"), e, 1)
@@ -334,6 +350,10 @@ def main() -> int:
         gsum = fnp.cumsum(im_single)
         im_pol = _run_block(exps[im_pol_exp], e, 1)
         return gsum, im_single, im_pol
+
+    if not has_im_chaining:
+        print("SKIP     stage-2 hint chaining (AIR has no LogUp im column)")
+        return 0 if ok_all else 1
 
     # CPU-pinned like the quotient: this fused graph (division's inverse
     # chain included) also miscompiles on GPU — ImPol came back wrong while

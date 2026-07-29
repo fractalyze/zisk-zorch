@@ -53,17 +53,3 @@ py_test(
     ],
 )
 
-# DEEP-codeword byte-match runnable vs a pil2 computeFRIExpression dump
-# (--dump=<dir>). Runs the PRODUCTION blocked primitive, so it needs a
-# pyzorch wheel carrying zorch#541's deep_numerator_block — the pinned
-# dev20260722235316 predates it. Add the fixture py_test with the pin bump.
-py_binary(
-    name = "verify_fri_polynomial",
-    srcs = ["verify_fri_polynomial.py"],
-    deps = [
-        requirement("frx"),
-        requirement("numpy"),
-        requirement("zk_dtypes"),
-        requirement("pyzorch"),
-    ],
-)

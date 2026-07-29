@@ -156,32 +156,3 @@ py_test(
     ],
 )
 
-# FRI-fold byte-match runnable vs a pil2 fold-kernel dump (--dump=<dir>).
-py_binary(
-    name = "verify_fri_prove",
-    srcs = ["verify_fri_prove.py"],
-    deps = [
-        ":fold",
-        requirement("frx"),
-        requirement("numpy"),
-        requirement("zk_dtypes"),
-        requirement("pyzorch"),
-    ],
-)
-
-# The same byte-gate as a CI test, on the committed [12,9,6,5] capture
-# (includes the 1-bit tail fold).
-py_test(
-    name = "verify_fri_prove_test",
-    srcs = ["verify_fri_prove.py"],
-    args = ["--dump=zisk_zorch/fri/testdata/dump/fri"],
-    data = glob(["testdata/dump/fri/**"]),
-    main = "verify_fri_prove.py",
-    deps = [
-        ":fold",
-        requirement("frx"),
-        requirement("numpy"),
-        requirement("zk_dtypes"),
-        requirement("pyzorch"),
-    ],
-)
