@@ -51,8 +51,8 @@ class GsumTest(absltest.TestCase):
         for case in self.golden["grand_sum"]:
             with self.subTest(n=case["n"], n_interactions=case["n_interactions"]):
                 n, i = case["n"], case["n_interactions"]
-                num = u64x3(case["numerators"]).reshape(n, i)
-                den = u64x3(case["denominators"]).reshape(n, i)
+                num = u64x3(case["numerators"]).reshape(n, i).T
+                den = u64x3(case["denominators"]).reshape(n, i).T
                 got = grand_sum(num, den)
                 want = u64x3(case["gsum"])  # (N,) cubic
                 self.assertTrue(bool(fnp.array_equal(got, want)))

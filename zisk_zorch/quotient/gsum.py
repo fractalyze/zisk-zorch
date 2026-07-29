@@ -13,7 +13,7 @@ The committed `gsum` column then feeds both the stage-2 commitment and the
 quotient composite's bus / running-sum constraints (see
 docs/stage2-constraint-ingest.md, quotient.py). Host-driven like the rest of the
 proof orchestration, except `grand_sum` — the one pure numeric leaf kernel,
-`@frx.jit`'d so its unrolled fold fuses into a single pass.
+`@frx.jit`'d so its interaction fold fuses into a single pass.
 
 std_sum driver: https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L24-L65
 gsum/im hints:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/hints.cpp
@@ -51,15 +51,22 @@ def grand_sum(numerators: Array, denominators: Array) -> Array:
     """The committed `gsum` column: the running prefix sum of each row's local
     term `sum_i numerator_i * denominator_i^-1`.
 
-    `numerators`, `denominators` are `[N, I]` cubic (N rows, I interactions);
-    returns the `[N]` cubic grand-sum. Row 0 is the raw local term (pil2's
-    `gsum[0]`); the last entry is the airgroup `gsum_result` (modulo pil2's
-    single-row direct update, handled by the caller).
+    `numerators`, `denominators` are `[I, N]` cubic — **interaction-major**, one
+    contiguous `[N]` column per interaction, which is how the producer stacks
+    them (`gsum_e` per interaction). Returns the `[N]` cubic grand-sum. Row 0 is
+    the raw local term (pil2's `gsum[0]`); the last entry is the airgroup
+    `gsum_result` (modulo pil2's single-row direct update, handled by the
+    caller).
+
+    The layout and the spelling are both load-bearing, and every alternative is
+    byte-identical to this one, so only a benchmark catches a regression: the
+    fold is bandwidth-bound, so the reduced axis has to be the major one
+    (row-major `[N, I]` makes each `[:, i]` a strided slice, 1.4x), and it has
+    to stay one `fnp.sum` block reduce so the divide fuses into a single pass
+    (unrolling `I`, or any spelling that materializes a per-interaction `[N]`
+    temporary, 1.2-2.7x).
     """
-    local = numerators[:, 0] / denominators[:, 0]
-    for i in range(1, numerators.shape[1]):
-        local = local + numerators[:, i] / denominators[:, i]
-    return fnp.cumsum(local)
+    return fnp.cumsum(fnp.sum(numerators / denominators, axis=0))
 
 
 def _scalar(value) -> Array:

@@ -119,11 +119,11 @@ real trace); every other stage is pinned by `tools/fixture-gen`'s synthetic
 inputs. The ratios below are engineering signal — do not quote one as
 "zisk-zorch is Nx pil2" outside this page.
 
-> **Retracted numbers — never re-quote:** "45 ms quotient" (a 1/55th-density
-> proxy), "~270 ms quotient" (an extrapolation the proxy cannot reach),
-> "77 ms / 0.58×" (CSE folded 900 constraints to 38), and any per-stage ms
-> against the 24.6 s `GENERATING_INNER_PROOFS` (that phase covers **111 AIR
-> instances**; this bench times one — a ~111× scope error).
+> **Only numbers on this page are quotable.** Figures from issues and PR
+> threads have been retracted for density-proxy, extrapolation, and scope
+> errors — most often per-stage ms held against the 24.6 s
+> `GENERATING_INNER_PROOFS`, which covers **111 AIR instances** to this bench's
+> one.
 
 ### zisk-zorch side — `bench_inner_proof`
 
@@ -179,16 +179,16 @@ cd /tmp/claude-1006 && LD_LIBRARY_PATH=$PWD/gmp-prefix/lib CUDA_VISIBLE_DEVICES=
 
 ### Per-stage comparison
 
-RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured 2026-07-23
-(zorch `dev20260722235316`, frx `dev20260723085209`); the LogUp, quotient,
-evals, and DEEP rows carry fresher provenance noted below. Each row brackets a different span (FRI excludes the query phase;
-`MAIN_EXPR` excludes the INTT-back and Merkle), so rows do not sum.
+RTX 5090, one AIR, N=2^22 → N_ext=2^23, both sides re-measured on the pins
+current when each row was taken (`git log docs/development.md` for a row's
+provenance). Each row brackets a different span — FRI excludes the query phase,
+`MAIN_EXPR` excludes the INTT-back and Merkle — so rows do not sum.
 
 | stage | native pil2 | zisk-zorch | ratio | pinned by |
 |---|---|---|---|---|
 | trace commit (extend+merkle, 38+24 col) | 110.7 ms | 98.5 ms | **0.89×** | golden (`lde`) + real-trace root |
 | quotient ⚠️ | 133 ms (synthetic mimic) | 12.1 ms (real Main air) | — (#66) | goldens (`cexp_eval`) |
-| LogUp grand-sum (I=8) | 2.45 ms | 3.56 ms | **1.45×** | golden (`gsum`) |
+| LogUp grand-sum (I=8) | 2.45 ms | 2.53 ms | **1.03×** | golden (`gsum`) |
 | evals (`evmap`) | 3.74 ms (M=68) | 3.14 ms | **0.84×** | LEv round-trip |
 | DEEP composition | 8.88 ms (`friExp`, 62+6 col) | 15.5 ms | **1.75×** | low-degree test |
 | FRI total (queries excl.) | 7.88 ms | 6.5 ms | **0.83×** | goldens (`fri_*`) |
@@ -196,30 +196,23 @@ evals, and DEEP rows carry fresher provenance noted below. Each row brackets a d
 How to read the table:
 
 - **The quotient row has no ratio and cannot get one from these tools** (#66):
-  pil2's `MAIN_EXPR_PATTERN` hardcodes a density ~370× the real Main air, and
-  our 12.0 ms is the real air folded through the production
-  `quotient_from_constraints` — a direct measurement at 2^23, register/
-  bandwidth-resident, peak memory linear. Reproduce with
-  `--stages=quotient --chip=main`. A true head-to-head needs pil2's per-air
-  quotient timer under a real witness. Both sides re-measured 2026-07-28:
-  native `MAIN_EXPR_PATTERN` 133 ms (cv 0.11%), real Main
-  12.06 ms — the first number on frx 0.10.1, unchanged from the dev-pin
-  measurement.
-- **The evals ratio pairs like-for-like shapes**: native's 3.74 ms opens
-  M=68 columns, so its counterpart is the 62+6 run; the wired 38+1 shape
-  measures 1.58 ms. Both sides re-measured 2026-07-28, ours on the current
-  pins — zorch#512's block-form `open_columns` is what took this row from
-  7.8 ms / 2.1× to below native. The DEEP row, re-measured
-  2026-07-28 on the same pins (native 8.88, ours 15.5 median), is unchanged —
-  it has no `open_columns` in it, so zorch#512 and frx 0.10.1 move nothing;
-  its residual is the AoS cubic arithmetic (upstream: xla_fork#258).
+  pil2's `MAIN_EXPR_PATTERN` hardcodes a density ~370× the real Main air, while
+  ours is the real air through the production `quotient_from_constraints`
+  (`--stages=quotient --chip=main`). A head-to-head needs pil2's per-air
+  quotient timer under a real witness.
+- **The evals ratio pairs like-for-like shapes**: native's 3.74 ms opens M=68
+  columns, so its counterpart is the 62+6 run; the wired 38+1 shape measures
+  1.58 ms.
 - **The LogUp row is not in the prover's spine** — it pins the grand-sum
-  primitive. Its native side was re-measured 2026-07-28 (`gsum_bench` at
-  2^22: invfold 2.211 + scan 0.240 = 2.451 ms), confirming the figure the
-  table had carried forward.
+  primitive. `grand_sum` takes its inputs interaction-major, and that is
+  load-bearing at 1.4× (see its docstring).
+- **DEEP is the one row above native**, and its residual is neither bandwidth
+  nor arithmetic: the same columns read whole stream at 1442 GB/s against the
+  kernel's 366, and removing the divide changes nothing. What is left is
+  register pressure in one 68-way unrolled kernel — fractalyze/zorch#541 splits
+  it, and the column-major input it wants is a cross-stage layout call (#69).
 - The FRI fold byte-match requires the compile-time-constant field-divide fix
-  first carried in frx `dev20260723085209` (present in 0.10.1); `fold_test` is
-  green on GPU and CPU under it.
+  first carried in frx `dev20260723085209` (present in 0.10.1).
 
 ### End-to-end (`InnerProver`)
 
@@ -237,12 +230,10 @@ which is production's shape (111 AIR instances per block):
 | 2^22 | 2^23 | 87.8 s | **0.7 s** | **10.75 GiB** |
 | 2^23 | 2^24 | — | — | OOM (see below) |
 
-- **The 30 s host-bound warm wall is gone**: 30.6 s → **0.7 s** at 2^22. The
-  collapse is the accumulated spine work — vmapped query openings (#88),
-  shared jit cache keys (#92), frx 0.10.1 — not the DEEP jit zone alone: an
-  eager (`jit=False`) warm prove also lands at 0.7 s, so the zone's warm
-  delta is noise. The remainder is still flat across sizes (dispatch, not
-  kernels — the per-stage table sums to ~0.2 s), just 40× smaller.
+- **Warm re-prove is dispatch-bound, not kernel-bound**: it is flat across
+  sizes while the per-stage table sums to ~0.2 s. Running the spine eager
+  (`jit=False`) lands at the same 0.7 s, so the DEEP jit zone is not what
+  holds it.
 - **Cold is compile time**: ~88–89 s and flat from 2^20 to 2^22 (up from
   ~70 s as more of the spine jits), so the cold column prices the
   compile-once half of the server shape, not the proving.
@@ -260,10 +251,9 @@ which is production's shape (111 AIR instances per block):
 
 Proofs verify: `verifier.InnerVerifier` replays the transcript and checks
 Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
-(`verifier_test` round-trips prove → verify, honest and tampered). An
-accepting verify at 2^22 with 64 queries measures 825.7 s first / 765.1 s
-repeated — the verifier's per-query host loops are now the minutes-scale
-wall, and the next per-stage issue candidate.
+(`verifier_test` round-trips prove → verify, honest and tampered). An accepting
+verify at 2^22 with 64 queries takes ~765 s — the verifier's per-query host
+loops are the minutes-scale wall, and the next per-stage issue candidate.
 
 ### Measure shipped code
 
