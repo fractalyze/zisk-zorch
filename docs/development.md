@@ -238,8 +238,11 @@ How to read the table:
   the next instance's host work, which is how the six-instance program
   proves in 166 ms. The event-timed 85 ms is what the stages actually cost
   on the device; it is the apples-to-apples side for our synchronized
-  stage sum. Against the pipelined wall we are 69.6/49 ≈ 1.4×; against
-  device time we are 69.6/85 ≈ **0.82× — ahead of native**.
+  stage sum. Against the pipelined wall we are ~1.4×; against device time
+  **~0.8× — ahead of native**. The rows were measured with the interim
+  xla#340 rotation workaround in place; with xla#341 letting rotations
+  fuse back, the harness as committed measures **67.4 ms** (stage-2
+  witness 0.71) — refresh the rows when the first post-#341 wheel lands.
 - **Native's total carries ~13 ms of `H2D_COPY`** (witness upload lands in
   its commit rows); our bracket starts from a device-resident witness.
   Netting it out puts native at ~72 ms — parity with our 69.6.
@@ -327,22 +330,22 @@ the non-perturbing `dump/per-stage-genproof` hooks, disarmed):
 |---|---|---|
 | native pil2, device time (`STARK_GPU_PROOF`) | **85.0 ms** | — |
 | native pil2, pipelined wall (`GEN_PROOF`) | 49 ms | 2685 ms |
-| zisk-zorch, all-device (stage sum, warm) | **69.6 ms** | 70.5 s |
+| zisk-zorch, all-device (stage sum, warm) | **67.4 ms** | 70.5 s |
 
 The per-stage split of both GPU columns is the same-instance table above:
-against native's device time we are **0.82×**; the 49 ms wall is native's
+against native's device time we are **~0.8×**; the 49 ms wall is native's
 host bracket whose async kernel tail overlaps the next instance, so
 matching it is a pipelining property (prove-many overlap), not a per-proof
-compute gap — our composed wall (no per-stage syncs) is 73 ms and would
+compute gap — our composed wall (no per-stage syncs) is ~73 ms and would
 overlap the same way across instances.
 
-The device row needs frx `0.10.1.dev20260729002119`+ (the xla#335 field-mul
-outlining fix and xla#327 stride-aware unroll gating) with
-`XLA_FLAGS=--xla_gpu_experimental_max_unroll_factor=1`, plus two
-workarounds the harness carries (below). On the shipped 0.10.1 pins the
-same pipeline runs GPU-hybrid — quotient and stage-2 CPU-pinned per
-xla#334 — at 1373 ms, which is the shipped-pins number until the next frx
-bump.
+The device row needs a frx newer than `0.10.1.dev20260729002119`: xla#335
+(field-mul outlining), xla#327 (stride-aware unroll gating; run with
+`XLA_FLAGS=--xla_gpu_experimental_max_unroll_factor=1`), and xla#341 (the
+fused-rotation wrap-row miscompile, #340 — on wheels without it the
+stage-2 and quotient byte-gates fail). On the shipped 0.10.1 pins the same
+pipeline runs GPU-hybrid — quotient and stage-2 CPU-pinned per xla#334 —
+at 1373 ms, which is the shipped-pins number until the next frx bump.
 
 What the campaign from 1373 ms pulled, in order of yield:
 
@@ -412,14 +415,11 @@ Caveats that keep this row honest:
   from the dump (the wired `InnerProver` has no stage-2 slot yet), and
   transcript squeezes / proof serialization are excluded — both µs-scale
   next to the stages.
-- **The device row carries a rotation workaround**: even post-#335, a fused
-  cubic graph containing a row rotation miscompiles one limb at the wrap
-  row, value-dependently (needs the real witness — random data passes; the
-  divergence is exact and deterministic per compile). Filed as
-  fractalyze/xla#340 with a self-contained repro. The harness's
-  `_defuse_rotations` materializes every rotated column as its own kernel
-  before the fused graph reads it — byte-exact, sub-ms — unpin when #340
-  closes.
+- **The rotation gates double as a compiler canary**: the fused-rotation
+  wrap-row miscompile this benchmark surfaced (fractalyze/xla#340, fixed by
+  xla#341) corrupted exactly one limb of one row — only the byte-gates
+  caught it. A gate failure isolated to stage-2 witness + quotient on a new
+  wheel is the signature of that bug class reappearing.
 - **Native GPU quirk**: with `-g`, every instance verifies ✓ individually
   yet the run exits 1 with "Basic proofs were not verified" — a
   verified-flag bookkeeping issue in the GPU path, not a proof failure.
