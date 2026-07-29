@@ -149,3 +149,21 @@ py_library(
         requirement("zk_dtypes"),
     ],
 )
+
+# Composed 16-gate byte-match of the full inner proof vs a real pil2-proofman
+# genProof dump (--dump/--instance/--starkinfo; the dump is captured by the
+# PIL2_DUMP_DIR patch, not committed — a runnable, never a test).
+py_binary(
+    name = "verify_inner_proof",
+    srcs = ["verify_inner_proof.py"],
+    deps = [
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/fri:fold",
+        "//zisk_zorch/quotient",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("pyzorch"),
+    ],
+)

@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Stage-2 quotient: the composite constraint polynomial folded by powers of the
@@ -116,5 +116,35 @@ py_library(
         requirement("frx"),
         requirement("pyzorch"),
         requirement("zk_dtypes"),
+    ],
+)
+
+# LogUp grand-sum byte-match runnable vs a pil2 inv_fold + Blelloch-scan dump
+# (--dump=<dir>).
+py_binary(
+    name = "verify_gsum",
+    srcs = ["verify_gsum.py"],
+    deps = [
+        ":quotient",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("pyzorch"),
+    ],
+)
+
+# The same byte-gate as a CI test, on the committed 2^10 capture.
+py_test(
+    name = "verify_gsum_test",
+    srcs = ["verify_gsum.py"],
+    args = ["--dump=zisk_zorch/quotient/testdata/dump/gsum"],
+    data = glob(["testdata/dump/gsum/**"]),
+    main = "verify_gsum.py",
+    deps = [
+        ":quotient",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("pyzorch"),
     ],
 )

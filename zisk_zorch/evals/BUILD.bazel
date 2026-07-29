@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # pil2's computeLEv: the opening-phase Lagrange-evaluation vector, built from
@@ -27,5 +27,32 @@ py_test(
         ":lev",
         "//zisk_zorch:golden",
         requirement("absl_py"),
+    ],
+)
+
+# Evals byte-match runnable vs a pil2 computeEvals_v2 dump (--dump=<dir>).
+py_binary(
+    name = "verify_evals",
+    srcs = ["verify_evals.py"],
+    deps = [
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("pyzorch"),
+    ],
+)
+
+# The same byte-gate as a CI test, on the committed 2^10 capture.
+py_test(
+    name = "verify_evals_test",
+    srcs = ["verify_evals.py"],
+    args = ["--dump=zisk_zorch/evals/testdata/dump/evals"],
+    data = glob(["testdata/dump/evals/**"]),
+    main = "verify_evals.py",
+    deps = [
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("pyzorch"),
     ],
 )
