@@ -9,6 +9,7 @@ py_library(
         "__init__.py",
         "cexp_ref.py",
         "gsum.py",
+        "key_env.py",
         "quotient.py",
         "reauthor.py",
         "zerofier.py",

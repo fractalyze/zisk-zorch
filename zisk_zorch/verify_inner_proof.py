@@ -49,6 +49,7 @@ import frx
 from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
+from zisk_zorch.quotient.key_env import build_env
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 P = 0xFFFFFFFF00000001
@@ -256,49 +257,22 @@ def main() -> int:
         "code"
     ]
 
-    def _cubic_scalar(words):
-        return fnp.array(np.asarray(words, dtype=np.uint64).astype(F).view(F3))[0]
-
-    def _values_env(path, vmap):
-        """pil2 packs stage-1 values as one word, stage>=2 as three."""
-        words = _u64(path)
-        out, off = {}, 0
-        for i, v in enumerate(vmap):
-            if v["stage"] == 1:
-                out[i] = _cubic_scalar([words[off], 0, 0])
-                off += 1
-            else:
-                out[i] = _cubic_scalar(words[off : off + 3])
-                off += 3
-        return out
-
     publics = _u64(pre("publics"))
-    env = {
-        "cm": {
-            i: (
-                entry_col({"type": "cm", "id": i})
-                if cmp_map[i]["dim"] == 3
-                else fnp.array(
-                    bufs[("cm", cmp_map[i]["stage"])][:, cmp_map[i]["stagePos"]]
-                )
-            )
-            for i in range(len(cmp_map))
-        },
-        "const": {
-            i: fnp.array(bufs[("const", 0)][:, i]) for i in range(si["nConstants"])
-        },
-        "custom": {
-            (ci, j): fnp.array(bufs[("custom", ci)][:, j])
-            for ci in range(n_customs)
-            for j in range(bufs[("custom", ci)].shape[1])
-        },
-        "challenges": {i: fnp.array(chals[i : i + 1])[0] for i in range(len(chals))},
-        "publics": {i: _cubic_scalar([publics[i], 0, 0]) for i in range(len(publics))},
-        "airvalues": _values_env(pre("airvalues"), si["airValuesMap"]),
-        "airgroupvalues": _values_env(pre("airgroupvalues"), si["airgroupValuesMap"]),
-        "proofvalues": _values_env(pre("proofvalues"), si["proofValuesMap"]),
-        "zi": {0: inv_zerofier(nb, nbe - nb)},
-    }
+    stage_bufs = {1: bufs[("cm", 1)], 3: bufs[("cm", 3)]}
+    if stage_cols[2]:
+        stage_bufs[2] = bufs[("cm", 2)]
+    env = build_env(
+        si,
+        stage_bufs=stage_bufs,
+        const=bufs[("const", 0)],
+        challenges=chals,
+        publics=publics,
+        airvalues=_u64(pre("airvalues")),
+        airgroupvalues=_u64(pre("airgroupvalues")),
+        proofvalues=_u64(pre("proofvalues")),
+        inv_zerofier=inv_zerofier(nb, nbe - nb),
+        custom_bufs={ci: bufs[("custom", ci)] for ci in range(n_customs)},
+    )
     # env enters as a jit argument: closure-captured arrays lower as in-graph
     # constants, which crashes the GPU compiler on the zerofier coset (#67).
     # CPU-pinned: the GPU backend miscompiles THIS fused graph (its 81-op
