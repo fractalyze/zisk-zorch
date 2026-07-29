@@ -23,8 +23,8 @@ Stages and their references:
 - queries (grind + query squeeze + tree openings) — timed only
 
 `--backend=device` runs every stage on the accelerator; it needs a frx with
-the xla#335 fix (>= `0.10.1.dev20260728045935`) and carries the xla#340
-rotation workaround (`_defuse_rotations`). `--backend=hybrid` keeps the two
+the xla#335 and xla#340 fixes (> `0.10.1.dev20260729002119`).
+`--backend=hybrid` keeps the two
 expression-interpreter stages CPU-pinned — the correct mode for wheels that
 still miscompile them (xla#334); the pin's device round-trips are part of
 the reported time. `--backend=cpu` pins the whole pipeline to CPU.
@@ -39,7 +39,6 @@ Run (repo root on PYTHONPATH):
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import pathlib
 import time
@@ -74,44 +73,6 @@ def _block(x):
         if hasattr(leaf, "block_until_ready"):
             leaf.block_until_ready()
     return x
-
-
-def _defuse_rotations(code, first_free_id):
-    """Redirect every rotated (`prime` != 0) cm/const/custom operand in `code`
-    to a fresh synthetic cm id, returning the rewritten copy plus the
-    (new_id, type, commit_id, id, prime) list to materialize per call.
-
-    The GPU backend miscompiles the rotation when it is fused into a larger
-    cubic graph — one wrong limb at the wrap row, value-dependent
-    (fractalyze/xla#340; still present in frx `dev20260729002119`). A
-    rotation materialized as its own tiny kernel is exact, so the fused
-    graph reads a pre-rolled column instead of rolling inline. Remove this
-    pass when #340 closes."""
-    code = copy.deepcopy(code)
-    rotations = {}
-    for op in code:
-        for s in op["src"]:
-            if s.get("type") in ("cm", "const", "custom") and s.get("prime"):
-                key = (s["type"], s.get("commitId"), s["id"], s["prime"])
-                if key not in rotations:
-                    rotations[key] = first_free_id + len(rotations)
-                s.update(type="cm", id=rotations[key], prime=0)
-                s.pop("commitId", None)
-    return code, [(v, *k) for k, v in rotations.items()]
-
-
-def _materialize_rotations(env, rotations, extend):
-    """The per-call half of `_defuse_rotations`: roll each rotated source
-    column eagerly (its own kernel) into the synthetic cm slots."""
-    if not rotations:
-        return env
-    cm = dict(env["cm"])
-    for new_id, typ, commit_id, src_id, prime in rotations:
-        src = (
-            env["custom"][(commit_id, src_id)] if typ == "custom" else env[typ][src_id]
-        )
-        cm[new_id] = fnp.roll(src, -(prime * extend))
-    return dict(env, cm=cm)
 
 
 def _timed(fn, reps):
@@ -261,15 +222,9 @@ def main() -> int:
         zi={},
     )
 
-    free_id = len(cmp_map)
-    num_code, num_rots = _defuse_rotations(_hint_exp("im_col", "numerator"), free_id)
-    den_code, den_rots = _defuse_rotations(
-        _hint_exp("im_col", "denominator"), free_id + len(num_rots)
-    )
-    impol_code, impol_rots = _defuse_rotations(
-        exps[im_pol_exp], free_id + len(num_rots) + len(den_rots)
-    )
-    s2_rots = num_rots + den_rots + impol_rots
+    num_code = _hint_exp("im_col", "numerator")
+    den_code = _hint_exp("im_col", "denominator")
+    impol_code = exps[im_pol_exp]
 
     def stage2_cols(e):
         num = _run_block(num_code, e, 1)
@@ -282,13 +237,12 @@ def main() -> int:
     s2_jit = frx.jit(stage2_cols)
 
     def run_stage2():
-        # `device` trusts the (rotation-defused) GPU lowering; `hybrid` keeps
-        # the historical CPU pin for wheels still carrying the miscompile.
-        e = _materialize_rotations(env_base, s2_rots, 1)
+        # `hybrid` keeps the historical CPU pin for wheels that still
+        # miscompile the fused expression graphs (xla#334/#340).
         if args.backend == "device":
-            return s2_jit(e)
+            return s2_jit(env_base)
         with frx.default_device(cpu):
-            return s2_jit(e)
+            return s2_jit(env_base)
 
     s2, t = _timed(run_stage2, args.reps)
     timings.append(("stage-2 witness", t))
@@ -333,15 +287,13 @@ def main() -> int:
         zi={0: zi},
     )
 
-    cexp_defused, cexp_rots = _defuse_rotations(cexp_code, free_id + len(s2_rots))
-    q_jit = frx.jit(lambda e: _run_block(cexp_defused, e, stride))
+    q_jit = frx.jit(lambda e: _run_block(cexp_code, e, stride))
 
     def run_quotient():
-        e = _materialize_rotations(env_ext, cexp_rots, stride)
         if args.backend == "device":
-            return q_jit(e)
+            return q_jit(env_ext)
         with frx.default_device(cpu):
-            return q_jit(e)
+            return q_jit(env_ext)
 
     q, t = _timed(run_quotient, args.reps)
     timings.append(("quotient", t))
@@ -605,7 +557,7 @@ def main() -> int:
     # device sync, so their sum over-counts this wall.
     def run_all():
         e1, r1, l1 = commit_jit(trace)
-        s2c = s2_jit(_materialize_rotations(env_base, s2_rots, 1))
+        s2c = s2_jit(env_base)
         cm2_w = fnp.concatenate([split_coeffs(c) for c in s2c], axis=1)
         e2, r2, _l2 = commit_jit(cm2_w)
         env_q = dict(
@@ -616,7 +568,7 @@ def main() -> int:
                 if cmp_map[i]["stage"] in (1, 2)
             },
         )
-        qq = q_jit(_materialize_rotations(env_q, cexp_rots, stride))
+        qq = q_jit(env_q)
         qm = split_coeffs(qq)
         rq, lq = qc_jit(qm)
         ev = evals_jit(z, cols, lev_consts)
