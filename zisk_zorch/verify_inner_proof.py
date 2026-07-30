@@ -322,39 +322,51 @@ def main() -> int:
             return cubic_scalar([int(v["value"]), 0, 0])
         raise NotImplementedError(f"hint field operand {v['op']}")
 
-    # An AIR whose stage-2 carries no LogUp intermediate — a range check, say —
-    # has no `im_col` hint and no imPol column, so there is nothing here to
-    # chain. Report the skip rather than dying on the lookup.
+    # Each STD column is optional per AIR: SpecifiedRanges commits a gsum but
+    # no im column and no imPol; a non-STD AIR commits none at all. Dependency
+    # order is im → gsum → imPol, each read by the next.
     im_pol_exp = next(
         (p["expId"] for p in cmp_map if p["stage"] == 2 and p.get("imPol")), None
     )
-    has_im_chaining = "im_col" in hints and im_pol_exp is not None
+    im_pol_cid = next(
+        (i for i, p in enumerate(cmp_map) if p["stage"] == 2 and p.get("imPol")), None
+    )
+    plan = []
+    if "im_col" in hints:
+        plan.append(("im_single", _hint_ref("im_col")))
+    if "gsum_col" in hints:
+        plan.append(("gsum", _hint_ref("gsum_col")))
+    if im_pol_exp is not None:
+        plan.append(("ImPol", im_pol_cid))
 
     def stage2_cols(e):
-        num = _hint_val("im_col", "numerator", e)
-        den = _hint_val("im_col", "denominator", e)
-        im_single = num / den
+        bound = dict(e["cm"])
+        out = []
+        if "im_col" in hints:
+            num = _hint_val("im_col", "numerator", e)
+            den = _hint_val("im_col", "denominator", e)
+            bound[_hint_ref("im_col")] = num / den
+            out.append(bound[_hint_ref("im_col")])
         # The running sum accumulates the `gsum_col` hint's
         # numerator_air/denominator_air — the im columns PLUS any direct bus
         # terms that never materialize an im column (std_sum.pil:
         # gsum === 'gsum·(1−L1) + Σᵢimᵢ + direct_num/direct_den). A cumsum
         # over the im column alone is right only for an AIR with no direct
-        # terms, which every single-instance gate to date happened to be
-        # (#109). The expressions read the im column, and the imPol
-        # expression reads `gsum` — Module's does — so bind each column
-        # before evaluating its reader. The base env carries only stage-1
-        # columns, which is why the operands fail to resolve otherwise.
-        bound = dict(e["cm"])
-        bound[_hint_ref("im_col")] = im_single
-        num_air = _hint_val("gsum_col", "numerator_air", dict(e, cm=bound))
-        den_air = _hint_val("gsum_col", "denominator_air", dict(e, cm=bound))
-        gsum = fnp.cumsum(num_air / den_air)
-        bound[_hint_ref("gsum_col")] = gsum
-        im_pol = _run_block(exps[im_pol_exp], dict(e, cm=bound), 1)
-        return gsum, im_single, im_pol
+        # terms (#109). The expressions read the im column, and an imPol
+        # expression may read `gsum` — Module's does — so bind each column
+        # before evaluating its reader; the base env carries only stage-1
+        # columns.
+        if "gsum_col" in hints:
+            num_air = _hint_val("gsum_col", "numerator_air", dict(e, cm=bound))
+            den_air = _hint_val("gsum_col", "denominator_air", dict(e, cm=bound))
+            bound[_hint_ref("gsum_col")] = fnp.cumsum(num_air / den_air)
+            out.append(bound[_hint_ref("gsum_col")])
+        if im_pol_exp is not None:
+            out.append(_run_block(exps[im_pol_exp], dict(e, cm=bound), 1))
+        return tuple(out)
 
-    if not has_im_chaining:
-        print("SKIP     stage-2 hint chaining (AIR has no LogUp im column)")
+    if not plan:
+        print("SKIP     stage-2 hint chaining (AIR commits no STD columns)")
         return 0 if ok_all else 1
 
     # CPU-pinned like the quotient: this fused graph (division's inverse
@@ -365,11 +377,8 @@ def main() -> int:
     assert pre("cm2_base").exists(), "stage-2 hint gate needs the cm2_base dump"
     cm2_np = _u64(pre("cm2_base")).reshape(1 << nb, stage_cols[2])
     ok = True
-    for name, got_col, lo in [
-        ("gsum", got_cols[0], 0),
-        ("im_single", got_cols[1], 3),
-        ("ImPol", got_cols[2], 6),
-    ]:
+    for (name, cid), got_col in zip(plan, got_cols):
+        lo = cmp_map[cid]["stagePos"]
         want_col = np.ascontiguousarray(cm2_np[:, lo : lo + 3]).reshape(-1)
         this = bool(
             np.array_equal(np.asarray(split_coeffs(got_col)).reshape(-1), want_col)
