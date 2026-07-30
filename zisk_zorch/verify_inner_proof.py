@@ -49,7 +49,7 @@ import frx
 from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
-from zisk_zorch.quotient.key_env import build_env
+from zisk_zorch.quotient.key_env import build_env, cubic_scalar
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 P = 0xFFFFFFFF00000001
@@ -305,9 +305,22 @@ def main() -> int:
     )
     hints = {h["name"]: h for h in ei["hintsInfo"]}
 
-    def _hint_exp(hint, field):
-        v = next(f for f in hints[hint]["fields"] if f["name"] == field)
-        return exps[v["values"][0]["id"]]
+    def _hint_ref(hint):
+        v = next(f for f in hints[hint]["fields"] if f["name"] == "reference")
+        return v["values"][0]["id"]
+
+    def _hint_val(hint, field, e):
+        # A hint field is an expression to evaluate, a committed column to
+        # read, or a literal — FibonacciSquare's numerator_air is the im
+        # column itself and its denominator_air the number 1.
+        v = next(f for f in hints[hint]["fields"] if f["name"] == field)["values"][0]
+        if v["op"] == "tmp":
+            return _run_block(exps[v["id"]], e, 1)
+        if v["op"] == "cm":
+            return e["cm"][v["id"]]
+        if v["op"] == "number":
+            return cubic_scalar([int(v["value"]), 0, 0])
+        raise NotImplementedError(f"hint field operand {v['op']}")
 
     # An AIR whose stage-2 carries no LogUp intermediate — a range check, say —
     # has no `im_col` hint and no imPol column, so there is nothing here to
@@ -317,25 +330,26 @@ def main() -> int:
     )
     has_im_chaining = "im_col" in hints and im_pol_exp is not None
 
-    # The stage-2 columns in commit order — their cm ids are what an imPol
-    # expression refers to when it reads a sibling it depends on.
-    stage2_ids = [
-        i for i, e in enumerate(cmp_map) if e["stage"] == 2
-    ]
-    stage2_by_pos = sorted(stage2_ids, key=lambda i: cmp_map[i]["stagePos"])
-
     def stage2_cols(e):
-        num = _run_block(_hint_exp("im_col", "numerator"), e, 1)
-        den = _run_block(_hint_exp("im_col", "denominator"), e, 1)
+        num = _hint_val("im_col", "numerator", e)
+        den = _hint_val("im_col", "denominator", e)
         im_single = num / den
-        gsum = fnp.cumsum(im_single)
-        # An imPol expression may read the stage-2 columns just computed —
-        # Module's reads `gsum` — so bind them before evaluating it. The base
-        # env carries only stage-1 columns, which is why an AIR whose imPol
-        # depends on a sibling fails to resolve its operand otherwise.
+        # The running sum accumulates the `gsum_col` hint's
+        # numerator_air/denominator_air — the im columns PLUS any direct bus
+        # terms that never materialize an im column (std_sum.pil:
+        # gsum === 'gsum·(1−L1) + Σᵢimᵢ + direct_num/direct_den). A cumsum
+        # over the im column alone is right only for an AIR with no direct
+        # terms, which every single-instance gate to date happened to be
+        # (#109). The expressions read the im column, and the imPol
+        # expression reads `gsum` — Module's does — so bind each column
+        # before evaluating its reader. The base env carries only stage-1
+        # columns, which is why the operands fail to resolve otherwise.
         bound = dict(e["cm"])
-        for col, cid in zip((gsum, im_single), stage2_by_pos):
-            bound[cid] = col
+        bound[_hint_ref("im_col")] = im_single
+        num_air = _hint_val("gsum_col", "numerator_air", dict(e, cm=bound))
+        den_air = _hint_val("gsum_col", "denominator_air", dict(e, cm=bound))
+        gsum = fnp.cumsum(num_air / den_air)
+        bound[_hint_ref("gsum_col")] = gsum
         im_pol = _run_block(exps[im_pol_exp], dict(e, cm=bound), 1)
         return gsum, im_single, im_pol
 
