@@ -41,7 +41,6 @@ from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
 from zisk_zorch.inner_prover.capture import Capture, P, cubic, limbs
 from zisk_zorch.quotient.cexp_ref import _run_block
-from zisk_zorch.quotient.gsum import grand_sum
 from zisk_zorch.quotient.zerofier import _coset_points, _root
 
 _CAPTURE_ENV = "ZISK_PIL2_CAPTURE"
@@ -73,30 +72,31 @@ def verify_stage1_commit(cap: Capture) -> bool:
 
 
 def verify_stage2_witness(cap: Capture) -> bool | None:
-    """pil2 CALCULATE_WITNESS_STD + IM_POLS: reproduce cm2's columns from cm1
-    and the proving key alone — the ``im_col`` hint's num/den expressions give
-    ``im_single``, ``grand_sum`` its running sum, and ``ImPol`` materializes
-    the denominator. ``None`` = the AIR has nothing to gate here."""
-    if cap.im_col_exps is None:
-        print("SKIP     stage-2 hint chaining (AIR has no LogUp im column)")
+    """pil2 CALCULATE_WITNESS_STD + IM_POLS: reproduce every STD column cm2
+    commits from cm1 and the proving key alone, in dependency order — each
+    column binds into the env before its reader evaluates (the gsum
+    expressions read the im column; Module's ImPol reads ``gsum``).
+    ``None`` = the AIR has nothing to gate here."""
+    plan = cap.std_plan
+    if plan is None:
+        print("SKIP     stage-2 hint chaining (AIR commits no STD columns)")
         return None
-    num_code, den_code, im_pol_code = cap.im_col_exps
 
     def stage2_cols(env):
-        num = _run_block(num_code, env, 1)
-        den = _run_block(den_code, env, 1)
-        gsum = grand_sum(num[:, None], den[:, None])
-        return gsum, num / den, _run_block(im_pol_code, env, 1)
+        bound = dict(env["cm"])
+        out = []
+        for _, cid, compute in plan:
+            col = compute(dict(env, cm=bound))
+            bound[cid] = col
+            out.append(col)
+        return tuple(out)
 
     got = _on_cpu(stage2_cols, cap.base_env)
     assert cap.path("cm2_base").exists(), "stage-2 hint gate needs the cm2_base dump"
     cm2 = cap.u64("cm2_base").reshape(cap.n, cap.cm2_cols)
     ok = True
-    for name, col, lo in [
-        ("gsum", got[0], 0),
-        ("im_single", got[1], 3),
-        ("ImPol", got[2], 6),
-    ]:
+    for (name, cid, _), col in zip(plan, got):
+        lo = cap.cmp_map[cid]["stagePos"]
         want = np.ascontiguousarray(cm2[:, lo : lo + 3]).reshape(-1)
         ok &= _check(
             np.array_equal(limbs(col), want),

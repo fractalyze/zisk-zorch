@@ -19,6 +19,7 @@ from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 from zorch.utils.field import join_coeffs, split_coeffs
 
+from zisk_zorch.quotient.cexp_ref import _run_block
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
 P = int(pfinfo(F).modulus)
@@ -87,26 +88,73 @@ class Capture:
         )["code"]
 
     @cached_property
-    def im_col_exps(self) -> tuple | None:
-        """The stage-2 LogUp chain's three SSA blocks — the ``im_col`` hint's
-        numerator and denominator plus the committed ``ImPol`` — or ``None``
-        for an AIR whose stage-2 carries no LogUp intermediate (a range
-        check, say): no hint, no imPol column, nothing to chain."""
+    def std_plan(self) -> list | None:
+        """The stage-2 STD columns this AIR commits, in dependency order
+        im → gsum → imPol (each read by the next), as ``(name, cm_id,
+        compute)`` triples where ``compute(env)`` expects every earlier
+        column already bound in ``env["cm"]``. ``None`` when the AIR
+        commits no STD columns — each is optional per AIR (SpecifiedRanges
+        has a gsum and an ImPol but no im column).
+
+        The running sum scans the ``gsum_col`` hint's
+        ``numerator_air/denominator_air`` — the im columns plus any direct
+        bus terms that never materialize an im column (std_sum.pil's
+        recurrence; #109) — not the im column alone. A hint field is an
+        expression, a committed-column ref (FibonacciSquare's
+        ``numerator_air`` is the im column itself), or a literal; dividing
+        by the literal-1 denominator would add a dead cubic reciprocal to
+        the fused graph and is skipped."""
         ei = self.expressionsinfo
         exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
         hints = {h["name"]: h for h in ei["hintsInfo"]}
-        im_pol = next(
-            (p["expId"] for p in self.cmp_map if p["stage"] == 2 and p.get("imPol")),
+        im_pol_cid = next(
+            (
+                i
+                for i, p in enumerate(self.cmp_map)
+                if p["stage"] == 2 and p.get("imPol")
+            ),
             None,
         )
-        if "im_col" not in hints or im_pol is None:
-            return None
 
-        def hint_exp(field):
-            v = next(f for f in hints["im_col"]["fields"] if f["name"] == field)
-            return exps[v["values"][0]["id"]]
+        def field(hint, name):
+            f = next(f for f in hints[hint]["fields"] if f["name"] == name)
+            return f["values"][0]
 
-        return hint_exp("numerator"), hint_exp("denominator"), exps[im_pol]
+        def operand(v, env):
+            if v["op"] == "tmp":
+                return _run_block(exps[v["id"]], env, 1)
+            if v["op"] == "cm":
+                return env["cm"][v["id"]]
+            if v["op"] == "number":
+                return self._cubic_scalar([int(v["value"]), 0, 0])
+            raise NotImplementedError(f"hint field operand {v['op']}")
+
+        plan = []
+        if "im_col" in hints:
+            num_v, den_v = field("im_col", "numerator"), field("im_col", "denominator")
+            plan.append(
+                (
+                    "im_single",
+                    field("im_col", "reference")["id"],
+                    lambda env: operand(num_v, env) / operand(den_v, env),
+                )
+            )
+        if "gsum_col" in hints:
+            gnum_v = field("gsum_col", "numerator_air")
+            gden_v = field("gsum_col", "denominator_air")
+            trivial_den = gden_v["op"] == "number" and int(gden_v["value"]) == 1
+
+            def gsum(env):
+                term = operand(gnum_v, env)
+                if not trivial_den:
+                    term = term / operand(gden_v, env)
+                return fnp.cumsum(term)
+
+            plan.append(("gsum", field("gsum_col", "reference")["id"], gsum))
+        if im_pol_cid is not None:
+            code = exps[self.cmp_map[im_pol_cid]["expId"]]
+            plan.append(("ImPol", im_pol_cid, lambda env: _run_block(code, env, 1)))
+        return plan or None
 
     @cached_property
     def const_base(self) -> np.ndarray:
