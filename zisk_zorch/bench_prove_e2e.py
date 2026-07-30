@@ -64,7 +64,9 @@ P = 0xFFFFFFFF00000001
 
 
 def _u64(path: pathlib.Path) -> np.ndarray:
-    return np.fromfile(path, dtype=np.uint64)
+    arr = np.load(path)
+    assert arr.dtype == np.uint64, f"{path.name}: expected u64 dump, got {arr.dtype}"
+    return arr
 
 
 def _block(x):
@@ -112,7 +114,7 @@ def main() -> int:
     n_cols = si["mapSectionsN"]["cm1"]
     cm2_cols = si["mapSectionsN"]["cm2"]
     cmp_map, ev_map, openings = si["cmPolsMap"], si["evMap"], si["openingPoints"]
-    pre = lambda name: args.dump / f"{args.instance}_{name}.bin"
+    pre = lambda name: args.dump / f"{args.instance}_{name}.npy"
     print(
         f"instance {args.instance}: N=2^{nb} ext=2^{nbe} cm1={n_cols} "
         f"cm2={cm2_cols} arity={arity} backend={args.backend} reps={args.reps}"
