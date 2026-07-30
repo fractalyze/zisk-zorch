@@ -74,7 +74,7 @@ bazel run //zisk_zorch:verify_inner_proof -- \
 
 The committed CI capture is one instance of this dump — fibonacci-square's
 SpecifiedRanges AIR (`ag0_air2_inst5`, N=2^8), 260 KB including the proving-key
-files the gate reads. To refresh it, copy that instance's `*.bin` plus the
+files the gate reads. To refresh it, copy that instance's `*.npy` plus the
 AIR's `.starkinfo.json`, `.expressionsinfo.json`, and `.const` into
 `zisk_zorch/testdata/fibsq_specifiedranges/`; a clean `git status` afterwards
 is the byte-match.
