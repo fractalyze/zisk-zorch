@@ -72,12 +72,13 @@ bazel run //zisk_zorch:verify_inner_proof -- \
     --starkinfo=<provingKey>/build/<air>/air/<Air>.starkinfo.json
 ```
 
-The committed CI capture is one instance of this dump — fibonacci-square's
-SpecifiedRanges AIR (`ag0_air2_inst5`, N=2^8), 260 KB including the proving-key
-files the gate reads. To refresh it, copy that instance's `*.npy` plus the
-AIR's `.starkinfo.json`, `.expressionsinfo.json`, and `.const` into
-`zisk_zorch/testdata/fibsq_specifiedranges/`; a clean `git status` afterwards
-is the byte-match.
+The gate's default bundle is one instance of this dump — fibonacci-square's
+SpecifiedRanges AIR (`ag0_air2_inst5`, N=2^8), ~260 KB including the
+proving-key files the gate reads. Nothing is committed: build the bundle once
+per machine by copying that instance's `*.npy` plus the AIR's
+`.starkinfo.json`, `.expressionsinfo.json`, and `.const` into one directory,
+and point `ZISK_PIL2_CAPTURE` at it. The prove is deterministic, so two
+bundles built from the same pin are byte-identical.
 
 ## Provenance notes (load-bearing)
 
