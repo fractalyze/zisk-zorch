@@ -115,14 +115,17 @@ elements either match or they don't.
   pil2-proofman `genProof`**, the ZisK analog of SP1's `SP1_DUMP_PHASES`. Field
   arithmetic is exact, so each gate is equal-or-wrong.
 
-  No capture is committed: argless runs read the bundle directory named by
-  `ZISK_PIL2_CAPTURE` — a real fibonacci-square prove regenerated once per
-  machine by [`../tools/pil2-dump/`](../tools/pil2-dump/) — and the test
-  skips (green, loudly) when the variable is unset, so only provisioned
-  hosts exercise the gate. `--dump` points the runnable at any capture.
+  No capture is committed and the gate is a runnable, never a test —
+  sp1-zorch's pattern for anything needing a host-provided native artifact
+  (its `verify_prove_shard` + `SP1_JAX_FFI_LIB`): CI covers only hermetic
+  tests, and operators run the gate on provisioned hosts. Argless runs read
+  the bundle directory named by `ZISK_PIL2_CAPTURE` — a real
+  fibonacci-square prove regenerated once per machine by
+  [`../tools/pil2-dump/`](../tools/pil2-dump/) — and skip loudly when it is
+  unset; `--dump` points at any other capture.
 
   ```sh
-  ZISK_PIL2_CAPTURE=<bundle dir> bazel test //zisk_zorch:verify_inner_proof_test
+  ZISK_PIL2_CAPTURE=<bundle dir> bazel run //zisk_zorch:verify_inner_proof
   bazel run //zisk_zorch:verify_inner_proof -- \
       --dump=<dir> --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
   ```
