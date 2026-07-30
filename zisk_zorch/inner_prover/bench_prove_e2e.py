@@ -77,14 +77,30 @@ def _block(x):
     return x
 
 
-def _timed(fn, reps):
-    """One compiling warmup call, then `reps` timed calls -> (result, median s)."""
+def _timed(fn, reps, label=None):
+    """One compiling warmup call, then `reps` timed calls -> (result, median s).
+
+    With `label`, prints the warmup wall (cold — compile included, never in
+    the median) and the device-pool telemetry after the stage: `mem` is
+    resident after it, `peak` the pool high-water so far, so on a mid-run
+    OOM the previous stage's line is the resident set the failing alloc
+    fought (sp1-zorch's verify_prove_shard discipline)."""
+    t0 = time.perf_counter()
     result = _block(fn())
+    cold = time.perf_counter() - t0
     times = []
     for _ in range(reps):
         t0 = time.perf_counter()
         _block(fn())
         times.append(time.perf_counter() - t0)
+    if label is not None:
+        stats = frx.local_devices()[0].memory_stats() or {}
+        print(
+            f"[{label}] cold {cold * 1e3:.1f}ms"
+            f" mem={stats.get('bytes_in_use', 0) / 2**30:.2f}GiB"
+            f" peak={stats.get('peak_bytes_in_use', 0) / 2**30:.2f}GiB",
+            flush=True,
+        )
     return result, float(np.median(times))
 
 
@@ -208,7 +224,9 @@ def main() -> int:
         print(("OK       " if ok else "MISMATCH ") + name)
 
     # --- 1. stage-1 commit -------------------------------------------------
-    (ext1, root1, layers1), t = _timed(lambda: commit_jit(trace), args.reps)
+    (ext1, root1, layers1), t = _timed(
+        lambda: commit_jit(trace), args.reps, "stage-1 commit"
+    )
     c1 = SimpleNamespace(extended=ext1, root=root1, digest_layers=layers1)
     timings.append(("stage-1 commit", t))
     gate("stage-1 commit root", np.asarray(c1.root).astype(np.uint64), pre("root1"))
@@ -246,7 +264,7 @@ def main() -> int:
         with frx.default_device(cpu):
             return s2_jit(env_base)
 
-    s2, t = _timed(run_stage2, args.reps)
+    s2, t = _timed(run_stage2, args.reps, "stage-2 witness")
     timings.append(("stage-2 witness", t))
     cm2 = fnp.concatenate(
         [split_coeffs(col) for col in s2], axis=1
@@ -258,7 +276,9 @@ def main() -> int:
     )
 
     # --- 3. stage-2 commit -------------------------------------------------
-    (ext2, root2, layers2), t = _timed(lambda: commit_jit(cm2), args.reps)
+    (ext2, root2, layers2), t = _timed(
+        lambda: commit_jit(cm2), args.reps, "stage-2 commit"
+    )
     c2 = SimpleNamespace(extended=ext2, root=root2, digest_layers=layers2)
     timings.append(("stage-2 commit", t))
     gate("stage-2 commit root", np.asarray(c2.root).astype(np.uint64), pre("root2"))
@@ -297,7 +317,7 @@ def main() -> int:
         with frx.default_device(cpu):
             return q_jit(env_ext)
 
-    q, t = _timed(run_quotient, args.reps)
+    q, t = _timed(run_quotient, args.reps, "quotient")
     timings.append(("quotient", t))
     gate(
         "quotient q = cExp/Z_H",
@@ -309,7 +329,9 @@ def main() -> int:
     q_matrix = split_coeffs(q)
     qc_jit = frx.jit(lambda m: mt.commit(m))
 
-    (root_q, layers_q), t = _timed(lambda: qc_jit(q_matrix), args.reps)
+    (root_q, layers_q), t = _timed(
+        lambda: qc_jit(q_matrix), args.reps, "quotient commit"
+    )
     timings.append(("quotient commit", t))
     gate("quotient commit root", np.asarray(root_q).astype(np.uint64), pre("rootQ"))
 
@@ -348,7 +370,7 @@ def main() -> int:
     def run_evals():
         return evals_jit(z, cols, lev_consts)
 
-    got_evals, t = _timed(run_evals, args.reps)
+    got_evals, t = _timed(run_evals, args.reps, "evals")
     timings.append(("evals", t))
     gate(
         "evals",
@@ -395,7 +417,7 @@ def main() -> int:
     evals_arr = got_evals
     deep_jit = frx.jit(deep)
     deep_f, t = _timed(
-        lambda: deep_jit(cols, evals_arr, z, vf1, vf2, domain), args.reps
+        lambda: deep_jit(cols, evals_arr, z, vf1, vf2, domain), args.reps, "DEEP"
     )
     timings.append(("DEEP", t))
     gate(
@@ -421,7 +443,7 @@ def main() -> int:
 
     fri_jit = frx.jit(fri_outputs)
     (final_pol, fri_roots, fri_mats, fri_digests), t = _timed(
-        lambda: fri_jit(deep_f), args.reps
+        lambda: fri_jit(deep_f), args.reps, "FRI (fold+commit)"
     )
     fri_proof = FriProof(roots=fri_roots, final_pol=final_pol)
     fri_layers = [
@@ -547,7 +569,7 @@ def main() -> int:
     gates_ok &= _ok
     print(("OK       " if _ok else "MISMATCH ") + "query grind + positions")
 
-    _, t = _timed(run_queries, args.reps)
+    _, t = _timed(run_queries, args.reps, "queries")
     timings.append(("queries", t))
 
     # --- composed wall: the GEN_PROOF-equivalent bracket -------------------
@@ -599,7 +621,7 @@ def main() -> int:
             return base[:, pm["stagePos"]]
         return join_coeffs(base[:, pm["stagePos"] : pm["stagePos"] + 3], F3)
 
-    _, wall = _timed(run_all, args.reps)
+    _, wall = _timed(run_all, args.reps, "composed wall")
 
     # --- report ------------------------------------------------------------
     total = sum(t for _, t in timings)
