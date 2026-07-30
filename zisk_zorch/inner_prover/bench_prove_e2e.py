@@ -88,23 +88,10 @@ def _timed(fn, reps):
     return result, float(np.median(times))
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--dump", type=pathlib.Path, required=True)
-    ap.add_argument("--instance", required=True)
-    ap.add_argument("--starkinfo", type=pathlib.Path, required=True)
-    ap.add_argument("--backend", choices=["hybrid", "cpu", "device"], default="hybrid")
-    ap.add_argument("--reps", type=int, default=5)
-    args = ap.parse_args()
-
-    cpu = frx.devices("cpu")[0]
-    if args.backend == "cpu" and any(d.platform != "cpu" for d in frx.devices()):
-        raise SystemExit(
-            "--backend=cpu requires FRX_PLATFORMS=cpu so every stage, not "
-            "just the pinned ones, lowers for the host"
-        )
-
-    si = json.loads(args.starkinfo.read_text())
+def prove_instance(dump, instance, starkinfo, backend, reps, cpu):
+    """The single-instance pipeline: per-stage timings + byte-gates, and the
+    composed `run_all` handed back for the multi-instance wall."""
+    si = json.loads(starkinfo.read_text())
     assert si["nStages"] == 2 and len(si["boundaries"]) == 1
     ss = si["starkStruct"]
     nb, nbe = ss["nBits"], ss["nBitsExt"]
@@ -114,10 +101,10 @@ def main() -> int:
     n_cols = si["mapSectionsN"]["cm1"]
     cm2_cols = si["mapSectionsN"]["cm2"]
     cmp_map, ev_map, openings = si["cmPolsMap"], si["evMap"], si["openingPoints"]
-    pre = lambda name: args.dump / f"{args.instance}_{name}.npy"
+    pre = lambda name: dump / f"{instance}_{name}.npy"
     print(
-        f"instance {args.instance}: N=2^{nb} ext=2^{nbe} cm1={n_cols} "
-        f"cm2={cm2_cols} arity={arity} backend={args.backend} reps={args.reps}"
+        f"instance {instance}: N=2^{nb} ext=2^{nbe} cm1={n_cols} "
+        f"cm2={cm2_cols} arity={arity} backend={backend} reps={reps}"
     )
 
     # --- inputs the GEN_PROOF bracket starts from (settled witness + key) ---
@@ -130,14 +117,14 @@ def main() -> int:
         for ci, c in enumerate(si.get("customCommits", []))
     }
     const_base = np.fromfile(
-        args.starkinfo.parent
-        / args.starkinfo.name.replace(".starkinfo.json", ".const"),
+        starkinfo.parent
+        / starkinfo.name.replace(".starkinfo.json", ".const"),
         dtype=np.uint64,
     ).reshape(1 << nb, si["nConstants"])
     ei = json.loads(
         (
-            args.starkinfo.parent
-            / args.starkinfo.name.replace("starkinfo", "expressionsinfo")
+            starkinfo.parent
+            / starkinfo.name.replace("starkinfo", "expressionsinfo")
         ).read_text()
     )
     cexp_code = next(e for e in ei["expressionsCode"] if e["expId"] == si["cExpId"])[
@@ -230,7 +217,7 @@ def main() -> int:
         print(("OK       " if ok else "MISMATCH ") + name)
 
     # --- 1. stage-1 commit -------------------------------------------------
-    (ext1, root1, layers1), t = _timed(lambda: commit_jit(trace), args.reps)
+    (ext1, root1, layers1), t = _timed(lambda: commit_jit(trace), reps)
     c1 = SimpleNamespace(extended=ext1, root=root1, digest_layers=layers1)
     timings.append(("stage-1 commit", t))
     gate("stage-1 commit root", np.asarray(c1.root).astype(np.uint64), pre("root1"))
@@ -292,12 +279,12 @@ def main() -> int:
     def run_stage2():
         # `hybrid` keeps the historical CPU pin for wheels that still
         # miscompile the fused expression graphs (xla#334/#340).
-        if args.backend == "device":
+        if backend == "device":
             return s2_jit(env_base)
         with frx.default_device(cpu):
             return s2_jit(env_base)
 
-    s2, t = _timed(run_stage2, args.reps)
+    s2, t = _timed(run_stage2, reps)
     timings.append(("stage-2 witness", t))
     assert 3 * len(stage2_layout) == cm2_cols, "stage-2 layout != cm2 width"
     cm2 = fnp.concatenate(
@@ -310,7 +297,7 @@ def main() -> int:
     )
 
     # --- 3. stage-2 commit -------------------------------------------------
-    (ext2, root2, layers2), t = _timed(lambda: commit_jit(cm2), args.reps)
+    (ext2, root2, layers2), t = _timed(lambda: commit_jit(cm2), reps)
     c2 = SimpleNamespace(extended=ext2, root=root2, digest_layers=layers2)
     timings.append(("stage-2 commit", t))
     gate("stage-2 commit root", np.asarray(c2.root).astype(np.uint64), pre("root2"))
@@ -344,12 +331,12 @@ def main() -> int:
     q_jit = frx.jit(lambda e: _run_block(cexp_code, e, stride))
 
     def run_quotient():
-        if args.backend == "device":
+        if backend == "device":
             return q_jit(env_ext)
         with frx.default_device(cpu):
             return q_jit(env_ext)
 
-    q, t = _timed(run_quotient, args.reps)
+    q, t = _timed(run_quotient, reps)
     timings.append(("quotient", t))
     gate(
         "quotient q = cExp/Z_H",
@@ -361,7 +348,7 @@ def main() -> int:
     q_matrix = split_coeffs(q)
     qc_jit = frx.jit(lambda m: mt.commit(m))
 
-    (root_q, layers_q), t = _timed(lambda: qc_jit(q_matrix), args.reps)
+    (root_q, layers_q), t = _timed(lambda: qc_jit(q_matrix), reps)
     timings.append(("quotient commit", t))
     gate("quotient commit root", np.asarray(root_q).astype(np.uint64), pre("rootQ"))
 
@@ -400,7 +387,7 @@ def main() -> int:
     def run_evals():
         return evals_jit(z, cols, lev_consts)
 
-    got_evals, t = _timed(run_evals, args.reps)
+    got_evals, t = _timed(run_evals, reps)
     timings.append(("evals", t))
     gate(
         "evals",
@@ -447,7 +434,7 @@ def main() -> int:
     evals_arr = got_evals
     deep_jit = frx.jit(deep)
     deep_f, t = _timed(
-        lambda: deep_jit(cols, evals_arr, z, vf1, vf2, domain), args.reps
+        lambda: deep_jit(cols, evals_arr, z, vf1, vf2, domain), reps
     )
     timings.append(("DEEP", t))
     gate(
@@ -473,7 +460,7 @@ def main() -> int:
 
     fri_jit = frx.jit(fri_outputs)
     (final_pol, fri_roots, fri_mats, fri_digests), t = _timed(
-        lambda: fri_jit(deep_f), args.reps
+        lambda: fri_jit(deep_f), reps
     )
     fri_proof = FriProof(roots=fri_roots, final_pol=final_pol)
     fri_layers = [
@@ -599,7 +586,7 @@ def main() -> int:
     gates_ok &= _ok
     print(("OK       " if _ok else "MISMATCH ") + "query grind + positions")
 
-    _, t = _timed(run_queries, args.reps)
+    _, t = _timed(run_queries, reps)
     timings.append(("queries", t))
 
     # --- composed wall: the GEN_PROOF-equivalent bracket -------------------
@@ -651,7 +638,7 @@ def main() -> int:
             return base[:, pm["stagePos"]]
         return join_coeffs(base[:, pm["stagePos"] : pm["stagePos"] + 3], F3)
 
-    _, wall = _timed(run_all, args.reps)
+    _, wall = _timed(run_all, reps)
 
     # --- report ------------------------------------------------------------
     total = sum(t for _, t in timings)
@@ -664,7 +651,55 @@ def main() -> int:
         "byte-gates: "
         + ("ALL OK" if gates_ok else "FAILED — timings above are UNTRUSTED")
     )
-    return 0 if gates_ok else 1
+    return SimpleNamespace(gates_ok=gates_ok, wall=wall, run_all=run_all)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dump", type=pathlib.Path, required=True)
+    ap.add_argument("--instance", action="append", required=True)
+    ap.add_argument("--starkinfo", type=pathlib.Path, action="append", required=True)
+    ap.add_argument("--backend", choices=["hybrid", "cpu", "device"], default="hybrid")
+    ap.add_argument("--reps", type=int, default=5)
+    args = ap.parse_args()
+    if len(args.instance) != len(args.starkinfo):
+        raise SystemExit("each --instance needs a matching --starkinfo")
+
+    cpu = frx.devices("cpu")[0]
+    if args.backend == "cpu" and any(d.platform != "cpu" for d in frx.devices()):
+        raise SystemExit(
+            "--backend=cpu requires FRX_PLATFORMS=cpu so every stage, not "
+            "just the pinned ones, lowers for the host"
+        )
+
+    insts = [
+        prove_instance(args.dump, inst, sip, args.backend, args.reps, cpu)
+        for inst, sip in zip(args.instance, args.starkinfo)
+    ]
+    ok = all(i.gates_ok for i in insts)
+
+    if len(insts) > 1:
+        # The multi-instance wall: every instance's proof enqueued
+        # back-to-back with NO device sync between them — one block at the
+        # end. The host syncs the protocol forces (each instance's grind and
+        # query-position squeeze read device bytes) remain, so an instance's
+        # tail kernels drain under its successor's head — the overlap
+        # native's GENERATING_INNER_PROOFS bracket gets from its stream.
+        # Per-instance attribution is deliberately unavailable here; the
+        # solo walls above are the no-overlap baseline.
+        def all_instances():
+            return [i.run_all() for i in insts]
+
+        _, wall = _timed(all_instances, args.reps)
+        n = len(insts)
+        solo = sum(i.wall for i in insts)
+        print()
+        print(f"MULTI ({n} instances, no inter-instance sync)")
+        print(f"{'TOTAL WALL':24s} {wall * 1e3:9.2f} ms")
+        print(f"{'AMORTIZED / instance':24s} {wall / n * 1e3:9.2f} ms")
+        print(f"{'sum of solo walls':24s} {solo * 1e3:9.2f} ms")
+        print("byte-gates: " + ("ALL OK" if ok else "FAILED — timings UNTRUSTED"))
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
