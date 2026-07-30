@@ -50,12 +50,14 @@ import numpy as np
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
+from zorch.pcs.deep import open_columns
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
 from zisk_zorch.quotient.cexp_ref import _run_block
+from zisk_zorch.quotient.gsum import grand_sum
 from zisk_zorch.quotient.zerofier import _coset_points, _root, inv_zerofier
 
 P = int(pfinfo(F).modulus)
@@ -293,8 +295,8 @@ def verify_stage2_witness(cap: Capture) -> bool | None:
     def stage2_cols(e):
         num = _run_block(hint_exp("numerator"), e, 1)
         den = _run_block(hint_exp("denominator"), e, 1)
-        im_single = num / den
-        return fnp.cumsum(im_single), im_single, _run_block(exps[im_pol_exp], e, 1)
+        gsum = grand_sum(num[:, None], den[:, None])
+        return gsum, num / den, _run_block(exps[im_pol_exp], e, 1)
 
     got = _on_cpu(stage2_cols, env)
     assert cap.path("cm2_base").exists(), "stage-2 hint gate needs the cm2_base dump"
@@ -345,14 +347,27 @@ def verify_quotient(cap: Capture) -> bool:
 
 
 def verify_evals(cap: Capture) -> bool:
+    """The production opening path: `compute_lev`'s Lagrange-evaluation matrix
+    (NOT zorch's `compute_lagrange_basis` — that closed form is O(N²) and dies
+    at real base-domain sizes) drives zorch's block-form `open_columns`, which
+    wants columns split base-then-extension; the openings come back in that
+    split order and are re-permuted to evMap order for the byte compare."""
     z = cap.challenge("std_xi")
     lev = compute_lev(z, list(cap.openings), cap.nb)
-    got = fnp.stack(
-        [
-            fnp.sum(lev[:, e["openingPos"]] * col[:: cap.stride])
-            for e, col in zip(cap.ev_map, cap.opened_columns)
-        ]
+    is_base = [col.dtype == F for col in cap.opened_columns]
+    order = [i for i, b in enumerate(is_base) if b] + [
+        i for i, b in enumerate(is_base) if not b
+    ]
+    base = [cap.opened_columns[i] for i in order if is_base[i]]
+    ext = [cap.opened_columns[i] for i in order[len(base) :]]
+    got_split = open_columns(
+        fnp.stack(base, axis=1) if base else fnp.zeros((cap.ne, 0), F),
+        fnp.stack(ext, axis=1) if ext else fnp.zeros((cap.ne, 0), F3),
+        lev,
+        [cap.ev_map[i]["openingPos"] for i in order],
+        stride=cap.stride,
     )
+    got = fnp.zeros_like(got_split).at[np.array(order)].set(got_split)
     ok = np.array_equal(np.asarray(split_coeffs(got)).reshape(-1), cap.u64("evals"))
     return _check(
         ok, f"evals ({len(cap.ev_map)} openings over {len(cap.openings)} points)"
