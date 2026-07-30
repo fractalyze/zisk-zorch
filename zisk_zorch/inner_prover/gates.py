@@ -45,6 +45,20 @@ def _check(ok: bool, label: str) -> bool:
     return bool(ok)
 
 
+def _match(label: str, got, want) -> bool:
+    """One byte compare with its verdict line, got/want printed on mismatch —
+    the composed gate's values are self-derived, so a bare MISMATCH would
+    leave nothing to diff against the dump. ``array_equal``, so a shape
+    divergence reads as a mismatch rather than broadcasting away."""
+    got, want = np.asarray(got), np.asarray(want)
+    ok = bool(np.array_equal(got, want))
+    print(("OK       " if ok else "MISMATCH ") + label)
+    if not ok:
+        print(f"  got:  {got}")
+        print(f"  want: {want}")
+    return ok
+
+
 def _on_cpu(fn, arg):
     """Run a jitted expression-interpreter graph on the host: the pinned frx
     GPU backend miscompiles these fused graphs (fractalyze/xla#334). The env
@@ -223,81 +237,116 @@ def verify_full_prove(cap: Capture) -> bool:
     the per-stage gates above each pin one link with dumped inputs; this one
     proves the links compose, challenges included.
 
-    The final positions/nonce compare is the transitively-strongest link:
-    the query draw seeds off the last squeeze, so equality means every
-    absorb in the whole schedule matched the native prove. CPU-pinned like
-    the interpreter gates (the roles' jit zones hit the same #334 graphs).
+    Each stage's checks fire the moment `prove_stages` yields it, and a
+    mismatch stops the drive loop — the remaining stages' compute is never
+    paid, and the first bad seam is the last line printed. The final
+    positions/nonce compare is the transitively-strongest link: the query
+    draw seeds off the last squeeze, so equality means every absorb in the
+    whole schedule matched the native prove. CPU-pinned like the interpreter
+    gates (the roles' jit zones hit the same #334 graphs).
     """
     prover = Pil2InnerProver(cap.pil2_key)
     ss = cap.si["starkStruct"]
     transcript = Transcript(DIGEST * ss.get("transcriptArity", 3))
-    with frx.default_device(frx.devices("cpu")[0]):
-        commitment, stage2, quotient, opening = prover.prove_stages(
-            cap.pil2_claim(), InnerWitness(cap.trace), transcript
-        )
-    proof = opening.reduction_proof
-
-    def eq(got, want) -> bool:
-        return bool(np.array_equal(np.asarray(got).astype(np.uint64), want))
-
-    ok = _check(eq(commitment.root, cap.u64("root1")), "full prove: root1")
     want_ch = cap.u64("challenges").reshape(-1, 3)
-    ch = quotient.reduced_claim.challenges
-    ok &= _check(
-        all(eq(limbs(ch[i]), want_ch[i]) for i in sorted(ch)),
-        f"full prove: challenges through stage {cap.si['nStages'] + 1}",
-    )
-    ok &= _check(
-        eq(
-            np.asarray(stage2.reduction_proof.matrix).reshape(-1),
+
+    def u64(a) -> np.ndarray:
+        return np.asarray(a).astype(np.uint64)
+
+    def check_commit(commitment) -> bool:
+        return _match("full prove: root1", u64(commitment.root), cap.u64("root1"))
+
+    def check_stage2(stage2) -> bool:
+        claim = stage2.reduced_claim
+        ids = sorted(claim.challenges)
+        ok = _match(
+            "full prove: stage-2 challenges",
+            np.stack([limbs(claim.challenges[i]) for i in ids]),
+            want_ch[ids],
+        )
+        ok &= _match(
+            "full prove: cm2 witness-STD columns",
+            u64(stage2.reduction_proof.matrix).reshape(-1),
             cap.u64("cm2_base"),
-        ),
-        "full prove: cm2 witness-STD columns",
-    )
-    ok &= _check(eq(stage2.reduced_claim.root2, cap.u64("root2")), "full prove: root2")
-    agv = stage2.reduced_claim.airgroupvalues
-    ok &= _check(
-        eq(
+        )
+        ok &= _match("full prove: root2", u64(claim.root2), cap.u64("root2"))
+        agv = claim.airgroupvalues
+        return ok & _match(
+            "full prove: airgroup values (gsum result)",
             np.concatenate([limbs(agv[i]) for i in sorted(agv)]),
             cap.u64("airgroupvalues"),
-        ),
-        "full prove: airgroup values (gsum result)",
-    )
-    ok &= _check(
-        eq(limbs(quotient.reduction_proof.codeword), cap.u64("q_ext")),
-        "full prove: quotient q",
-    )
-    ok &= _check(
-        eq(quotient.reduction_proof.root, cap.u64("rootQ")), "full prove: rootQ"
-    )
-    ok &= _check(eq(limbs(proof.evals), cap.u64("evals")), "full prove: evals")
-    code = Pil2FriCode(tuple(cap.steps))
-    ok &= _check(
-        all(
-            eq(root, np.asarray(_fri_layer_root(cap, code, cap.u64(f"fri_layer{k}"))))
-            for k, root in enumerate(proof.fri.roots)
-        ),
-        f"full prove: {len(proof.fri.roots)} FRI layer roots",
-    )
-    ok &= _check(
-        eq(limbs(proof.fri.final_pol), cap.u64(f"fri_layer{len(cap.steps) - 1}")),
-        "full prove: FRI final polynomial",
-    )
-    # The dump carries no nonce/positions; both re-derive from the dumped
-    # grinding seed (the last squeezed beta), which the equality then gates.
-    seed = fnp.array(cap.u64(f"fri_beta{len(cap.steps) - 1}").astype(F))
-    want_positions = query_positions_for(
-        seed,
-        transcript.width,
-        proof.nonce,
-        n_queries=ss["nQueries"],
-        n_bits_ext=cap.nbe,
-    )
-    ok &= _check(
-        grind_is_valid(seed, proof.nonce, ss["powBits"])
-        and bool(np.array_equal(proof.positions, want_positions)),
-        "full prove: grinding nonce + query positions",
-    )
+        )
+
+    def check_quotient(quotient) -> bool:
+        ids = sorted(quotient.reduced_claim.challenges)
+        ok = _match(
+            f"full prove: challenges through stage {cap.si['nStages'] + 1}",
+            np.stack([limbs(quotient.reduced_claim.challenges[i]) for i in ids]),
+            want_ch[ids],
+        )
+        ok &= _match(
+            "full prove: quotient q",
+            limbs(quotient.reduction_proof.codeword),
+            cap.u64("q_ext"),
+        )
+        return ok & _match(
+            "full prove: rootQ", u64(quotient.reduction_proof.root), cap.u64("rootQ")
+        )
+
+    def check_opening(opening) -> bool:
+        proof = opening.reduction_proof
+        ok = _match("full prove: evals", limbs(proof.evals), cap.u64("evals"))
+        code = Pil2FriCode(tuple(cap.steps))
+        ok &= _match(
+            f"full prove: {len(proof.fri.roots)} FRI layer roots",
+            np.stack([u64(root) for root in proof.fri.roots]),
+            np.stack(
+                [
+                    u64(_fri_layer_root(cap, code, cap.u64(f"fri_layer{k}")))
+                    for k in range(len(proof.fri.roots))
+                ]
+            ),
+        )
+        ok &= _match(
+            "full prove: FRI final polynomial",
+            limbs(proof.fri.final_pol),
+            cap.u64(f"fri_layer{len(cap.steps) - 1}"),
+        )
+        # The dump carries no nonce/positions; both re-derive from the dumped
+        # grinding seed (the last squeezed beta), which the equality then gates.
+        seed = fnp.array(cap.u64(f"fri_beta{len(cap.steps) - 1}").astype(F))
+        want_positions = query_positions_for(
+            seed,
+            transcript.width,
+            proof.nonce,
+            n_queries=ss["nQueries"],
+            n_bits_ext=cap.nbe,
+        )
+        ok &= _check(
+            grind_is_valid(seed, proof.nonce, ss["powBits"]),
+            "full prove: grinding nonce",
+        )
+        return ok & _match(
+            "full prove: query positions", proof.positions, want_positions
+        )
+
+    checks = {
+        "commit": check_commit,
+        "stage2": check_stage2,
+        "quotient": check_quotient,
+        "opening": check_opening,
+    }
+    ok = True
+    with frx.default_device(frx.devices("cpu")[0]):
+        for name, result in prover.prove_stages(
+            cap.pil2_claim(), InnerWitness(cap.trace), transcript
+        ):
+            ok &= checks[name](result)
+            if not ok:
+                print(
+                    "MISMATCH  full prove: fail-fast — skipping the " "remaining stages"
+                )
+                break
     return ok
 
 

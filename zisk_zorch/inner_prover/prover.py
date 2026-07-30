@@ -180,9 +180,12 @@ class Pil2InnerProver:
     quotient. The roles configure themselves from one `Pil2Key`, so a
     prover exists per proving key, claims per instance.
 
-    `prove_stages` is the byte-gate seam: it returns every stage's result so
-    `verify_inner_proof`'s composed gate can compare each reduction against
-    a capture at the seam where it diverges, not just the final wire."""
+    `prove_stages` is the byte-gate seam: it yields each stage's result as
+    the stage finishes, so `verify_inner_proof`'s composed gate can check
+    every reduction the moment it lands and stop before the later stages
+    pay their compute on a mismatch — the same fail-fast shape as
+    sp1-zorch's `verify_prove_shard` — while `prove` consumes the same
+    generator, so the two paths cannot drift on the wiring."""
 
     def __init__(self, key: Pil2Key) -> None:
         self.stage2 = WitnessStdProver(key)
@@ -195,29 +198,35 @@ class Pil2InnerProver:
         witness: InnerWitness,
         transcript: Transcript,
     ):
-        """Run the schedule, returning ``(trace_commitment, stage2_result,
-        quotient_result, opening_result)`` — prover data included."""
+        """Run the schedule, yielding ``(stage_name, result)`` as each stage
+        finishes — ``commit`` yields the `TraceCommitment`, the Stage roles
+        their `ProveResult`s, prover data included."""
         assert witness.trace.shape == (
             1 << claim.n_bits,
             claim.n_cols,
         ), "claim's trace shape does not match the witness"
         commitment = self.opening.commit(witness)
+        yield "commit", commitment
         absorb_words(transcript, claim.global_challenge)
         bound = Pil2TraceBoundClaim(pil2=claim, trace_root=commitment.root)
         stage2 = self.stage2.prove(bound, witness, transcript)
+        yield "stage2", stage2
         quotient = self.quotient.prove(
             stage2.reduced_claim,
             Pil2QuotientWitness(commitment, stage2.reduction_proof),
             stage2.transcript,
         )
-        opening = self.opening.prove(
-            quotient.reduced_claim,
-            Pil2OpeningWitness(
-                commitment, stage2.reduction_proof, quotient.reduction_proof
+        yield "quotient", quotient
+        yield (
+            "opening",
+            self.opening.prove(
+                quotient.reduced_claim,
+                Pil2OpeningWitness(
+                    commitment, stage2.reduction_proof, quotient.reduction_proof
+                ),
+                quotient.transcript,
             ),
-            quotient.transcript,
         )
-        return commitment, stage2, quotient, opening
 
     def prove(
         self,
@@ -225,15 +234,14 @@ class Pil2InnerProver:
         witness: InnerWitness,
         transcript: Transcript,
     ) -> ProveResult[TrivialClaim, Pil2InnerProof]:
-        commitment, stage2, quotient, opening = self.prove_stages(
-            claim, witness, transcript
-        )
+        stages = dict(self.prove_stages(claim, witness, transcript))
+        stage2, opening = stages["stage2"], stages["opening"]
         return ProveResult(
             TrivialClaim(),
             Pil2InnerProof(
-                trace_root=commitment.root,
+                trace_root=stages["commit"].root,
                 root2=stage2.reduced_claim.root2,
-                quotient_root=quotient.reduction_proof.root,
+                quotient_root=stages["quotient"].reduction_proof.root,
                 airgroupvalues=stage2.reduced_claim.airgroupvalues,
                 opening=opening.reduction_proof,
             ),
