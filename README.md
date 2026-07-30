@@ -54,13 +54,13 @@ for the CPU tier.
 
 ```sh
 python -c \
-    "import frx, zisk_zorch.prover; print(frx.devices()); print(zisk_zorch.__version__)"
+    "import frx, zisk_zorch.inner_prover.prover; print(frx.devices()); print(zisk_zorch.__version__)"
 ```
 
 `[CpuDevice(id=0)]` is the CPU tier. If you followed the GPU command and still
 see it, the CUDA plugins did not take effect and everything will run on the CPU
 without saying so.
-Importing `zisk_zorch.prover` rather than the package is deliberate: the package
+Importing `zisk_zorch.inner_prover.prover` rather than the package is deliberate: the package
 `__init__` is a docstring and a version string, so a bare `import zisk_zorch`
 touches neither `frx` nor `zorch` and stays green on an install that resolved
 neither.

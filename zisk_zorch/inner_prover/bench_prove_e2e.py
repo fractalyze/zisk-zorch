@@ -31,7 +31,7 @@ the reported time. `--backend=cpu` pins the whole pipeline to CPU.
 
 Run (repo root on PYTHONPATH):
     XLA_FLAGS=--xla_gpu_experimental_max_unroll_factor=1 \
-    python -m zisk_zorch.bench_prove_e2e --dump=<dir> \
+    python -m zisk_zorch.inner_prover.bench_prove_e2e --dump=<dir> \
         --instance=ag0_air0_inst0 --starkinfo=<...starkinfo.json> \
         --backend=device --reps=5
 """
