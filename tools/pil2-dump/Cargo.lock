@@ -293,7 +293,7 @@ dependencies = [
 [[package]]
 name = "curves"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "fields",
  "num-bigint",
@@ -340,7 +340,7 @@ dependencies = [
 [[package]]
 name = "fields"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "cfg-if",
  "num-bigint",
@@ -706,7 +706,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 [[package]]
 name = "pil-std-lib"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "colored",
  "fields",
@@ -756,7 +756,7 @@ dependencies = [
 [[package]]
 name = "proofman"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "bincode",
  "blake3",
@@ -790,7 +790,7 @@ dependencies = [
 [[package]]
 name = "proofman-common"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "bincode",
  "borsh",
@@ -821,7 +821,7 @@ dependencies = [
 [[package]]
 name = "proofman-hints"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "fields",
  "itoa",
@@ -834,7 +834,7 @@ dependencies = [
 [[package]]
 name = "proofman-macros"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -844,7 +844,7 @@ dependencies = [
 [[package]]
 name = "proofman-starks-lib-c"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "crossbeam-channel",
  "tracing",
@@ -853,7 +853,7 @@ dependencies = [
 [[package]]
 name = "proofman-util"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "bincode",
  "colored",
@@ -864,7 +864,7 @@ dependencies = [
 [[package]]
 name = "proofman-verifier"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "bincode",
  "fields",
@@ -1520,7 +1520,7 @@ dependencies = [
 [[package]]
 name = "witness"
 version = "1.0.0-alpha"
-source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=645e1a629a9cf47436bac9396aa2dc510b5129c7#645e1a629a9cf47436bac9396aa2dc510b5129c7"
+source = "git+https://github.com/fractalyze/pil2-proofman.git?rev=31016248880f79e90dea15c530db91a657f54ea2#31016248880f79e90dea15c530db91a657f54ea2"
 dependencies = [
  "colored",
  "fields",

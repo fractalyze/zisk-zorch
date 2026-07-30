@@ -40,6 +40,7 @@ from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
 from zisk_zorch.inner_prover.capture import Capture, P, cubic, limbs
+from zisk_zorch.inner_prover.schedule import replay_challenges
 from zisk_zorch.quotient.cexp_ref import _run_block
 from zisk_zorch.quotient.gsum import grand_sum
 from zisk_zorch.quotient.zerofier import _coset_points, _root
@@ -61,6 +62,17 @@ def _on_cpu(fn, arg):
     constants, which crashes the compiler on the zerofier coset (#67)."""
     with frx.default_device(frx.devices("cpu")[0]):
         return frx.jit(fn)(arg)
+
+
+def verify_transcript_schedule(cap: Capture) -> bool:
+    """The Fiat-Shamir spine: replay pil2's absorb/squeeze schedule from the
+    capture and byte-compare every squeezed challenge. Equality transitively
+    gates the absorbs the dump does not carry (FRI layer roots, hashed
+    evals)."""
+    ok = True
+    for label, got, want in replay_challenges(cap):
+        ok &= bool(np.array_equal(got, want))
+    return _check(ok, "transcript schedule (every squeezed challenge)")
 
 
 def verify_stage1_commit(cap: Capture) -> bool:
@@ -216,6 +228,7 @@ def verify_fri_chain(cap: Capture) -> bool:
 
 
 _GATES = (
+    verify_transcript_schedule,
     verify_stage1_commit,
     verify_stage2_witness,
     verify_stage2_commit,
