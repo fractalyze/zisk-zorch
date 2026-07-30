@@ -317,12 +317,26 @@ def main() -> int:
     )
     has_im_chaining = "im_col" in hints and im_pol_exp is not None
 
+    # The stage-2 columns in commit order — their cm ids are what an imPol
+    # expression refers to when it reads a sibling it depends on.
+    stage2_ids = [
+        i for i, e in enumerate(cmp_map) if e["stage"] == 2
+    ]
+    stage2_by_pos = sorted(stage2_ids, key=lambda i: cmp_map[i]["stagePos"])
+
     def stage2_cols(e):
         num = _run_block(_hint_exp("im_col", "numerator"), e, 1)
         den = _run_block(_hint_exp("im_col", "denominator"), e, 1)
         im_single = num / den
         gsum = fnp.cumsum(im_single)
-        im_pol = _run_block(exps[im_pol_exp], e, 1)
+        # An imPol expression may read the stage-2 columns just computed —
+        # Module's reads `gsum` — so bind them before evaluating it. The base
+        # env carries only stage-1 columns, which is why an AIR whose imPol
+        # depends on a sibling fails to resolve its operand otherwise.
+        bound = dict(e["cm"])
+        for col, cid in zip((gsum, im_single), stage2_by_pos):
+            bound[cid] = col
+        im_pol = _run_block(exps[im_pol_exp], dict(e, cm=bound), 1)
         return gsum, im_single, im_pol
 
     if not has_im_chaining:
