@@ -67,7 +67,7 @@ dependencies = [
 ]
 
 # An extra rather than a hard dependency because only one shipped module needs
-# it: zisk_zorch/bench_inner_proof.py imports zkbench at top level, and it sits
+# it: zisk_zorch/inner_prover/bench_inner_proof.py imports zkbench at top level, and it sits
 # inside the package rather than under a benchmark/ directory, so discovery
 # ships it either way. Making it a hard dependency would charge every consumer
 # for a benchmark harness; leaving it out entirely would ship a module that
@@ -91,7 +91,7 @@ include = ["zisk_zorch*"]
 # modules live inside the package so discovery ships them either way, but nothing
 # else does: the golden fixtures under `*/testdata/` are referenced only by those
 # 21 test modules, and the one shipped runnable (`python -m
-# zisk_zorch.bench_inner_proof`) generates its own inputs. openvm-zorch shipped
+# zisk_zorch.inner_prover.bench_inner_proof`) generates its own inputs. openvm-zorch shipped
 # its fixtures because a *runnable* defaulted to a testdata path and died on a
 # pip install; there is no such runnable here, and the fixtures are 2.08 MB
 # across 25 files — 12x openvm's 172 KB — so every consumer would pay for data

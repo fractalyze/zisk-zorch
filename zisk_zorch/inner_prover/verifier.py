@@ -23,8 +23,8 @@ from collections.abc import Callable, Sequence
 from frx import Array
 from zorch.stage import TrivialClaim, VerifierStage, VerifyResult
 
+from zisk_zorch.inner_prover.prover import _fold_steps, bind_trace_commitment
 from zisk_zorch.opening.verifier import OpeningVerifier
-from zisk_zorch.prover import _fold_steps, bind_trace_commitment
 from zisk_zorch.quotient.verifier import QuotientVerifier
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerClaim, InnerProof, TraceBoundClaim

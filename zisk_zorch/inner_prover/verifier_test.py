@@ -16,10 +16,10 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import InnerProver
+from zisk_zorch.inner_prover.prover import InnerProver
+from zisk_zorch.inner_prover.verifier import InnerVerifier
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerClaim, InnerWitness
-from zisk_zorch.verifier import InnerVerifier
 
 _N_BITS = 6
 _N_FREE = 4  # freely chosen columns; each constraint pins one derived column

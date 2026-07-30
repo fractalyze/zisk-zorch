@@ -32,7 +32,7 @@ is committed) and skips loudly when the variable is unset; an AIR without a
 LogUp intermediate simply skips the hint-chaining gate. Point ``--dump`` at
 any other capture for scale:
 
-    python -m zisk_zorch.verify_inner_proof --dump=<dir> \
+    python -m zisk_zorch.inner_prover.verify_inner_proof --dump=<dir> \
         --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
 """
 

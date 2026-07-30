@@ -67,7 +67,7 @@ cargo build --release --features cpu-only
 Point the gate at the result:
 
 ```sh
-bazel run //zisk_zorch:verify_inner_proof -- \
+bazel run //zisk_zorch/inner_prover:verify_inner_proof -- \
     --dump=/path/to/dump --instance=ag0_air0_inst0 \
     --starkinfo=<provingKey>/build/<air>/air/<Air>.starkinfo.json
 ```

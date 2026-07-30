@@ -125,8 +125,8 @@ elements either match or they don't.
   unset; `--dump` points at any other capture.
 
   ```sh
-  ZISK_PIL2_CAPTURE=<bundle dir> bazel run //zisk_zorch:verify_inner_proof
-  bazel run //zisk_zorch:verify_inner_proof -- \
+  ZISK_PIL2_CAPTURE=<bundle dir> bazel run //zisk_zorch/inner_prover:verify_inner_proof
+  bazel run //zisk_zorch/inner_prover:verify_inner_proof -- \
       --dump=<dir> --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
   ```
 
@@ -150,7 +150,7 @@ inputs. The ratios below are engineering signal — do not quote one as
 
 ```sh
 CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_PREALLOCATE=false \
-  bazel run //zisk_zorch:bench_inner_proof -- \
+  bazel run //zisk_zorch/inner_prover:bench_inner_proof -- \
     --stages=extend --n_bits=22 --n_cols=38 --blowup_bits=1 --phase runtime \
     -o report.json
 ```

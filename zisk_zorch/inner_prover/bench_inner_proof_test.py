@@ -16,7 +16,11 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark, _make_eval_fn
+from zisk_zorch.inner_prover.bench_inner_proof import (
+    _STAGES,
+    InnerProofBenchmark,
+    _make_eval_fn,
+)
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 
 
@@ -90,7 +94,7 @@ class BenchInnerProofTest(absltest.TestCase):
         import frx
 
         frx.config.update("jax_enable_x64", True)  # rw exports view u64→FIELD_DTYPE
-        from zisk_zorch.bench_inner_proof import _chip_eval_fn
+        from zisk_zorch.inner_prover.bench_inner_proof import _chip_eval_fn
 
         eval_fn, n_cols, k = _chip_eval_fn("main")
         self.assertGreater(n_cols, 0)

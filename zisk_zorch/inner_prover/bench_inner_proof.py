@@ -30,7 +30,7 @@ are plain `goldilocks` per the benchmark-field-standardization convention.
 Run (on a GPU host, the PJRT plugin resolved via the venv):
 
     PYTHONPATH=<zisk-zorch>:<zorch> CUDA_VISIBLE_DEVICES=<free> \\
-        python -m zisk_zorch.bench_inner_proof \\
+        python -m zisk_zorch.inner_prover.bench_inner_proof \\
         --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 --arity=2 -o report.json
 
     # real Main-AIR quotient vs pil2 (#66); --chip forces JAX x64 (rw exports

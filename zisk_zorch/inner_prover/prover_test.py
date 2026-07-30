@@ -13,7 +13,7 @@ import numpy as np
 from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
-from zisk_zorch.prover import InnerProver, _fold_steps
+from zisk_zorch.inner_prover.prover import InnerProver, _fold_steps
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerClaim, InnerWitness
 
