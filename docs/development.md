@@ -327,8 +327,14 @@ The per-stage split of both GPU columns is the same-instance table above:
 against native's device time we are **~0.8×**; the 49 ms wall is native's
 host bracket whose async kernel tail overlaps the next instance, so
 matching it is a pipelining property (prove-many overlap), not a per-proof
-compute gap — our composed wall (no per-stage syncs) is ~73 ms and would
-overlap the same way across instances.
+compute gap. Measured at that scope (`bench_prove_e2e` multi-instance
+mode: all six fibsq instances back-to-back, no inter-instance sync,
+byte-gates green in the same run): **151 ms total, 25 ms amortized** —
+within noise of the 149 ms sum of solo composed walls, so no
+cross-instance overlap materializes on our side (each proof ends on its
+grind's host sync; nothing drains into the successor). None is needed at
+this scope: native's `GENERATING_INNER_PROOFS` for the same six instances
+is 245 ms sequential (`-t 1`) and 166 ms with 9 concurrent streams.
 
 The device row needs a frx newer than `0.10.1.dev20260729002119`: xla#335
 (field-mul outlining), xla#327 (stride-aware unroll gating; run with
@@ -395,6 +401,11 @@ CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_PREALLOCATE=false \
     --instance=ag0_air0_inst0 --starkinfo=<...FibonacciSquare.starkinfo.json> \
     --backend=device --reps=5
 ```
+
+`--instance`/`--starkinfo` repeat and pair up; with more than one pair the
+solo pipelines run first (per-stage rows + gates), then every instance is
+enqueued back-to-back with no inter-instance device sync and one block at
+the end — the prove-many wall beside native's `GENERATING_INNER_PROOFS`.
 
 Caveats that keep this row honest:
 
