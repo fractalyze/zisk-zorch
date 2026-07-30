@@ -141,13 +141,11 @@ py_library(
     ],
 )
 
-# Composed byte-match of the full inner proof vs a real pil2-proofman
-# genProof dump — a runnable, never a test: it needs a host-provided capture
-# (the ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates one), so it
-# stays out of CI.
-py_binary(
-    name = "verify_inner_proof",
-    srcs = ["verify_inner_proof.py"],
+# The per-stage byte-gates: production path vs the capture's dumped section,
+# one gate per stage in proof order.
+py_library(
+    name = "gates",
+    srcs = ["gates.py"],
     deps = [
         ":capture",
         ":prover",
@@ -164,5 +162,18 @@ py_binary(
         requirement("numpy"),
         requirement("pyzorch"),
         requirement("zk_dtypes"),
+    ],
+)
+
+# Composed byte-match of the full inner proof vs a real pil2-proofman
+# genProof dump — a runnable, never a test: it needs a host-provided capture
+# (the ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates one), so it
+# stays out of CI.
+py_binary(
+    name = "verify_inner_proof",
+    srcs = ["verify_inner_proof.py"],
+    deps = [
+        ":capture",
+        ":gates",
     ],
 )
