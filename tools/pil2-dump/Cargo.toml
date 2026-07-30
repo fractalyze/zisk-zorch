@@ -6,7 +6,7 @@
 #
 # ── DEP SOURCING ─────────────────────────────────────────────────────────
 # git-pinned to the pil2-proofman fork `fractalyze/pil2-proofman` @
-# `4424b7ebae571905c3518b2ceaa3deec84411010` — the `v1.0.0-alpha` base plus
+# `645e1a629a9cf47436bac9396aa2dc510b5129c7` — the `v1.0.0-alpha` base plus
 # one fork change: `PIL2_DUMP_DIR`-gated per-stage buffer dumps inside
 # `gen_proof.hpp` (`pil2_dump.hpp`). The hooks are writes only, so a prove
 # with them armed is byte-identical to one without — the fibonacci-square
@@ -34,13 +34,13 @@ path = "src/main.rs"
 [workspace]
 
 [dependencies]
-proofman = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "4424b7ebae571905c3518b2ceaa3deec84411010" }
-proofman-common = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "4424b7ebae571905c3518b2ceaa3deec84411010" }
-fields = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "4424b7ebae571905c3518b2ceaa3deec84411010" }
+proofman = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "645e1a629a9cf47436bac9396aa2dc510b5129c7" }
+proofman-common = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "645e1a629a9cf47436bac9396aa2dc510b5129c7" }
+fields = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "645e1a629a9cf47436bac9396aa2dc510b5129c7" }
 # Declared so `cpu-only` below can reach it: its build.rs probes `nvidia-smi`
 # and builds the CUDA starks lib unless that feature is on, and masking `nvcc`
 # out of PATH is not enough to stop it.
-proofman-starks-lib-c = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "4424b7ebae571905c3518b2ceaa3deec84411010" }
+proofman-starks-lib-c = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "645e1a629a9cf47436bac9396aa2dc510b5129c7" }
 serde_json = "1"
 
 [features]

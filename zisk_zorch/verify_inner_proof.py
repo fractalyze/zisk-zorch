@@ -55,7 +55,9 @@ P = 0xFFFFFFFF00000001
 
 
 def _u64(path: pathlib.Path) -> np.ndarray:
-    return np.fromfile(path, dtype=np.uint64)
+    arr = np.load(path)
+    assert arr.dtype == np.uint64, f"{path.name}: expected u64 dump, got {arr.dtype}"
+    return arr
 
 
 def _cubic(words: np.ndarray):
@@ -88,7 +90,7 @@ def main() -> int:
     arity = ss["merkleTreeArity"]
     steps = [s["nBits"] for s in ss["steps"]]
     n_cols = si["mapSectionsN"]["cm1"]
-    pre = lambda name: dump / f"{instance}_{name}.bin"
+    pre = lambda name: dump / f"{instance}_{name}.npy"
     print(f"instance {instance}: N=2^{nb} ext=2^{nbe} cm1={n_cols} arity={arity}")
 
     ok_all = True
