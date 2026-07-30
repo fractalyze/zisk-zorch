@@ -80,7 +80,14 @@ def build_env(
     cmp_map = starkinfo["cmPolsMap"]
     custom_bufs = custom_bufs or {}
     return {
-        "cm": {i: column(stage_bufs[e["stage"]], e) for i, e in enumerate(cmp_map)},
+        # A base-domain env legitimately carries only the stages computed so
+        # far, so a column whose stage has no buffer is simply absent rather
+        # than an error — the caller binds it later if an expression needs it.
+        "cm": {
+            i: column(stage_bufs[e["stage"]], e)
+            for i, e in enumerate(cmp_map)
+            if e["stage"] in stage_bufs
+        },
         "const": {i: fnp.array(const[:, i]) for i in range(starkinfo["nConstants"])},
         "custom": {
             (ci, j): fnp.array(buf[:, j])
