@@ -28,6 +28,9 @@ from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
 CHALLENGE_LIMBS = 3
+# A transcript digest is the flushed state's first four elements — pil2's
+# `HASH_SIZE`, independent of the transcript width.
+DIGEST = 4
 # get_permutations packs 63 usable bits per squeezed element (canonical u64
 # < 2^64 - 2^32 + 1, so bit 63 is biased; pil2 simply never uses it).
 _BITS_PER_ELEMENT = 63
@@ -108,6 +111,14 @@ class Transcript:
                     cur_field += 1
             out[i] = acc
         return out
+
+
+def transcript_hash(values: Array, width: int = 12) -> Array:
+    """pil2 ``calculateHash``: a fresh transcript absorbs the buffer and its
+    flushed state's first four elements are the digest."""
+    t = Transcript(width)
+    t.put(values)
+    return t.get_state()[:DIGEST]
 
 
 def _transcript_flatten(t: Transcript) -> tuple[tuple, tuple]:

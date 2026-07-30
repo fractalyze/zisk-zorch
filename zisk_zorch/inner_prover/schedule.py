@@ -22,25 +22,8 @@ from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode
-from zisk_zorch.transcript.transcript import Transcript
-
-DIGEST = 4
-
-
-def transcript_hash(values, width: int = 12):
-    """pil2 ``calculateHash``: a fresh transcript absorbs the buffer and its
-    flushed state's first four elements are the digest."""
-    t = Transcript(width)
-    t.put(values)
-    return t.get_state()[:DIGEST]
-
-
-def _absorb_u64(t: Transcript, words: np.ndarray) -> None:
-    t.put(fnp.array(np.asarray(words, dtype=np.uint64).astype(F)))
-
-
-def _stage_challenges(cap, stage: int) -> list[int]:
-    return [i for i, c in enumerate(cap.si["challengesMap"]) if c.get("stage") == stage]
+from zisk_zorch.pil2 import absorb_words, stage_challenge_ids
+from zisk_zorch.transcript.transcript import DIGEST, Transcript, transcript_hash
 
 
 def _fri_layer_root(cap, code, layer_words: np.ndarray):
@@ -68,7 +51,7 @@ def replay_challenges(cap) -> Iterator[tuple[str, np.ndarray, np.ndarray]]:
     n_stages = cap.si["nStages"]
 
     def squeeze(t: Transcript, stage: int) -> Iterator:
-        for i in _stage_challenges(cap, stage):
+        for i in stage_challenge_ids(cap.si["challengesMap"], stage):
             got = np.asarray(t.get_field()).astype(np.uint64)
             name = cap.si["challengesMap"][i].get("name", str(i))
             yield f"challenge {name} (stage {stage})", got, want[i]
@@ -77,27 +60,27 @@ def replay_challenges(cap) -> Iterator[tuple[str, np.ndarray, np.ndarray]]:
     # No root1 absorb: the contributions phase derives the global challenge
     # from every instance's stage-1 root, so the transcript arrives already
     # bound to it (root1 rides inside the seed, not the schedule).
-    _absorb_u64(t, cap.u64("global_challenge"))
+    absorb_words(t, cap.u64("global_challenge"))
     yield from squeeze(t, 2)
 
-    _absorb_u64(t, cap.u64("root2"))
+    absorb_words(t, cap.u64("root2"))
     air_words, off = cap.u64("airvalues"), 0
     for v in cap.si["airValuesMap"]:
         if v["stage"] == 1:
             off += 1
         elif v["stage"] == 2:
-            _absorb_u64(t, air_words[off : off + 3])
+            absorb_words(t, air_words[off : off + 3])
             off += 3
     yield from squeeze(t, n_stages + 1)
 
-    _absorb_u64(t, cap.u64("rootQ"))
+    absorb_words(t, cap.u64("rootQ"))
     yield from squeeze(t, n_stages + 2)
 
     evals = cap.u64("evals")
     if hash_commits:
         t.put(transcript_hash(fnp.array(evals.astype(F)), width))
     else:
-        _absorb_u64(t, evals)
+        absorb_words(t, evals)
     yield from squeeze(t, n_stages + 3)
 
     code = Pil2FriCode(tuple(cap.steps))
@@ -109,7 +92,7 @@ def replay_challenges(cap) -> Iterator[tuple[str, np.ndarray, np.ndarray]]:
             if hash_commits:
                 t.put(transcript_hash(fnp.array(last.astype(F)), width))
             else:
-                _absorb_u64(t, last)
+                absorb_words(t, last)
         got = np.asarray(t.get_field()).astype(np.uint64)
         label = "grinding seed" if k == len(cap.steps) - 1 else f"fri beta {k}"
         yield label, got, cap.u64(f"fri_beta{k}")

@@ -29,7 +29,7 @@ from zk_dtypes import pfinfo
 from zorch.utils.field import split_coeffs
 
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
-from zisk_zorch.transcript.transcript import Transcript, _canonical
+from zisk_zorch.transcript.transcript import Transcript, _canonical, transcript_hash
 
 # Grinding is the width-4 Poseidon2 compression (`Poseidon2GoldilocksGrinding =
 # Poseidon2Goldilocks<4>`), independent of the transcript width.
@@ -89,13 +89,21 @@ def grind_is_valid(challenge: Array, nonce: int, pow_bits: int) -> bool:
     return image < _grind_level(pow_bits)
 
 
-def grinding_seed_challenge(transcript: Transcript, final_pol: Array) -> Array:
+def grinding_seed_challenge(
+    transcript: Transcript, final_pol: Array, *, hash_commits: bool = False
+) -> Array:
     """Absorb `final_pol` into the running transcript and squeeze the cubic
     grinding-seed challenge (3 base limbs) — pil2's pre-grinding discipline.
-    Mutates `transcript`."""
-    transcript.put(
-        split_coeffs(final_pol).reshape(-1)
-    )  # addTranscriptGL(friPol, len*3)
+    Mutates `transcript`.
+
+    Under a ``hashCommits`` stark struct pil2 absorbs `calculateHash` of the
+    polynomial instead of its raw limbs (gen_proof.hpp's last-step branch), so
+    `hash_commits` must match the key or every later squeeze diverges."""
+    limbs = split_coeffs(final_pol).reshape(-1)  # addTranscriptGL(friPol, len*3)
+    if hash_commits:
+        transcript.put(transcript_hash(limbs, transcript.width))
+    else:
+        transcript.put(limbs)
     return transcript.get_field()  # cubic grinding seed (3 base limbs)
 
 
@@ -118,6 +126,7 @@ def sample_query_positions(
     pow_bits: int,
     n_queries: int,
     n_bits_ext: int,
+    hash_commits: bool = False,
 ) -> tuple[np.ndarray, int]:
     """Derive the `n_queries` FRI query positions (each `n_bits_ext` bits wide)
     from the post-fold `transcript`, self-generating the grinding nonce.
@@ -138,7 +147,9 @@ def sample_query_positions(
     if not 0 < pow_bits < 64:
         raise ValueError(f"pow_bits must be in (0, 64), got {pow_bits}")
 
-    challenge = grinding_seed_challenge(transcript, final_pol)
+    challenge = grinding_seed_challenge(
+        transcript, final_pol, hash_commits=hash_commits
+    )
     nonce = _grind(challenge, pow_bits)
     positions = query_positions_for(
         challenge, transcript.width, nonce, n_queries=n_queries, n_bits_ext=n_bits_ext

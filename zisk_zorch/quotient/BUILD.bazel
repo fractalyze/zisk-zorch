@@ -89,19 +89,39 @@ py_test(
     ],
 )
 
-# The quotient stage's ProverStage role (and its reduction-proof type).
+# The quotient stage's ProverStage roles: the eval_fn alpha-fold and the
+# pil2-mode composite-cExp interpreter.
 py_library(
     name = "prover",
     srcs = ["prover.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":quotient",
+        "//zisk_zorch:pil2",
         "//zisk_zorch:types",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("pyzorch"),
         requirement("zk_dtypes"),
+    ],
+)
+
+# pil2's CALCULATE_WITNESS_STD + IM_POLS: the stage-2 witness role chaining
+# the proving key's hint expressions into the committed cm2 columns.
+py_library(
+    name = "witness_std",
+    srcs = ["witness_std.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":quotient",
+        "//zisk_zorch:golden",
+        "//zisk_zorch:pil2",
+        "//zisk_zorch:types",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("pyzorch"),
     ],
 )
 

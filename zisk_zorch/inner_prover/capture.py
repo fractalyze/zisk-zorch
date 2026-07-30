@@ -19,7 +19,17 @@ from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 from zorch.utils.field import join_coeffs, split_coeffs
 
+from zisk_zorch.pil2 import (
+    Pil2Key,
+    cm_env,
+    committed_column,
+    const_env,
+    custom_env,
+    publics_env,
+    values_env,
+)
 from zisk_zorch.quotient.zerofier import inv_zerofier
+from zisk_zorch.types import Pil2Claim
 
 P = int(pfinfo(F).modulus)
 
@@ -154,16 +164,31 @@ class Capture:
     def committed_column(self, entry: dict):
         """An evMap entry's committed column over the extended domain, cubic
         entries joined from their three contiguous gl64 lanes."""
-        if entry["type"] == "cm":
-            pm = self.cmp_map[entry["id"]]
-            buf = self.bufs[("cm", pm["stage"])]
-            if pm["dim"] == 1:
-                return fnp.array(buf[:, pm["stagePos"]])
-            lanes = buf[:, pm["stagePos"] : pm["stagePos"] + 3]
-            return join_coeffs(fnp.array(np.ascontiguousarray(lanes)), F3)
-        if entry["type"] == "const":
-            return fnp.array(self.bufs[("const", 0)][:, entry["id"]])
-        return fnp.array(self.bufs[("custom", entry["commitId"])][:, entry["id"]])
+        return committed_column(entry, self.cmp_map, self.bufs)
+
+    @cached_property
+    def pil2_key(self) -> Pil2Key:
+        """The AIR's proving-key artifacts as the pil2-mode roles'
+        configuration."""
+        return Pil2Key(
+            starkinfo=self.si,
+            expressionsinfo=self.expressionsinfo,
+            const_base=self.const_base.astype(F),
+            const_ext=self.bufs[("const", 0)],
+            custom_ext={ci: self.bufs[("custom", ci)] for ci in range(self.n_customs)},
+        )
+
+    def pil2_claim(self) -> Pil2Claim:
+        """The dumped instance's statement — what the pil2-mode prover takes
+        alongside the trace."""
+        return Pil2Claim(
+            n_bits=self.nb,
+            n_cols=self.n_cols,
+            publics=self.u64("publics"),
+            airvalues=self.u64("airvalues"),
+            proofvalues=self.u64("proofvalues"),
+            global_challenge=self.u64("global_challenge"),
+        )
 
     @cached_property
     def opened_columns(self) -> list:
@@ -182,55 +207,22 @@ class Capture:
 
     # -- the SSA interpreter's operand environment ----------------------------
 
-    def _cubic_scalar(self, words):
-        return cubic(np.asarray(words, dtype=np.uint64))[0]
-
-    def _values_env(self, name: str, vmap: list) -> dict:
-        """pil2 packs stage-1 values as one word, stage>=2 as three."""
-        words = self.u64(name)
-        out, off = {}, 0
-        for i, v in enumerate(vmap):
-            if v["stage"] == 1:
-                out[i] = self._cubic_scalar([words[off], 0, 0])
-                off += 1
-            else:
-                out[i] = self._cubic_scalar(words[off : off + 3])
-                off += 3
-        return out
-
     @cached_property
     def cexp_env(self) -> dict:
         """Every operand class the composite cExp reads, over the extended
         domain: committed/constant/custom columns plus the scalar values."""
         si = self.si
-        publics = self.u64("publics")
         return {
-            "cm": {
-                i: (
-                    self.committed_column({"type": "cm", "id": i})
-                    if pm["dim"] == 3
-                    else fnp.array(self.bufs[("cm", pm["stage"])][:, pm["stagePos"]])
-                )
-                for i, pm in enumerate(self.cmp_map)
-            },
-            "const": {
-                i: fnp.array(self.bufs[("const", 0)][:, i])
-                for i in range(si["nConstants"])
-            },
-            "custom": {
-                (ci, j): fnp.array(self.bufs[("custom", ci)][:, j])
-                for ci in range(self.n_customs)
-                for j in range(self.bufs[("custom", ci)].shape[1])
-            },
+            "cm": cm_env(self.cmp_map, self.bufs),
+            "const": const_env(self.bufs, si["nConstants"]),
+            "custom": custom_env(self.bufs, si.get("customCommits", [])),
             "challenges": dict(enumerate(self.challenges)),
-            "publics": {
-                i: self._cubic_scalar([publics[i], 0, 0]) for i in range(len(publics))
-            },
-            "airvalues": self._values_env("airvalues", si["airValuesMap"]),
-            "airgroupvalues": self._values_env(
-                "airgroupvalues", si["airgroupValuesMap"]
+            "publics": publics_env(self.u64("publics")),
+            "airvalues": values_env(self.u64("airvalues"), si["airValuesMap"]),
+            "airgroupvalues": values_env(
+                self.u64("airgroupvalues"), si["airgroupValuesMap"]
             ),
-            "proofvalues": self._values_env("proofvalues", si["proofValuesMap"]),
+            "proofvalues": values_env(self.u64("proofvalues"), si["proofValuesMap"]),
             "zi": {0: inv_zerofier(self.nb, self.nbe - self.nb)},
         }
 

@@ -7,8 +7,9 @@ native prover dumped (``capture.Capture`` owns the bundle format, so gates
 read protocol objects, never files). Field arithmetic is exact, so each gate
 is equal-or-wrong.
 
-The two expression-interpreter gates are CPU-pinned: the pinned frx wheel's
-GPU backend miscompiles their fused graphs (fractalyze/xla#334).
+The expression-interpreter gates — and the composed full-prove gate, whose
+roles run the same graphs — are CPU-pinned: the pinned frx wheel's GPU
+backend miscompiles their fused graphs (fractalyze/xla#334).
 
 Assumes a two-stage AIR with a single everyRow boundary (asserted) — the
 ZisK / fibonacci-square shape.
@@ -39,11 +40,16 @@ from zorch.pcs.deep import open_columns
 from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
+from zisk_zorch.fri.queries import grind_is_valid, query_positions_for
+from zisk_zorch.fri.seam import Pil2FriCode
 from zisk_zorch.inner_prover.capture import Capture, P, cubic, limbs
-from zisk_zorch.inner_prover.schedule import replay_challenges
+from zisk_zorch.inner_prover.prover import Pil2InnerProver
+from zisk_zorch.inner_prover.schedule import _fri_layer_root, replay_challenges
 from zisk_zorch.quotient.cexp_ref import _run_block
 from zisk_zorch.quotient.gsum import grand_sum
 from zisk_zorch.quotient.zerofier import _coset_points, _root
+from zisk_zorch.transcript.transcript import DIGEST, Transcript
+from zisk_zorch.types import InnerWitness
 
 _CAPTURE_ENV = "ZISK_PIL2_CAPTURE"
 _FIXTURE_INSTANCE = "ag0_air2_inst5"
@@ -227,6 +233,90 @@ def verify_fri_chain(cap: Capture) -> bool:
     return ok
 
 
+def verify_full_prove(cap: Capture) -> bool:
+    """The composed gate: run the pil2-mode `Pil2InnerProver` from the
+    capture's trace and statement alone and byte-compare every stage seam —
+    the per-stage gates above each pin one link with dumped inputs; this one
+    proves the links compose, challenges included.
+
+    The final positions/nonce compare is the transitively-strongest link:
+    the query draw seeds off the last squeeze, so equality means every
+    absorb in the whole schedule matched the native prove. CPU-pinned like
+    the interpreter gates (the roles' jit zones hit the same #334 graphs).
+    """
+    prover = Pil2InnerProver(cap.pil2_key)
+    ss = cap.si["starkStruct"]
+    transcript = Transcript(DIGEST * ss.get("transcriptArity", 3))
+    with frx.default_device(frx.devices("cpu")[0]):
+        commitment, stage2, quotient, opening = prover.prove_stages(
+            cap.pil2_claim(), InnerWitness(cap.trace), transcript
+        )
+    proof = opening.reduction_proof
+
+    def eq(got, want) -> bool:
+        return bool(np.array_equal(np.asarray(got).astype(np.uint64), want))
+
+    ok = _check(eq(commitment.root, cap.u64("root1")), "full prove: root1")
+    want_ch = cap.u64("challenges").reshape(-1, 3)
+    ch = quotient.reduced_claim.challenges
+    ok &= _check(
+        all(eq(limbs(ch[i]), want_ch[i]) for i in sorted(ch)),
+        f"full prove: challenges through stage {cap.si['nStages'] + 1}",
+    )
+    ok &= _check(
+        eq(
+            np.asarray(stage2.reduction_proof.matrix).reshape(-1),
+            cap.u64("cm2_base"),
+        ),
+        "full prove: cm2 witness-STD columns",
+    )
+    ok &= _check(eq(stage2.reduced_claim.root2, cap.u64("root2")), "full prove: root2")
+    agv = stage2.reduced_claim.airgroupvalues
+    ok &= _check(
+        eq(
+            np.concatenate([limbs(agv[i]) for i in sorted(agv)]),
+            cap.u64("airgroupvalues"),
+        ),
+        "full prove: airgroup values (gsum result)",
+    )
+    ok &= _check(
+        eq(limbs(quotient.reduction_proof.codeword), cap.u64("q_ext")),
+        "full prove: quotient q",
+    )
+    ok &= _check(
+        eq(quotient.reduction_proof.root, cap.u64("rootQ")), "full prove: rootQ"
+    )
+    ok &= _check(eq(limbs(proof.evals), cap.u64("evals")), "full prove: evals")
+    code = Pil2FriCode(tuple(cap.steps))
+    ok &= _check(
+        all(
+            eq(root, np.asarray(_fri_layer_root(cap, code, cap.u64(f"fri_layer{k}"))))
+            for k, root in enumerate(proof.fri.roots)
+        ),
+        f"full prove: {len(proof.fri.roots)} FRI layer roots",
+    )
+    ok &= _check(
+        eq(limbs(proof.fri.final_pol), cap.u64(f"fri_layer{len(cap.steps) - 1}")),
+        "full prove: FRI final polynomial",
+    )
+    # The dump carries no nonce/positions; both re-derive from the dumped
+    # grinding seed (the last squeezed beta), which the equality then gates.
+    seed = fnp.array(cap.u64(f"fri_beta{len(cap.steps) - 1}").astype(F))
+    want_positions = query_positions_for(
+        seed,
+        transcript.width,
+        proof.nonce,
+        n_queries=ss["nQueries"],
+        n_bits_ext=cap.nbe,
+    )
+    ok &= _check(
+        grind_is_valid(seed, proof.nonce, ss["powBits"])
+        and bool(np.array_equal(proof.positions, want_positions)),
+        "full prove: grinding nonce + query positions",
+    )
+    return ok
+
+
 _GATES = (
     verify_transcript_schedule,
     verify_stage1_commit,
@@ -236,6 +326,7 @@ _GATES = (
     verify_evals,
     verify_deep,
     verify_fri_chain,
+    verify_full_prove,
 )
 
 
