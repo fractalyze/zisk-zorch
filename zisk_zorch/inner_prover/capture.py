@@ -80,6 +80,37 @@ class Capture:
         )
 
     @cached_property
+    def cexp_code(self) -> list:
+        """The composite constraint expression's SSA block."""
+        return next(
+            e
+            for e in self.expressionsinfo["expressionsCode"]
+            if e["expId"] == self.si["cExpId"]
+        )["code"]
+
+    @cached_property
+    def im_col_exps(self) -> tuple | None:
+        """The stage-2 LogUp chain's three SSA blocks — the ``im_col`` hint's
+        numerator and denominator plus the committed ``ImPol`` — or ``None``
+        for an AIR whose stage-2 carries no LogUp intermediate (a range
+        check, say): no hint, no imPol column, nothing to chain."""
+        ei = self.expressionsinfo
+        exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
+        hints = {h["name"]: h for h in ei["hintsInfo"]}
+        im_pol = next(
+            (p["expId"] for p in self.cmp_map if p["stage"] == 2 and p.get("imPol")),
+            None,
+        )
+        if "im_col" not in hints or im_pol is None:
+            return None
+
+        def hint_exp(field):
+            v = next(f for f in hints["im_col"]["fields"] if f["name"] == field)
+            return exps[v["values"][0]["id"]]
+
+        return hint_exp("numerator"), hint_exp("denominator"), exps[im_pol]
+
+    @cached_property
     def const_base(self) -> np.ndarray:
         """The proving key's base-domain constant columns (pil2's own binary
         layout — the one non-npy read in the bundle)."""

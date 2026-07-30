@@ -28,6 +28,7 @@ any other capture for scale:
 
 from __future__ import annotations
 
+import argparse
 import os
 import pathlib
 import sys
@@ -82,27 +83,16 @@ def verify_stage2_witness(cap: Capture) -> bool | None:
     and the proving key alone — the ``im_col`` hint's num/den expressions give
     ``im_single``, ``grand_sum`` its running sum, and ``ImPol`` materializes
     the denominator. ``None`` = the AIR has nothing to gate here."""
-    ei = cap.expressionsinfo
-    exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
-    hints = {h["name"]: h for h in ei["hintsInfo"]}
-    # An AIR whose stage-2 carries no LogUp intermediate — a range check,
-    # say — has no `im_col` hint and no imPol column: nothing to chain.
-    im_pol_exp = next(
-        (p["expId"] for p in cap.cmp_map if p["stage"] == 2 and p.get("imPol")), None
-    )
-    if "im_col" not in hints or im_pol_exp is None:
+    if cap.im_col_exps is None:
         print("SKIP     stage-2 hint chaining (AIR has no LogUp im column)")
         return None
-
-    def hint_exp(field):
-        v = next(f for f in hints["im_col"]["fields"] if f["name"] == field)
-        return exps[v["values"][0]["id"]]
+    num_code, den_code, im_pol_code = cap.im_col_exps
 
     def stage2_cols(env):
-        num = _run_block(hint_exp("numerator"), env, 1)
-        den = _run_block(hint_exp("denominator"), env, 1)
+        num = _run_block(num_code, env, 1)
+        den = _run_block(den_code, env, 1)
         gsum = grand_sum(num[:, None], den[:, None])
-        return gsum, num / den, _run_block(exps[im_pol_exp], env, 1)
+        return gsum, num / den, _run_block(im_pol_code, env, 1)
 
     got = _on_cpu(stage2_cols, cap.base_env)
     assert cap.path("cm2_base").exists(), "stage-2 hint gate needs the cm2_base dump"
@@ -144,15 +134,11 @@ def verify_stage2_commit(cap: Capture) -> bool | None:
 def verify_quotient(cap: Capture) -> bool:
     """pil2 CALCULATE_QUOTIENT: interpret the key's composite cExp over the
     extended sections -> the prover's raw ``q`` section."""
-    cexp_code = next(
-        e
-        for e in cap.expressionsinfo["expressionsCode"]
-        if e["expId"] == cap.si["cExpId"]
-    )["code"]
-    got = _on_cpu(lambda env: _run_block(cexp_code, env, cap.stride), cap.cexp_env)
+    code = cap.cexp_code
+    got = _on_cpu(lambda env: _run_block(code, env, cap.stride), cap.cexp_env)
     return _check(
         np.array_equal(limbs(got), cap.u64("q_ext")),
-        f"quotient q = cExp/Z_H ({len(cexp_code)} SSA ops, real interpreter output)",
+        f"quotient q = cExp/Z_H ({len(code)} SSA ops, real interpreter output)",
     )
 
 
@@ -249,14 +235,12 @@ _GATES = (
 
 
 def main() -> int:
-    dump = instance = starkinfo = None
-    for a in sys.argv[1:]:
-        if a.startswith("--dump="):
-            dump = pathlib.Path(a.split("=", 1)[1])
-        elif a.startswith("--instance="):
-            instance = a.split("=", 1)[1]
-        elif a.startswith("--starkinfo="):
-            starkinfo = pathlib.Path(a.split("=", 1)[1])
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dump", type=pathlib.Path, default=None)
+    ap.add_argument("--instance", default=_FIXTURE_INSTANCE)
+    ap.add_argument("--starkinfo", type=pathlib.Path, default=None)
+    args = ap.parse_args()
+    dump = args.dump
     if dump is None:
         capture = os.environ.get(_CAPTURE_ENV, "")
         if not capture or not pathlib.Path(capture).is_dir():
@@ -266,9 +250,7 @@ def main() -> int:
             )
             return 0
         dump = pathlib.Path(capture)
-    cap = Capture(
-        dump, instance or _FIXTURE_INSTANCE, starkinfo or dump / _FIXTURE_STARKINFO
-    )
+    cap = Capture(dump, args.instance, args.starkinfo or dump / _FIXTURE_STARKINFO)
     print(
         f"instance {cap.instance}: N=2^{cap.nb} ext=2^{cap.nbe} "
         f"cm1={cap.n_cols} arity={cap.arity}"
