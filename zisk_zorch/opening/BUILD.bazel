@@ -11,7 +11,6 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//zisk_zorch:pil2",
         "//zisk_zorch:types",
         "//zisk_zorch/commit:openings",
         "//zisk_zorch/commit:trace_commit",
@@ -25,7 +24,6 @@ py_library(
         requirement("frx"),
         requirement("numpy"),
         requirement("pyzorch"),
-        requirement("zk_dtypes"),
     ],
 )
 

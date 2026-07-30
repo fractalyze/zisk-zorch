@@ -23,9 +23,10 @@ from __future__ import annotations
 import frx
 import frx.numpy as fnp
 import numpy as np
-from frx import Array
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zk_dtypes import pfinfo
+from zorch.grind import grind_search
 from zorch.utils.field import split_coeffs
 
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
@@ -35,9 +36,6 @@ from zisk_zorch.transcript.transcript import Transcript, _canonical, transcript_
 # Poseidon2Goldilocks<4>`), independent of the transcript width.
 _GRIND_WIDTH = 4
 _GRIND_PERM = goldilocks_perm(_GRIND_WIDTH)
-# Batched search stride: scan candidate nonces a chunk at a time so the per-call
-# permutation runs once over the whole chunk, mirroring pil2's chunked OMP scan.
-_GRIND_CHUNK = 256
 _GOLDILOCKS_ORDER = int(pfinfo(F).modulus)
 
 
@@ -62,21 +60,36 @@ def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
 
 def _grind(challenge: Array, pow_bits: int) -> int:
     """The smallest nonce whose grinding image has `pow_bits` leading zero bits,
-    i.e. image `< 2^(64 - pow_bits)`. Ascending scan matching pil2's
-    `Poseidon2GoldilocksGrinding::grinding` (its OMP chunking only parallelizes
-    the scan; any valid nonce verifies, so the smallest is the deterministic
-    choice the verifier reproduces via its O(1) check)."""
-    level = _grind_level(pow_bits)
-    base = 0
-    while base < _GOLDILOCKS_ORDER:
-        nonces = np.arange(base, base + _GRIND_CHUNK, dtype=np.uint64)
-        hits = np.nonzero(_grind_images(challenge, nonces) < np.uint64(level))[0]
-        if hits.size:
-            return base + int(hits[0])
-        base += _GRIND_CHUNK
-    raise RuntimeError(
-        f"grinding: no nonce below the field order for pow_bits={pow_bits}"
-    )
+    i.e. image `< 2^(64 - pow_bits)` — pil2's ascending
+    `Poseidon2GoldilocksGrinding::grinding` scan, run on zorch's windowed
+    `grind_search` engine (its lowest-hit contract is exactly pil2's
+    deterministic smallest-nonce choice; the verifier reproduces it via the
+    O(1) grind check).
+
+    The predicate stays traceable by comparing the image's u32 halves
+    instead of decoding to a host u64: the level is a power of two, so
+    `image < 2^(64-b)` is a plain half comparison. The search covers the
+    uint32 counter space — astronomically more than any real difficulty
+    needs (expected work is `2^pow_bits`) — and `grind_search` returns an
+    unchecked 0 on exhaustion, so the hit is re-validated before use."""
+
+    def check_batch(counters: Array) -> Array:
+        nonce_fe = counters.astype(F)  # canonical < 2^32 -> value-encodes
+        chal = fnp.broadcast_to(challenge, (counters.shape[0], _GRIND_WIDTH - 1))
+        states = fnp.concatenate([chal, nonce_fe[:, None]], axis=1)
+        out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
+        halves = lax.bitcast_convert_type(out0.astype(F), fnp.uint32)
+        lo, hi = halves[..., 0], halves[..., 1]
+        if pow_bits <= 32:
+            return hi < fnp.uint32(1 << (32 - pow_bits))
+        return fnp.logical_and(hi == 0, lo < fnp.uint32(1 << (64 - pow_bits)))
+
+    nonce = int(grind_search(check_batch, bound=1 << 32))
+    if not grind_is_valid(challenge, nonce, pow_bits):
+        raise RuntimeError(
+            f"grinding: no nonce in the search space for pow_bits={pow_bits}"
+        )
+    return nonce
 
 
 def grind_is_valid(challenge: Array, nonce: int, pow_bits: int) -> bool:

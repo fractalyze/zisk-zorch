@@ -19,7 +19,7 @@ from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 from zorch.utils.field import join_coeffs, split_coeffs
 
-from zisk_zorch.pil2 import (
+from zisk_zorch.inner_prover.pil2 import (
     Pil2Key,
     cm_env,
     committed_column,
@@ -28,8 +28,8 @@ from zisk_zorch.pil2 import (
     publics_env,
     values_env,
 )
+from zisk_zorch.inner_prover.pil2_prover import Pil2Claim
 from zisk_zorch.quotient.zerofier import inv_zerofier
-from zisk_zorch.types import Pil2Claim
 
 P = int(pfinfo(F).modulus)
 

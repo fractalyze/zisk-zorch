@@ -48,7 +48,7 @@ from zisk_zorch.inner_prover.capture import (
     limbs,
 )
 from zisk_zorch.inner_prover.gates import _check, _match
-from zisk_zorch.inner_prover.prover import Pil2InnerProver
+from zisk_zorch.inner_prover.pil2_prover import Pil2InnerProver
 from zisk_zorch.inner_prover.schedule import _fri_layer_root
 from zisk_zorch.transcript.transcript import DIGEST, Transcript
 from zisk_zorch.types import InnerWitness

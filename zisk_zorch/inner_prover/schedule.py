@@ -22,7 +22,7 @@ from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode
-from zisk_zorch.pil2 import absorb_words, stage_challenge_ids
+from zisk_zorch.inner_prover.pil2 import absorb_words, stage_challenge_ids
 from zisk_zorch.transcript.transcript import DIGEST, Transcript, transcript_hash
 
 
