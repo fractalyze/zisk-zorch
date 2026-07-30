@@ -146,11 +146,33 @@ def main() -> int:
     exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
     hints = {h["name"]: h for h in ei["hintsInfo"]}
 
-    def _hint_exp(hint, field):
-        v = next(f for f in hints[hint]["fields"] if f["name"] == field)
-        return exps[v["values"][0]["id"]]
+    def _hint_ref(hint):
+        v = next(f for f in hints[hint]["fields"] if f["name"] == "reference")
+        return v["values"][0]["id"]
 
-    im_pol_exp = next(p["expId"] for p in cmp_map if p["stage"] == 2 and p.get("imPol"))
+    def _hint_val(hint, field, e):
+        # A hint field is an expression to evaluate, a committed column to
+        # read, or a literal — FibonacciSquare's numerator_air is the im
+        # column itself and its denominator_air the number 1.
+        v = next(f for f in hints[hint]["fields"] if f["name"] == field)["values"][0]
+        if v["op"] == "tmp":
+            return _run_block(exps[v["id"]], e, 1)
+        if v["op"] == "cm":
+            return e["cm"][v["id"]]
+        if v["op"] == "number":
+            return _cubic_scalar([int(v["value"]), 0, 0])
+        raise NotImplementedError(f"hint field operand {v['op']}")
+
+    def _hint_lit(hint, field):
+        v = next(f for f in hints[hint]["fields"] if f["name"] == field)["values"][0]
+        return int(v["value"]) if v["op"] == "number" else None
+
+    im_pol_exp = next(
+        (p["expId"] for p in cmp_map if p["stage"] == 2 and p.get("imPol")), None
+    )
+    im_pol_cid = next(
+        (i for i, p in enumerate(cmp_map) if p["stage"] == 2 and p.get("imPol")), None
+    )
 
     # Replayed transcript state: challenges as the native prove drew them.
     chals = _u64(pre("challenges")).astype(F).view(F3).reshape(-1)
@@ -224,17 +246,46 @@ def main() -> int:
         zi={},
     )
 
-    num_code = _hint_exp("im_col", "numerator")
-    den_code = _hint_exp("im_col", "denominator")
-    impol_code = exps[im_pol_exp]
+    # Each STD column is optional per AIR: SpecifiedRanges commits a gsum but
+    # no im column; a non-STD AIR commits none. Dependency order is
+    # im → gsum → imPol, each read by the next; layout order is stagePos.
+    stage2_cids = []
+    if "im_col" in hints:
+        stage2_cids.append(_hint_ref("im_col"))
+    if "gsum_col" in hints:
+        stage2_cids.append(_hint_ref("gsum_col"))
+    if im_pol_exp is not None:
+        stage2_cids.append(im_pol_cid)
+    stage2_layout = sorted(stage2_cids, key=lambda c: cmp_map[c]["stagePos"])
 
     def stage2_cols(e):
-        num = _run_block(num_code, e, 1)
-        den = _run_block(den_code, e, 1)
-        im_single = num / den
-        gsum = fnp.cumsum(im_single)
-        im_pol = _run_block(impol_code, e, 1)
-        return gsum, im_single, im_pol
+        bound = dict(e["cm"])
+        # The running sum accumulates the `gsum_col` hint's
+        # numerator_air/denominator_air — the im columns PLUS any direct bus
+        # terms that never materialize an im column (std_sum.pil:
+        # gsum === 'gsum·(1−L1) + Σᵢimᵢ + direct_num/direct_den). A cumsum
+        # over the im column alone is right only for an AIR with no direct
+        # terms (#109). The expressions read the im column, and an imPol
+        # expression may read `gsum` — Module's does — so bind each column
+        # before evaluating its reader; the base env carries only stage-1
+        # columns.
+        if "im_col" in hints:
+            num = _hint_val("im_col", "numerator", e)
+            den = _hint_val("im_col", "denominator", e)
+            bound[_hint_ref("im_col")] = num / den
+        if "gsum_col" in hints:
+            num_air = _hint_val("gsum_col", "numerator_air", dict(e, cm=bound))
+            # Dividing by a literal-1 denominator would add a cubic
+            # reciprocal to the fused graph — dead work, and the xla#334
+            # miscompile class on device (FibonacciSquare's gates go red).
+            if _hint_lit("gsum_col", "denominator_air") != 1:
+                num_air = num_air / _hint_val(
+                    "gsum_col", "denominator_air", dict(e, cm=bound)
+                )
+            bound[_hint_ref("gsum_col")] = fnp.cumsum(num_air)
+        if im_pol_exp is not None:
+            bound[im_pol_cid] = _run_block(exps[im_pol_exp], dict(e, cm=bound), 1)
+        return tuple(bound[cid] for cid in stage2_layout)
 
     s2_jit = frx.jit(stage2_cols)
 
@@ -248,9 +299,10 @@ def main() -> int:
 
     s2, t = _timed(run_stage2, args.reps)
     timings.append(("stage-2 witness", t))
+    assert 3 * len(stage2_layout) == cm2_cols, "stage-2 layout != cm2 width"
     cm2 = fnp.concatenate(
         [split_coeffs(col) for col in s2], axis=1
-    )  # (N, 9): gsum | im_single | ImPol — pil2's cm2 column order
+    )  # (N, 3k) in stagePos order — pil2's cm2 layout
     gate(
         "stage-2 witness columns",
         np.asarray(cm2).astype(np.uint64).reshape(-1),
