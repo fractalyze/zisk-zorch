@@ -115,14 +115,15 @@ elements either match or they don't.
   pil2-proofman `genProof`**, the ZisK analog of SP1's `SP1_DUMP_PHASES`. Field
   arithmetic is exact, so each gate is equal-or-wrong.
 
-  Argless it runs on the committed capture
-  (`zisk_zorch/testdata/fibsq_specifiedranges/`, 260 KB of a real
-  fibonacci-square prove); `--dump` points it at a larger one for scale.
-  [`../tools/pil2-dump/`](../tools/pil2-dump/) regenerates either.
+  No capture is committed: argless runs read the bundle directory named by
+  `ZISK_PIL2_CAPTURE` — a real fibonacci-square prove regenerated once per
+  machine by [`../tools/pil2-dump/`](../tools/pil2-dump/) — and the test
+  skips (green, loudly) when the variable is unset, so only provisioned
+  hosts exercise the gate. `--dump` points the runnable at any capture.
 
   ```sh
-  bazel test //zisk_zorch:verify_inner_proof_test            # committed capture
-  bazel run  //zisk_zorch:verify_inner_proof -- \
+  ZISK_PIL2_CAPTURE=<bundle dir> bazel test //zisk_zorch:verify_inner_proof_test
+  bazel run //zisk_zorch:verify_inner_proof -- \
       --dump=<dir> --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
   ```
 
