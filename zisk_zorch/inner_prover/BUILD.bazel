@@ -141,23 +141,18 @@ py_library(
     ],
 )
 
-# The per-stage byte-gates: production path vs the capture's dumped section,
-# one gate per stage in proof order.
+# The per-stage byte-gates: production path on the capture's dumped inputs
+# vs its dumped section, one gate per stage in proof order.
 py_library(
     name = "gates",
     srcs = ["gates.py"],
     deps = [
         ":capture",
-        ":prover",
         ":schedule",
-        "//zisk_zorch:types",
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/evals:lev",
         "//zisk_zorch/fri:fold",
-        "//zisk_zorch/fri:queries",
-        "//zisk_zorch/fri:seam",
         "//zisk_zorch/quotient",
-        "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("numpy"),
         requirement("pyzorch"),
@@ -165,15 +160,39 @@ py_library(
     ],
 )
 
-# Composed byte-match of the full inner proof vs a real pil2-proofman
+# Skips loudly without a ZISK_PIL2_CAPTURE bundle: the reference is a
+# host-provided native artifact, so CI (no capture) skips and provisioned
+# hosts run the gates for real.
+py_test(
+    name = "gates_test",
+    size = "large",
+    srcs = ["gates_test.py"],
+    env_inherit = ["ZISK_PIL2_CAPTURE"],
+    deps = [
+        ":capture",
+        ":gates",
+        requirement("absl_py"),
+    ],
+)
+
+# Composed byte-match of the pil2-mode prover vs a real pil2-proofman
 # genProof dump — a runnable, never a test: it needs a host-provided capture
 # (the ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates one), so it
-# stays out of CI.
+# stays out of CI. --max_stage=N checks a prefix of the schedule.
 py_binary(
     name = "verify_inner_proof",
     srcs = ["verify_inner_proof.py"],
     deps = [
         ":capture",
         ":gates",
+        ":prover",
+        ":schedule",
+        "//zisk_zorch:types",
+        "//zisk_zorch/fri:queries",
+        "//zisk_zorch/fri:seam",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
     ],
 )

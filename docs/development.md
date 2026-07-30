@@ -108,26 +108,35 @@ elements either match or they don't.
   Larger AIRs follow the same recipe but stay uncommitted — drop the
   regenerated dir under `testdata/fullprogram/` locally and the test runs
   every fixture dir present.
-- **The inner-proof byte-gate** (fractalyze/zisk-zorch#59),
-  [`../zisk_zorch/verify_inner_proof.py`](../zisk_zorch/verify_inner_proof.py),
-  replays every assembled stage — stage-1 commit, stage-2 witness and commit,
-  quotient, evals, DEEP, the FRI fold chain — against a dump of a **real
-  pil2-proofman `genProof`**, the ZisK analog of SP1's `SP1_DUMP_PHASES`. Field
-  arithmetic is exact, so each gate is equal-or-wrong.
+- **The inner-proof byte-match** (fractalyze/zisk-zorch#59) checks against a
+  dump of a **real pil2-proofman `genProof`**, the ZisK analog of SP1's
+  `SP1_DUMP_PHASES`, in two layers. Field arithmetic is exact, so every
+  check is equal-or-wrong.
 
-  No capture is committed and the gate is a runnable, never a test —
-  sp1-zorch's pattern for anything needing a host-provided native artifact
-  (its `verify_prove_shard` + `SP1_JAX_FFI_LIB`): CI covers only hermetic
-  tests, and operators run the gate on provisioned hosts. Argless runs read
-  the bundle directory named by `ZISK_PIL2_CAPTURE` — a real
-  fibonacci-square prove regenerated once per machine by
-  [`../tools/pil2-dump/`](../tools/pil2-dump/) — and skip loudly when it is
-  unset; `--dump` points at any other capture.
+  [`../zisk_zorch/inner_prover/verify_inner_proof.py`](../zisk_zorch/inner_prover/verify_inner_proof.py)
+  is the composed gate — sp1-zorch's `verify_prove_shard` shape: it runs the
+  pil2-mode `Pil2InnerProver` from the capture's trace + proving key alone
+  and seals each stage the moment it finishes, fail-fasting on the first
+  mismatch; `--max_stage=N` checks only a prefix of the schedule (1=trace
+  commit, 2=+witness-STD, 3=+quotient, 4=full). The per-stage gates in
+  [`../zisk_zorch/inner_prover/gates.py`](../zisk_zorch/inner_prover/gates.py)
+  pin each stage in isolation with its inputs read from the dump — the layer
+  a composed mismatch localizes to — and run as `gates_test`, which skips
+  loudly without a capture.
+
+  No capture is committed — sp1-zorch's pattern for anything needing a
+  host-provided native artifact (its `verify_prove_shard` +
+  `SP1_JAX_FFI_LIB`): CI covers only hermetic tests, and operators run the
+  byte-match on provisioned hosts. Argless runs read the bundle directory
+  named by `ZISK_PIL2_CAPTURE` — a real fibonacci-square prove regenerated
+  once per machine by [`../tools/pil2-dump/`](../tools/pil2-dump/) — and
+  skip loudly when it is unset; `--dump` points at any other capture.
 
   ```sh
   ZISK_PIL2_CAPTURE=<bundle dir> bazel run //zisk_zorch/inner_prover:verify_inner_proof
+  ZISK_PIL2_CAPTURE=<bundle dir> bazel test //zisk_zorch/inner_prover:gates_test
   bazel run //zisk_zorch/inner_prover:verify_inner_proof -- \
-      --dump=<dir> --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json>
+      --dump=<dir> --instance=ag0_air0_inst0 --starkinfo=<starkinfo.json> --max_stage=2
   ```
 
 ## Per-stage baseline against native pil2

@@ -5,8 +5,10 @@ Each gate runs the production code path on the capture's real inputs and
 compares byte-exactly against the section the native prover dumped
 (``capture.Capture`` owns the bundle format, so gates read protocol objects,
 never files). Field arithmetic is exact, so each gate is equal-or-wrong.
-``GATES`` lists them in proof order; ``verify_inner_proof`` is the runnable
-that drives them over a bundle.
+``GATES`` lists them in proof order; ``gates_test`` runs them over a
+host-provided bundle. Each gate reads its stage's INPUTS from the dump too,
+so it pins one link in isolation — the layer that localizes a mismatch in
+``verify_inner_proof``'s composed run to a single stage.
 
 The expression-interpreter gates — and the composed full-prove gate, whose
 roles run the same graphs — are CPU-pinned: the pinned frx wheel's GPU
@@ -28,16 +30,11 @@ from zorch.pcs.deep import open_columns
 from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
-from zisk_zorch.fri.queries import grind_is_valid, query_positions_for
-from zisk_zorch.fri.seam import Pil2FriCode
 from zisk_zorch.inner_prover.capture import Capture, P, cubic, limbs
-from zisk_zorch.inner_prover.prover import Pil2InnerProver
-from zisk_zorch.inner_prover.schedule import _fri_layer_root, replay_challenges
+from zisk_zorch.inner_prover.schedule import replay_challenges
 from zisk_zorch.quotient.cexp_ref import _run_block
 from zisk_zorch.quotient.gsum import grand_sum
 from zisk_zorch.quotient.zerofier import _coset_points, _root
-from zisk_zorch.transcript.transcript import DIGEST, Transcript
-from zisk_zorch.types import InnerWitness
 
 
 def _check(ok: bool, label: str) -> bool:
@@ -231,125 +228,6 @@ def verify_fri_chain(cap: Capture) -> bool:
     return ok
 
 
-def verify_full_prove(cap: Capture) -> bool:
-    """The composed gate: run the pil2-mode `Pil2InnerProver` from the
-    capture's trace and statement alone and byte-compare every stage seam —
-    the per-stage gates above each pin one link with dumped inputs; this one
-    proves the links compose, challenges included.
-
-    Each stage's checks fire the moment `prove_stages` yields it, and a
-    mismatch stops the drive loop — the remaining stages' compute is never
-    paid, and the first bad seam is the last line printed. The final
-    positions/nonce compare is the transitively-strongest link: the query
-    draw seeds off the last squeeze, so equality means every absorb in the
-    whole schedule matched the native prove. CPU-pinned like the interpreter
-    gates (the roles' jit zones hit the same #334 graphs).
-    """
-    prover = Pil2InnerProver(cap.pil2_key)
-    ss = cap.si["starkStruct"]
-    transcript = Transcript(DIGEST * ss.get("transcriptArity", 3))
-    want_ch = cap.u64("challenges").reshape(-1, 3)
-
-    def u64(a) -> np.ndarray:
-        return np.asarray(a).astype(np.uint64)
-
-    def check_commit(commitment) -> bool:
-        return _match("full prove: root1", u64(commitment.root), cap.u64("root1"))
-
-    def check_stage2(stage2) -> bool:
-        claim = stage2.reduced_claim
-        ids = sorted(claim.challenges)
-        ok = _match(
-            "full prove: stage-2 challenges",
-            np.stack([limbs(claim.challenges[i]) for i in ids]),
-            want_ch[ids],
-        )
-        ok &= _match(
-            "full prove: cm2 witness-STD columns",
-            u64(stage2.reduction_proof.matrix).reshape(-1),
-            cap.u64("cm2_base"),
-        )
-        ok &= _match("full prove: root2", u64(claim.root2), cap.u64("root2"))
-        agv = claim.airgroupvalues
-        return ok & _match(
-            "full prove: airgroup values (gsum result)",
-            np.concatenate([limbs(agv[i]) for i in sorted(agv)]),
-            cap.u64("airgroupvalues"),
-        )
-
-    def check_quotient(quotient) -> bool:
-        ids = sorted(quotient.reduced_claim.challenges)
-        ok = _match(
-            f"full prove: challenges through stage {cap.si['nStages'] + 1}",
-            np.stack([limbs(quotient.reduced_claim.challenges[i]) for i in ids]),
-            want_ch[ids],
-        )
-        ok &= _match(
-            "full prove: quotient q",
-            limbs(quotient.reduction_proof.codeword),
-            cap.u64("q_ext"),
-        )
-        return ok & _match(
-            "full prove: rootQ", u64(quotient.reduction_proof.root), cap.u64("rootQ")
-        )
-
-    def check_opening(opening) -> bool:
-        proof = opening.reduction_proof
-        ok = _match("full prove: evals", limbs(proof.evals), cap.u64("evals"))
-        code = Pil2FriCode(tuple(cap.steps))
-        ok &= _match(
-            f"full prove: {len(proof.fri.roots)} FRI layer roots",
-            np.stack([u64(root) for root in proof.fri.roots]),
-            np.stack(
-                [
-                    u64(_fri_layer_root(cap, code, cap.u64(f"fri_layer{k}")))
-                    for k in range(len(proof.fri.roots))
-                ]
-            ),
-        )
-        ok &= _match(
-            "full prove: FRI final polynomial",
-            limbs(proof.fri.final_pol),
-            cap.u64(f"fri_layer{len(cap.steps) - 1}"),
-        )
-        # The dump carries no nonce/positions; both re-derive from the dumped
-        # grinding seed (the last squeezed beta), which the equality then gates.
-        seed = fnp.array(cap.u64(f"fri_beta{len(cap.steps) - 1}").astype(F))
-        want_positions = query_positions_for(
-            seed,
-            transcript.width,
-            proof.nonce,
-            n_queries=ss["nQueries"],
-            n_bits_ext=cap.nbe,
-        )
-        ok &= _check(
-            grind_is_valid(seed, proof.nonce, ss["powBits"]),
-            "full prove: grinding nonce",
-        )
-        return ok & _match(
-            "full prove: query positions", proof.positions, want_positions
-        )
-
-    checks = {
-        "commit": check_commit,
-        "stage2": check_stage2,
-        "quotient": check_quotient,
-        "opening": check_opening,
-    }
-    ok = True
-    with frx.default_device(frx.devices("cpu")[0]):
-        for name, result in prover.prove_stages(
-            cap.pil2_claim(), InnerWitness(cap.trace), transcript
-        ):
-            ok &= checks[name](result)
-            if not ok:
-                print(
-                    "MISMATCH  full prove: fail-fast — skipping the " "remaining stages"
-                )
-                break
-    return ok
-
-
 # Proof order: a failure localizes to the first stage whose inputs went bad.
 GATES = (
     verify_transcript_schedule,
@@ -360,5 +238,4 @@ GATES = (
     verify_evals,
     verify_deep,
     verify_fri_chain,
-    verify_full_prove,
 )

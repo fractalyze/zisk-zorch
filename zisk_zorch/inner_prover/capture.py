@@ -33,6 +33,13 @@ from zisk_zorch.types import Pil2Claim
 
 P = int(pfinfo(F).modulus)
 
+# One definition of the host-bundle convention (env var + tools/pil2-dump's
+# default instance): the runnable and gates_test must resolve the SAME
+# bundle or their verdicts describe different proves.
+CAPTURE_ENV = "ZISK_PIL2_CAPTURE"
+FIXTURE_INSTANCE = "ag0_air2_inst5"
+FIXTURE_STARKINFO = "SpecifiedRanges.starkinfo.json"
+
 
 def cubic(words: np.ndarray):
     """Contiguous gl64 limb triples -> a 1-D cubic device array."""
