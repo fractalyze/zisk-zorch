@@ -107,8 +107,7 @@ py_test(
 )
 
 # Loader for a PIL2_DUMP_DIR capture bundle: file naming, npy decoding, limb
-# layout, and pil2's value-packing conventions in one place, so the byte-gate
-# reads protocol objects (sp1-zorch's fixture_loader analog).
+# layout, and pil2's value-packing conventions in one place.
 py_library(
     name = "capture",
     srcs = ["capture.py"],
@@ -121,11 +120,10 @@ py_library(
     ],
 )
 
-# Composed 16-gate byte-match of the full inner proof vs a real pil2-proofman
-# genProof dump — a runnable, never a test (sp1-zorch's verify_prove_shard
-# pattern: gates that need a host-provided native artifact stay out of CI).
-# Argless it reads the ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates
-# one — nothing is committed.
+# Composed byte-match of the full inner proof vs a real pil2-proofman
+# genProof dump — a runnable, never a test: it needs a host-provided capture
+# (the ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates one), so it
+# stays out of CI.
 py_binary(
     name = "verify_inner_proof",
     srcs = ["verify_inner_proof.py"],

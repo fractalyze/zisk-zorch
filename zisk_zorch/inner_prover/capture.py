@@ -1,11 +1,9 @@
 """Loader for a pil2-proofman ``PIL2_DUMP_DIR`` capture bundle.
 
 A bundle is one real ``genProof``'s per-stage sections (``tools/pil2-dump``
-regenerates it) plus the AIR's proving-key artifacts, in one directory. This
-module owns everything about that directory — file naming, ``.npy``
-decoding, gl64 limb layout, and pil2's value-packing conventions — so the
-gates in ``verify_inner_proof`` read protocol objects, never files. The
-inner-prover analog of sp1-zorch's ``shard_prover/fixture_loader.py``.
+regenerates it) plus the AIR's proving-key artifacts, in one directory.
+File naming, ``.npy`` decoding, gl64 limb layout, and pil2's value-packing
+conventions all live here, so the gates read protocol objects, never files.
 """
 
 from __future__ import annotations
