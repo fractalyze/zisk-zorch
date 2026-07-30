@@ -400,7 +400,7 @@ cargo build *without* `proofman-starks-lib-c/cpu-only`):
 # shipped 0.10.1 pins; FRX_PLATFORMS=cpu + --backend=cpu for the CPU row
 CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_PREALLOCATE=false \
   XLA_FLAGS=--xla_gpu_experimental_max_unroll_factor=1 \
-  python -m zisk_zorch.bench_prove_e2e --dump=<PIL2_DUMP_DIR capture> \
+  python -m zisk_zorch.inner_prover.bench_prove_e2e --dump=<PIL2_DUMP_DIR capture> \
     --instance=ag0_air0_inst0 --starkinfo=<...FibonacciSquare.starkinfo.json> \
     --backend=device --reps=5
 ```
