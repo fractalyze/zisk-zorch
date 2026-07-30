@@ -135,33 +135,13 @@ py_test(
 )
 
 # Composed 16-gate byte-match of the full inner proof vs a real pil2-proofman
-# genProof dump (--dump/--instance/--starkinfo, or argless via the
-# ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates one — nothing is
-# committed).
+# genProof dump — a runnable, never a test (sp1-zorch's verify_prove_shard
+# pattern: gates that need a host-provided native artifact stay out of CI).
+# Argless it reads the ZISK_PIL2_CAPTURE bundle; tools/pil2-dump regenerates
+# one — nothing is committed.
 py_binary(
     name = "verify_inner_proof",
     srcs = ["verify_inner_proof.py"],
-    deps = [
-        "//zisk_zorch/commit:trace_commit",
-        "//zisk_zorch/evals:lev",
-        "//zisk_zorch/fri:fold",
-        "//zisk_zorch/quotient",
-        requirement("frx"),
-        requirement("numpy"),
-        requirement("pyzorch"),
-        requirement("zk_dtypes"),
-    ],
-)
-
-# The same byte-gate as a test: runs on the ZISK_PIL2_CAPTURE bundle when the
-# host provides one, skips (green, loudly) when it doesn't — a machine with
-# no capture keeps the suite runnable, a provisioned runner keeps the gate.
-py_test(
-    name = "verify_inner_proof_test",
-    size = "medium",
-    srcs = ["verify_inner_proof.py"],
-    env_inherit = ["ZISK_PIL2_CAPTURE"],
-    main = "verify_inner_proof.py",
     deps = [
         "//zisk_zorch/commit:trace_commit",
         "//zisk_zorch/evals:lev",
