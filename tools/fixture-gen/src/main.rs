@@ -1219,7 +1219,7 @@ fn main() {
         }),
     );
     write(
-        "zisk_zorch/quotient/testdata/golden/gsum.json",
+        "zisk_zorch/logup/testdata/golden/gsum.json",
         json!({
             "denominator": [
                 bus_denominator_case(2, 0x5A01),

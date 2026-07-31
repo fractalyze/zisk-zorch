@@ -44,7 +44,8 @@ the same files from any working directory (never CWD-relative).
 | `poseidon2/` | `permutation` |
 | `commit/` | `linear_hash`, `merkle_root`, `merkle_proof`, `lde`, `stage1_commit` |
 | `transcript/` | `transcript` |
-| `quotient/` | `zerofier_inv`, `gsum`, `cexp_eval` |
+| `quotient/` | `zerofier_inv`, `cexp_eval` |
+| `logup/` | `gsum` |
 | `fri/` | `fri_fold`, `fri_prove`, `fri_final`, `query_sample`, `grinding` |
 | `evals/` | `compute_lev` |
 

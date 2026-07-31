@@ -1,8 +1,9 @@
 # Commit-scope policy for zisk-zorch.
 #
 # A scope is the directory the change lives in, named with the `zisk_zorch/`
-# root stripped — commit, constraints, deep, evals, fri, poseidon2, quotient,
-# transcript. It must be the deepest directory containing every touched file.
+# root stripped — commit, constraints, deep, evals, fri, logup, poseidon2,
+# quotient, transcript. It must be the deepest directory containing every
+# touched file.
 #
 # The modules directly under the package are the top-level prover and its
 # fixtures; they sit above any directory, so the [scopes] entries below name
@@ -40,6 +41,7 @@ exempt_paths = [
   "zisk_zorch/commit/testdata",
   "zisk_zorch/evals/testdata",
   "zisk_zorch/fri/testdata",
+  "zisk_zorch/logup/testdata",
   "zisk_zorch/poseidon2/testdata",
   "zisk_zorch/quotient/testdata",
   "zisk_zorch/transcript/testdata",

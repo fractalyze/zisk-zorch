@@ -66,7 +66,8 @@ composite through `bind_trace_commitment`.
 |---|---|---|---|---|
 | Trace commit | `extendAndMerkelize` (`commitStage(1)`) | INTT each column, coset-7 RS encode to `N·blowup` rows in pil2 domain order, pil2 linear-hash each row to a 4-Goldilocks leaf, k-ary Poseidon2 fold to the root | `commit/` | `lde`, `linear_hash`, `merkle_root`, `merkle_proof`, `stage1_commit`, + a real-program trace root (`testdata/fullprogram/`, see [development.md](development.md#fixtures)) |
 | Constraint ingest | — (rw-exported) | Load each ZisK chip's constraints + bus interactions from the `rw_constraints` wheel (`constraints/zisk/v1`), the same export `sp1-zorch` consumes | `constraints/` | — (pinned by the quotient's byte-match) |
-| Quotient | `calculateQuotientPolynomial` | Fold constraints by powers of `alpha` (zorch's agnostic `constraint_eval`), divide by the inverse zerofier, commit `Q` | `quotient/` | `cexp_eval`, `zerofier_inv`, `gsum` |
+| LogUp bus | `calculateWitnessSTD` (`std_sum`) | Combine each bus tuple into one cubic denominator, prefix-sum the row-local terms into the committed `gsum` column, export its last row as the airgroup `gsum_result` | `logup/` | `gsum` |
+| Quotient | `calculateQuotientPolynomial` | Fold constraints by powers of `alpha` (zorch's agnostic `constraint_eval`), divide by the inverse zerofier, commit `Q` | `quotient/` | `cexp_eval`, `zerofier_inv` |
 | DEEP | `calculateFRIPolynomial` | Squeeze the OOD point `z`, open the committed polynomials there (`computeLEv`+`evmap`), absorb, squeeze `vf`, build the DEEP-ALI codeword | `deep/` | — (pinned by the LEv round-trip identity and the FRI low-degree test; a pil2 golden additionally needs the proving key's compiled `friExp` op list) |
 | FRI | `FRI::fold` / `proveQueries` | Fold the codeword down the layer chain committing each layer, grind, open every tree per query | `fri/` | `fri_fold`, `fri_prove`, `fri_final`, `grinding`, `query_sample` |
 

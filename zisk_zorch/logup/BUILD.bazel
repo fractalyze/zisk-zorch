@@ -1,0 +1,31 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# Stage-2 LogUp bus argument (pil2's std_sum): bus denominators, the committed
+# grand-sum column, and its airgroup result.
+py_library(
+    name = "logup",
+    srcs = [
+        "__init__.py",
+        "bus.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//zisk_zorch:golden",
+        requirement("frx"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "bus_test",
+    size = "medium",
+    srcs = ["bus_test.py"],
+    data = ["testdata/golden/gsum.json"],
+    deps = [
+        ":logup",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+        requirement("numpy"),
+    ],
+)

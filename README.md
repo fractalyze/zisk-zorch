@@ -119,9 +119,10 @@ pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org):
 a valid type, a lowercase summary with no trailing period, a header of at most
 80 characters, and a body on everything but `docs`. The scope is the package the
-change lives in — `commit`, `constraints`, `deep`, `evals`, `fri`, `poseidon2`,
-`quotient`, `transcript` — or `prover`, `golden`, `bench`, `release` for the
-modules directly under `zisk_zorch/`. A change spanning several takes no scope.
+change lives in — `commit`, `constraints`, `deep`, `evals`, `fri`, `logup`,
+`poseidon2`, `quotient`, `transcript` — or `prover`, `golden`, `bench`,
+`release` for the modules directly under `zisk_zorch/`. A change spanning
+several takes no scope.
 The same linter runs in CI over every commit in a pull request and over the PR
 title.
 

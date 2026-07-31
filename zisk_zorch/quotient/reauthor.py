@@ -2,9 +2,11 @@
 
 Produces `q = (Σ_i constraint[i] · vc^(N−1−i)) · Zi` — pil2's composite-constraint
 quotient. The `std_sum` (LogUp bus/gsum) constraints are authored from the chip's
-typed `Interaction`s; byte-matching against the cExp reference `q` (`cexp_ref` /
-the `cexp_eval` golden) is what verifies rw's authored interactions — the
-per-chip CPU test can't, since interactions are CPU-erased there.
+typed `Interaction`s through `logup.bus.LogUpBus`, the argument's own package —
+this module only folds them; byte-matching against the cExp reference `q`
+(`cexp_ref` / the `cexp_eval` golden) is what verifies rw's authored
+interactions — the per-chip CPU test can't, since interactions are CPU-erased
+there.
 
 The two AIR paths differ in how they source the row-local constraints:
 
@@ -27,9 +29,11 @@ from frx import Array
 from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.golden import base_trace, embed, u64x3
+from zisk_zorch.logup.bus import LogUpBus
 from zisk_zorch.quotient.cexp_ref import _load_inputs, _run_block
-from zisk_zorch.quotient.gsum import _P, eval_pair_col, gsum_e
 from zisk_zorch.quotient.zerofier import inv_zerofier
+
+_GOLDILOCKS_P = 0xFFFFFFFF00000001
 
 # Binary AIR layout (proving-key cmPolsMap): 39 stage-1 base cols, then the
 # stage-2 witness cubic cols gsum / im_cluster×4, then the stage-3 quotient.
@@ -58,21 +62,20 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
     for col in case["cm"]:
         cm[col["id"]] = (embed if col["dim"] == 1 else u64x3)(col["values"])
     l1 = embed(case["const"][0]["values"])
-    alpha, gamma, vc = (u64x3(case["challenges"][i]["value"]) for i in (0, 1, 2))
+    challenges = {c["id"]: u64x3(c["value"]) for c in case["challenges"]}
+    vc = challenges[2]  # the quotient challenge, after std_alpha / std_gamma
     airvalues = {a["id"]: u64x3(a["value"]) for a in case["airvalues"]}
     gsum_result = u64x3(case["airgroupvalues"][0]["value"])
 
     # Base stage-1 trace for VirtualPairCol evaluation (cm id == column index).
     trace = base_trace(case, _N_STAGE1)
 
-    sends = chip.get_sends()
-    recvs = chip.get_receives()
-    iacts = [s.interaction for s in sends] + [r.interaction for r in recvs]
-    ge = [gsum_e(it, trace, alpha) for it in iacts]
+    bus = LogUpBus.from_chip(chip, challenges)
+    d = bus.denominators(trace)
     # LogUp multiplicity sign: send (assume) → −1, receive (prove) → +1.
-    neg_one = embed([str(_P - 1)])
+    neg_one = embed([str(_GOLDILOCKS_P - 1)])
     one = embed(["1"])
-    mult = [neg_one if it.is_send else one for it in iacts]
+    mult = [neg_one if it.is_send else one for it in bus.interactions]
 
     c: list[Array] = [None] * 14
     # Row-local (0..6) — authored from the Binary AIR.
@@ -88,17 +91,16 @@ def reauthor_binary_quotient(chip, case: dict) -> Array:
 
     # std_sum im_cluster (7..10): im·∏(gsum_e+γ) − Σ mult·∏_{k≠·}(gsum_e+γ).
     for ci, (slot, i, j) in enumerate(_CLUSTERS, start=7):
-        di, dj = ge[i] + gamma, ge[j] + gamma
-        c[ci] = cm[_IM_CLUSTER[slot]] * (di * dj) - (mult[i] * dj + mult[j] * di)
+        c[ci] = cm[_IM_CLUSTER[slot]] * (d[i] * d[j]) - (
+            mult[i] * d[j] + mult[j] * d[i]
+        )
     # gsum transition (11): ((gsum − 'gsum·(1−L1)) − Σ im_cluster)·(gsum_e[0]+γ) + 1.
     gsum_prev = fnp.roll(cm[_GSUM], extend)
     sum_im = cm[40] + cm[41] + cm[42] + cm[43]
-    c[11] = ((cm[_GSUM] - gsum_prev * (one - l1)) - sum_im) * (
-        ge[_TRANSITION_IACT] + gamma
-    ) + one
+    c[11] = ((cm[_GSUM] - gsum_prev * (one - l1)) - sum_im) * d[_TRANSITION_IACT] + one
     # im_direct (12): a constant operation-bus descriptor (10·α + 5000).
-    direct = embed(["10"]) * alpha + embed(["5000"])
-    c[12] = airvalues[1] * (direct + gamma) - (fnp.zeros(n, F3) - airvalues[0])
+    direct = embed(["10"]) * bus.alpha + embed(["5000"])
+    c[12] = airvalues[1] * (direct + bus.gamma) - (fnp.zeros(n, F3) - airvalues[0])
     # boundary (13): __L1__'·(gsum_result − gsum − im_direct).
     c[13] = fnp.roll(l1, -extend) * (gsum_result - cm[_GSUM] - airvalues[1])
 
@@ -145,9 +147,9 @@ def _signed_multiplicity(interaction, trace: Array) -> Array:
     mul = (
         embed(["1"])
         if interaction.kind in (330, 331)
-        else eval_pair_col(interaction.multiplicity, trace)
+        else LogUpBus.eval_pair_col(interaction.multiplicity, trace)
     )
-    return (embed([str(_P - 1)]) * mul) if interaction.is_send else mul
+    return (embed([str(_GOLDILOCKS_P - 1)]) * mul) if interaction.is_send else mul
 
 
 def _im_constraint(
@@ -188,15 +190,13 @@ def reauthor_arith_quotient(
     env = _load_inputs(case)
     cm = env["cm"]
     l1 = env["const"][0]
-    alpha, gamma, vc = (env["challenges"][i] for i in (0, 1, 2))
+    vc = env["challenges"][2]  # the quotient challenge, after std_alpha / std_gamma
     gsum_result = env["airgroupvalues"][0]
     trace = base_trace(case, _ARITH_N_STAGE1)
 
-    iacts = [s.interaction for s in chip.get_sends()] + [
-        r.interaction for r in chip.get_receives()
-    ]
-    d = [gsum_e(it, trace, alpha) + gamma for it in iacts]
-    m = [_signed_multiplicity(it, trace) for it in iacts]
+    bus = LogUpBus.from_chip(chip, env["challenges"])
+    d = bus.denominators(trace)
+    m = [_signed_multiplicity(it, trace) for it in bus.interactions]
 
     cols = [
         _run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)
