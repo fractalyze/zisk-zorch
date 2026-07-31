@@ -169,6 +169,17 @@ zkbench owns warmup (3) + timed iterations (20) and reports warm `latency`,
 - The report's `output_hash` is a self-consistency hash across zisk-zorch
   runs — *not* a pil2 byte-match.
 
+Timing anything by hand outside zkbench needs two habits, because frx dispatch
+is asynchronous and lazy:
+
+- **Force the value before reading the clock.** A `time.time()` around a call
+  measures dispatch; the work lands when something reads the array. Wrap with
+  `np.asarray(...)` inside the timed region, or the number is fiction.
+- **Split `lower` / `compile` / call to tell compile from run.**
+  `f = frx.jit(fn); lowered = f.lower(x); c = lowered.compile(); c(x)` — timing
+  the three separately is what distinguishes an expensive compile from a slow
+  (or hanging) execution, and they fail in different places.
+
 ### Native pil2 side
 
 **Full inner proof** — the only recorded invocation (#30): `cargo-zisk 0.18.0
