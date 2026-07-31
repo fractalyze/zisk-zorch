@@ -140,7 +140,11 @@ py_library(
 
 py_test(
     name = "verifier_test",
+    # ~135 s warm, but a dependency bump invalidates the cache and the cold run
+    # under CI's parallel load lands at ~300 s — right on the cap `medium` would
+    # derive. Declared so a pin bump does not turn this into a TIMEOUT.
     size = "medium",
+    timeout = "long",
     srcs = ["verifier_test.py"],
     data = ["testdata/golden/fri_prove.json"],
     deps = [

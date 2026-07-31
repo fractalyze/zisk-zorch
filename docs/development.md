@@ -57,13 +57,14 @@ overrides it per matrix leg. `//...` is the whole suite on either backend; the
 `size` and `timeout` are independent knobs: **`size`** (`small`/`medium`/`large`)
 is a resource hint governing parallelism; **`timeout`**
 (`short`/`moderate`/`long`/`eternal` = 60/300/900/3600 s) is the wall-clock cap,
-derived from `size` when unset. Every test here declares a `size` and none
-declares a `timeout`. The two to watch are `fri:verifier_test` and
-`commit:openings_test`: ~135 s warm on an idle box against a 300 s `medium`
-cap. Declare a **`timeout` explicitly** if you push either past ~150 s — a
-dependency bump invalidates the Bazel cache, the suite re-runs **cold** on the
-shared CI runner under parallel load, and a test that fits locally blows the
-cap there as a `TIMEOUT`.
+derived from `size` when unset. Every test here declares a `size`; three declare
+a `timeout` as well — `fri:verifier_test`, `commit:openings_test` and
+`commit:fullprogram_commit_test` sit at ~135 s warm but reach ~300 s cold, which
+is exactly the cap `medium` derives, and all three timed out on CI the first time
+a pin bump invalidated the cache. Declare a **`timeout` explicitly** for anything
+you push past ~150 s: a dependency bump invalidates the Bazel cache, the suite
+re-runs **cold** on the shared CI runner under parallel load, and a test that
+fits locally blows the cap there as a `TIMEOUT`.
 
 > A green CI on a branch with no dep bump is usually an all-cache-hit run (the
 > remote cache is shared with dev boxes), not evidence the tests fit their caps.

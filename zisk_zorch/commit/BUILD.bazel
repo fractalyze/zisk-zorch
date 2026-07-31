@@ -59,7 +59,11 @@ py_test(
 
 py_test(
     name = "openings_test",
+    # ~135 s warm, but a dependency bump invalidates the cache and the cold run
+    # under CI's parallel load lands at ~300 s — right on the cap `medium` would
+    # derive. Declared so a pin bump does not turn this into a TIMEOUT.
     size = "medium",
+    timeout = "long",
     srcs = ["openings_test.py"],
     data = ["testdata/golden/merkle_proof.json"],
     deps = [
@@ -106,7 +110,10 @@ py_test(
 
 py_test(
     name = "fullprogram_commit_test",
+    # Commits the 2^21-row trace once per hash family, so it costs about twice
+    # what it did with the Poseidon2 fixture alone — past what `medium` derives.
     size = "medium",
+    timeout = "long",
     srcs = ["fullprogram_commit_test.py"],
     data = glob(["testdata/fullprogram/**"]),
     deps = [
