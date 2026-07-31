@@ -71,6 +71,43 @@ class BusTest(absltest.TestCase):
         want = fnp.array(np.array([43, 119], dtype=np.uint64), dtype=F).astype(F3)
         self.assertTrue(bool(fnp.array_equal(got, want)))
 
+    def test_eval_pair_col_reads_preprocessed_terms_from_the_prep_trace(self) -> None:
+        # A term flagged `is_preprocessed` indexes the preprocessed trace, not the
+        # main one — same column index, different table. Both traces carry a
+        # distinguishable value at index 0 so a fallback to `trace` would show up.
+        trace = fnp.array(np.array([[2], [4]], dtype=np.uint64), dtype=F)
+        prep = fnp.array(np.array([[10], [20]], dtype=np.uint64), dtype=F)
+        vpc = SimpleNamespace(
+            constant="1",
+            column_weights=[(0, False, "3"), (0, True, "5")],  # 3·main0 + 5·prep0
+            column_products=[(0, True, 0, False, "2")],  # 2·prep0·main0
+        )
+        got = LogUpBus.eval_pair_col(vpc, trace, prep)
+        # row0: 1 + 3·2 + 5·10 + 2·10·2 = 97 ; row1: 1 + 3·4 + 5·20 + 2·20·4 = 273
+        want = fnp.array(np.array([97, 273], dtype=np.uint64), dtype=F).astype(F3)
+        self.assertTrue(bool(fnp.array_equal(got, want)))
+
+    def test_eval_pair_col_rejects_preprocessed_terms_without_a_prep_trace(
+        self,
+    ) -> None:
+        # The load-bearing half: silently reading main[col] for a preprocessed term
+        # yields a real value of the right dtype and shape, so the byte-match would
+        # fail far from the cause. Raise instead (fractalyze/zisk-zorch#115).
+        trace = fnp.array(np.array([[2], [4]], dtype=np.uint64), dtype=F)
+        weight_only = SimpleNamespace(
+            constant="0", column_weights=[(0, True, "1")], column_products=[]
+        )
+        with self.assertRaisesRegex(ValueError, "preprocessed"):
+            LogUpBus.eval_pair_col(weight_only, trace)
+
+        product_only = SimpleNamespace(
+            constant="0",
+            column_weights=[],
+            column_products=[(0, False, 0, True, "1")],
+        )
+        with self.assertRaisesRegex(ValueError, "preprocessed"):
+            LogUpBus.eval_pair_col(product_only, trace)
+
 
 if __name__ == "__main__":
     absltest.main()
