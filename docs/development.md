@@ -116,6 +116,14 @@ elements either match or they don't.
   regenerated dir under `testdata/fullprogram/` locally and the test runs
   every fixture dir present.
 
+> **Poseidon1 at arity 2 does not run.** Its width-8 permutation compiles in
+> about a second and then never returns — the process spins on one core with no
+> error ([zorch#565](https://github.com/fractalyze/zorch/issues/565)). Arities 3
+> and 4 are unaffected, and production is arity 4, so the pipeline and its
+> real-program byte-match are covered; the width-8 goldens are committed but
+> their cases are skipped until that is fixed. Poseidon2 is unaffected at every
+> width — it lowers through a different emitter.
+
 ## Per-stage baseline against native pil2
 
 A wall-clock comparison against ZisK's native pil2-stark CUDA reference means
