@@ -163,8 +163,8 @@ opt-einsum==3.4.0 \
     --hash=sha256:69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd \
     --hash=sha256:96ca72f1b886d148241348783498194c577fa30a8faac108586b14f1ba4473ac
     # via frx
-pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260727041631/pyzorch-0.1.0.dev20260727041631-py3-none-any.whl \
-    --hash=sha256:2bf9bf1f0599a9f922031204e5f8b3f84041b440876670df0cdb07468d50a11c
+pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260731075013/pyzorch-0.1.0.dev20260731075013-py3-none-any.whl \
+    --hash=sha256:9f83fb7c278f7952aa593e23dbbad3f0af6fbd9d349d8fc39e27d96764ec2bfd
     # via -r requirements.in
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl \
     --hash=sha256:d29f0d7422531aa45491535b6e91bb109b385236a67a3f55d41fdfbddb4cb5f1
@@ -234,6 +234,10 @@ scipy==1.17.1 \
     # via
     #   frx
     #   frxlib
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
+    --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
+    # via pyzorch
 zk-dtypes==0.0.10 \
     --hash=sha256:06b66ef88dd6394bf7b2a1183fc60c5679a1837fc1b223147807f0f961eac0f7 \
     --hash=sha256:e462ab54e21ee3dec305854d857519749eef913d817355b75c9e67fbba2fbae3 \

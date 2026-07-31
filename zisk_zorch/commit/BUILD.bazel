@@ -15,7 +15,8 @@ py_library(
     ],
 )
 
-# Stage-1 trace commit: coset-7 LDE + linear-hash leaves + k-ary Poseidon2 tree.
+# Stage-1 trace commit: coset-7 LDE + linear-hash leaves + k-ary tree, selectable
+# Poseidon2 / Poseidon1 hash family.
 py_library(
     name = "trace_commit",
     srcs = ["trace_commit.py"],
@@ -23,6 +24,7 @@ py_library(
     deps = [
         ":linear_hash",
         "//zisk_zorch:types",
+        "//zisk_zorch/poseidon1:goldilocks",
         "//zisk_zorch/poseidon2:goldilocks",
         "//zisk_zorch/quotient",
         requirement("frx"),
@@ -57,7 +59,11 @@ py_test(
 
 py_test(
     name = "openings_test",
+    # ~135 s warm, but a dependency bump invalidates the cache and the cold run
+    # under CI's parallel load lands at ~300 s — right on the cap `medium` would
+    # derive. Declared so a pin bump does not turn this into a TIMEOUT.
     size = "medium",
+    timeout = "long",
     srcs = ["openings_test.py"],
     data = ["testdata/golden/merkle_proof.json"],
     deps = [
@@ -86,8 +92,28 @@ py_test(
 )
 
 py_test(
+    name = "poseidon1_commit_test",
+    size = "large",
+    srcs = ["poseidon1_commit_test.py"],
+    data = [
+        "testdata/golden/poseidon1_linear_hash.json",
+        "testdata/golden/poseidon1_stage1_commit.json",
+    ],
+    deps = [
+        ":linear_hash",
+        ":trace_commit",
+        "//zisk_zorch:golden",
+        "//zisk_zorch/poseidon1:goldilocks",
+        requirement("absl_py"),
+    ],
+)
+
+py_test(
     name = "fullprogram_commit_test",
+    # Commits the 2^21-row trace once per hash family, so it costs about twice
+    # what it did with the Poseidon2 fixture alone — past what `medium` derives.
     size = "medium",
+    timeout = "long",
     srcs = ["fullprogram_commit_test.py"],
     data = glob(["testdata/fullprogram/**"]),
     deps = [

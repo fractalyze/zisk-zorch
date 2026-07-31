@@ -10,10 +10,12 @@ The fixture pair under `testdata/fullprogram/<air>/` comes from the
 fractalyze/zisk fork's `rw-fixture-gen` (see the README's "Real-program
 stage-1 fixtures" recipe): `expected_*_trace.npy.gz` is the trace dump whose
 payload is the fixture's `golden_sha256` preimage, and `stage1_commit.json`
-carries the native `commit_witness` root plus the starkStruct params. Roots
-are captured with `--hash-family Poseidon2` — the family this repo models;
-the installed ZisK proving key's own default is currently Poseidon1 (its
-globalInfo carries no `hash` field), which zisk-zorch does not implement.
+carries the native `commit_witness` root plus the starkStruct params and the
+`hash_family` the tree was committed with. Both families ZisK uses are
+matched: `--hash-family Poseidon2`, and the installed proving key's own
+default (Poseidon1, since its globalInfo carries no `hash` field — captured
+with no override). The test drives `commit_trace` with each fixture's recorded
+family, so the same trace pins both roots.
 """
 
 from __future__ import annotations
@@ -66,10 +68,10 @@ class FullProgramCommitTest(absltest.TestCase):
         meta = json.loads((fixture / "fixture_metadata.json").read_text())
         s1 = json.loads((fixture / "stage1_commit.json").read_text())
 
-        # The native root was hashed with this family; a mismatch means the
-        # fixture was regenerated without --hash-family Poseidon2 and cannot
-        # match this repo's Poseidon2 pipeline.
-        self.assertEqual(s1["hash_family"], "Poseidon2")
+        # Commit with the family the native root was hashed with (Poseidon2 or
+        # the key's Poseidon1 default); an unmodelled family surfaces as a
+        # commit_trace error rather than a silent mismatch.
+        self.assertIn(s1["hash_family"], ("Poseidon2", "Poseidon1"))
         # A committed-trace hash differing from the dump means the native
         # prover's witness_calc hints rewrote columns before the LDE — the
         # dump would no longer be the committed matrix.
@@ -86,6 +88,7 @@ class FullProgramCommitTest(absltest.TestCase):
             trace,
             blowup=1 << s1["blowup_bits"],
             arity=s1["merkle_tree_arity"],
+            hash_family=s1["hash_family"],
         )
         self.assertTrue(
             bool(fnp.array_equal(commitment.root, u64(s1["root"]))),

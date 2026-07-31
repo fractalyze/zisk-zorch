@@ -42,6 +42,7 @@ exempt_paths = [
   "zisk_zorch/evals/testdata",
   "zisk_zorch/fri/testdata",
   "zisk_zorch/logup/testdata",
+  "zisk_zorch/poseidon1/testdata",
   "zisk_zorch/poseidon2/testdata",
   "zisk_zorch/quotient/testdata",
   "zisk_zorch/transcript/testdata",

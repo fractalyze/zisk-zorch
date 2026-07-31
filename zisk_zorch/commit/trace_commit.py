@@ -7,9 +7,10 @@ exactly pil2's `NTT_Goldilocks::extendPol` (INTT with coset-power scaling, NTT
 on 2^nBitsExt).
 
 commit: leaf-hash every extended row with pil2's chained linear hash and fold
-the k-ary Poseidon2 tree (arity 2/3/4 -> node width 8/12/16, 4-element root) —
+the k-ary tree (arity 2/3/4 -> node width 8/12/16, 4-element root) —
 `MerkleTreeGL::merkelize`. The tree is zorch's MerkleTree; everything pil2 about
-it (hash family, leaf convention, arity-to-width map) rides in via the blocks.
+it (hash family, leaf convention, arity-to-width map) rides in via the blocks,
+so selecting Poseidon1 or Poseidon2 only swaps the permutation the blocks hold.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from zorch.commit.merkle import MerkleTree
 from zorch.hash.compression import Compression, CompressionParams
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
-from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zisk_zorch.poseidon1.goldilocks import goldilocks_perm as _poseidon1_perm
+from zisk_zorch.poseidon2.goldilocks import goldilocks_perm as _poseidon2_perm
 from zisk_zorch.quotient.zerofier import _PIL2_GENERATOR
 from zisk_zorch.types import TraceCommitment
 
@@ -39,10 +41,20 @@ COSET_SHIFT = 7
 # is `_PIL2_GENERATOR` (`W[32]^-1`), shared from `zerofier` so the LDE and the FRI
 # fold cannot disagree on which root pil2 is on.
 
-# starkinfo's merkleTreeArity -> the Poseidon2 width hashing that tree
-# (MerkleTreeGL::merkelize switches arity {2,3,4} to Poseidon2Goldilocks
-# {8,12,16} for both the leaf linear hash and the node hash).
+# starkinfo's merkleTreeArity -> the permutation width hashing that tree
+# (MerkleTreeGL::merkelize switches arity {2,3,4} to the width-{8,12,16}
+# permutation for both the leaf linear hash and the node hash).
 _ARITY_WIDTHS = {2: 8, 3: 12, 4: 16}
+
+# The hash family the merkle tree commits with. Native ZisK defaults to
+# "Poseidon1" (the installed proving key sets no `hash`, so pil2's
+# DEFAULT_HASH_ID wins); "Poseidon2" is the alternative some keys select. The
+# LDE is family-independent — only the tree's leaf/node permutation changes.
+_HASH_FAMILY_PERMS = {
+    "Poseidon2": _poseidon2_perm,
+    "Poseidon1": _poseidon1_perm,
+}
+DEFAULT_HASH_FAMILY = "Poseidon2"
 
 
 def extend(trace: Array, blowup: int) -> Array:
@@ -66,20 +78,32 @@ def extend(trace: Array, blowup: int) -> Array:
     return rs.extend(trace.T).T
 
 
-def merkle_tree(arity: int) -> MerkleTree:
-    """pil2's tree for `arity`: linear-hash leaves + arity-to-1 Poseidon2 nodes,
-    one width-`4*arity` permutation for both."""
+def merkle_tree(arity: int, hash_family: str = DEFAULT_HASH_FAMILY) -> MerkleTree:
+    """pil2's tree for `arity`: linear-hash leaves + arity-to-1 nodes, one
+    width-`4*arity` permutation of `hash_family` for both."""
     if arity not in _ARITY_WIDTHS:
         raise ValueError(f"arity must be one of {sorted(_ARITY_WIDTHS)}, got {arity}")
-    perm = goldilocks_perm(_ARITY_WIDTHS[arity])
+    if hash_family not in _HASH_FAMILY_PERMS:
+        raise ValueError(
+            f"hash_family must be one of {sorted(_HASH_FAMILY_PERMS)}, got "
+            f"{hash_family!r}"
+        )
+    perm = _HASH_FAMILY_PERMS[hash_family](_ARITY_WIDTHS[arity])
     return MerkleTree(
         LinearHash(perm),
         Compression(perm, CompressionParams(arity=arity, chunk=DIGEST_ELEMS)),
     )
 
 
-def commit_trace(trace: Array, *, blowup: int, arity: int) -> TraceCommitment:
-    """pil2-stark `extendAndMerkelize`: LDE the trace, merkelize the rows."""
+def commit_trace(
+    trace: Array,
+    *,
+    blowup: int,
+    arity: int,
+    hash_family: str = DEFAULT_HASH_FAMILY,
+) -> TraceCommitment:
+    """pil2-stark `extendAndMerkelize`: LDE the trace, merkelize the rows with the
+    `hash_family` permutation."""
     extended = extend(trace, blowup)
-    root, digest_layers = merkle_tree(arity).commit(extended)
+    root, digest_layers = merkle_tree(arity, hash_family).commit(extended)
     return TraceCommitment(root=root, digest_layers=digest_layers, extended=extended)
