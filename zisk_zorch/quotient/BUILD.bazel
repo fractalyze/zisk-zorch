@@ -8,7 +8,6 @@ py_library(
     srcs = [
         "__init__.py",
         "cexp_ref.py",
-        "gsum.py",
         "quotient.py",
         "reauthor.py",
         "zerofier.py",
@@ -16,6 +15,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//zisk_zorch:golden",
+        "//zisk_zorch/logup",
         requirement("frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
@@ -68,23 +68,7 @@ py_test(
         ":quotient",
         "//zisk_zorch:golden",
         "//zisk_zorch/constraints:chip_loader",
-        requirement("absl_py"),
-    ],
-)
-
-py_test(
-    name = "gsum_test",
-    size = "medium",
-    srcs = ["gsum_test.py"],
-    data = [
-        "testdata/arith_constraints.json",
-        "testdata/golden/cexp_eval.json",
-        "testdata/golden/gsum.json",
-    ],
-    deps = [
-        ":quotient",
-        "//zisk_zorch:golden",
-        "//zisk_zorch/constraints:chip_loader",
+        "//zisk_zorch/logup",
         requirement("absl_py"),
     ],
 )
