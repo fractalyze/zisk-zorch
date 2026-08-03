@@ -52,6 +52,8 @@ py_test(
         requirement("absl_py"),
         requirement("frx"),
         requirement("numpy"),
+        # `PreprocessedColumn` — the manifest descriptor the join consumes.
+        requirement("rw_constraints"),
     ],
 )
 
