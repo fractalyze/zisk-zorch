@@ -137,7 +137,9 @@ _ARITH_IM = {
 _ARITH_TRANSITION_GATE = 1  # gsum_e of this interaction gates the gsum transition
 
 
-def _signed_multiplicity(interaction, trace: Array) -> Array:
+def _signed_multiplicity(
+    interaction, trace: Array, preprocessed: Array | None = None
+) -> Array:
     """pil2's signed std_sum multiplicity for one interaction. The arith table
     (kind 331) and range-check (330) lookup sends use multiplicity 1; only the
     operation bus (5000) carries a multiplicity column (cm41). rw exports cm41 as
@@ -147,7 +149,7 @@ def _signed_multiplicity(interaction, trace: Array) -> Array:
     mul = (
         embed(["1"])
         if interaction.kind in (330, 331)
-        else LogUpBus.eval_pair_col(interaction.multiplicity, trace)
+        else LogUpBus.eval_pair_col(interaction.multiplicity, trace, preprocessed)
     )
     return (embed([str(_GOLDILOCKS_P - 1)]) * mul) if interaction.is_send else mul
 

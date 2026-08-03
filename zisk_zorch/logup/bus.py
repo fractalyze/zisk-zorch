@@ -72,35 +72,52 @@ class LogUpBus:
             den = den * self.alpha + tuple_[..., k]
         return den + self.gamma
 
-    def denominators(self, trace: Array) -> list[Array]:
+    def denominators(
+        self, trace: Array, preprocessed: Array | None = None
+    ) -> list[Array]:
         """pil2's inline `gsum_e + std_gamma`, per configured interaction:
         reverse-α-Horner over its `VirtualPairCol` tuple, `· α + kind_int` to
-        append the native bus id at the low end, `+ γ`."""
-        return [self._gsum_e(it, trace) + self.gamma for it in self.interactions]
+        append the native bus id at the low end, `+ γ`.
 
-    def _gsum_e(self, interaction, trace: Array) -> Array:
-        vals = [self.eval_pair_col(v, trace) for v in interaction.values]
+        `preprocessed` is the chip's fixed-column trace, needed only once a
+        tuple references one."""
+        return [
+            self._gsum_e(it, trace, preprocessed) + self.gamma
+            for it in self.interactions
+        ]
+
+    def _gsum_e(
+        self, interaction, trace: Array, preprocessed: Array | None = None
+    ) -> Array:
+        vals = [self.eval_pair_col(v, trace, preprocessed) for v in interaction.values]
         den = vals[-1]
         for v in reversed(vals[:-1]):
             den = den * self.alpha + v
         return den * self.alpha + embed([str(interaction.kind)])
 
     @staticmethod
-    def eval_pair_col(vpc, trace: Array) -> Array:
+    def eval_pair_col(vpc, trace: Array, preprocessed: Array | None = None) -> Array:
         """Materialize a rw `VirtualPairCol` on the base `trace` `(N, n_cols)`,
         embedded to `F3`: `const + Σ wᵢ·colᵢ + Σ wₖ·colₐ·col_b`.
 
         The bilinear part is not dead weight — arith's operation bus
         (`proves_operation`) carries `div·chunk` products, and its denominator
-        only matches pil2's `gsum_e` with them. Tuples are read at the current
-        row (the `is_pre` flag is unused; no exported ZisK tuple sets it).
+        only matches pil2's `gsum_e` with them.
+
+        Terms flagged `is_preprocessed` read `preprocessed`; see
+        :func:`_row_source`. Every term is read at the current row — a
+        `VirtualPairCol` carries no next-row notion (transition offsets live on
+        the constraint, not the tuple).
         """
         n = trace.shape[0]
         acc = fnp.broadcast_to(_scalar(vpc.constant), (n,))
-        for col, _is_pre, weight in vpc.column_weights:
-            acc = acc + _scalar(weight) * trace[:, col]
-        for col_a, _pre_a, col_b, _pre_b, weight in getattr(vpc, "column_products", ()):
-            acc = acc + _scalar(weight) * trace[:, col_a] * trace[:, col_b]
+        for col, is_pre, weight in vpc.column_weights:
+            src = _row_source(is_pre, trace, preprocessed)
+            acc = acc + _scalar(weight) * src[:, col]
+        for col_a, pre_a, col_b, pre_b, weight in getattr(vpc, "column_products", ()):
+            src_a = _row_source(pre_a, trace, preprocessed)
+            src_b = _row_source(pre_b, trace, preprocessed)
+            acc = acc + _scalar(weight) * src_a[:, col_a] * src_b[:, col_b]
         return acc.astype(F3)
 
     @staticmethod
@@ -128,3 +145,25 @@ def _scalar(value) -> Array:
     canonical in [0, p) (rw stores −1 as p−1), so it value-converts straight to
     `F` with no reduction — like `embed`'s decimals."""
     return fnp.array(int(value), dtype=F)
+
+
+def _row_source(
+    is_preprocessed: bool, trace: Array, preprocessed: Array | None
+) -> Array:
+    """The trace a `VirtualPairCol` term indexes into.
+
+    Preprocessed columns index into their *own* trace: flagged index 3 is not
+    main column 3. Falling back to `trace` would read a real value of the right
+    dtype and shape at the wrong column, so raise instead — a wrong `gsum_e`
+    surfaces as a byte-match failure pointing nowhere near the cause.
+    """
+    if not is_preprocessed:
+        return trace
+    if preprocessed is None:
+        raise ValueError(
+            "VirtualPairCol references a preprocessed column but no preprocessed "
+            "trace was supplied. rw has started exporting fixed columns (CLK_0, "
+            "riscv-witness#2189) — thread the preprocessed trace through, see "
+            "fractalyze/zisk-zorch#115."
+        )
+    return preprocessed
