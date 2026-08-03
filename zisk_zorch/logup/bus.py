@@ -80,7 +80,7 @@ class LogUpBus:
         append the native bus id at the low end, `+ γ`.
 
         `preprocessed` is the chip's fixed-column trace, needed only once a
-        tuple references one; see :func:`_row_source`."""
+        tuple references one."""
         return [
             self._gsum_e(it, trace, preprocessed) + self.gamma
             for it in self.interactions
@@ -104,10 +104,10 @@ class LogUpBus:
         (`proves_operation`) carries `div·chunk` products, and its denominator
         only matches pil2's `gsum_e` with them.
 
-        Terms flagged `is_preprocessed` read `preprocessed` rather than `trace`;
-        see :func:`_row_source` for why supplying neither raises. Every term is
-        read at the current row — a `VirtualPairCol` carries no next-row notion
-        (transition offsets live on the constraint, not the tuple).
+        Terms flagged `is_preprocessed` read `preprocessed`; see
+        :func:`_row_source`. Every term is read at the current row — a
+        `VirtualPairCol` carries no next-row notion (transition offsets live on
+        the constraint, not the tuple).
         """
         n = trace.shape[0]
         acc = fnp.broadcast_to(_scalar(vpc.constant), (n,))
@@ -152,17 +152,10 @@ def _row_source(
 ) -> Array:
     """The trace a `VirtualPairCol` term indexes into.
 
-    rw tags each term with `is_preprocessed` (`rw_constraints/interaction.py`),
-    and preprocessed columns are indexed into their *own* trace — a fixed column
-    at index 3 is not main column 3. No ZisK chip commits a preprocessed column
-    yet, so `preprocessed` is `None` on every call today; the first is `CLK_0`
-    (riscv-witness#2189, under rw#1745), which this repo ingests in lockstep
-    (fractalyze/zisk-zorch#115).
-
-    Falling back to `trace` for a preprocessed term would read a real field value
-    of the right dtype and shape at the wrong column — silently wrong `gsum_e`,
-    wrong `q`, and a byte-match failure pointing nowhere near the cause. So raise
-    instead: the flag is load-bearing, not decorative.
+    Preprocessed columns index into their *own* trace: flagged index 3 is not
+    main column 3. Falling back to `trace` would read a real value of the right
+    dtype and shape at the wrong column, so raise instead — a wrong `gsum_e`
+    surfaces as a byte-match failure pointing nowhere near the cause.
     """
     if not is_preprocessed:
         return trace
