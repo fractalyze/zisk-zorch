@@ -166,8 +166,8 @@ opt-einsum==3.4.0 \
 pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260731075013/pyzorch-0.1.0.dev20260731075013-py3-none-any.whl \
     --hash=sha256:9f83fb7c278f7952aa593e23dbbad3f0af6fbd9d349d8fc39e27d96764ec2bfd
     # via -r requirements.in
-rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260715220016/rw_constraints-0.1.0.dev20260715220016-py3-none-any.whl \
-    --hash=sha256:d29f0d7422531aa45491535b6e91bb109b385236a67a3f55d41fdfbddb4cb5f1
+rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260803011954/rw_constraints-0.1.0.dev20260803011954-py3-none-any.whl \
+    --hash=sha256:8658e967377c2828bac3fea842f54ce982cfb8dc489e77e070fb921a30f8d7c4
     # via -r requirements.in
 scipy==1.17.1 \
     --hash=sha256:010f4333c96c9bb1a4516269e33cb5917b08ef2166d5556ca2fd9f082a9e6ea0 \

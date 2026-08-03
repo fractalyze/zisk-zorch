@@ -63,11 +63,13 @@ class ChipLoaderTest(absltest.TestCase):
         for name, chip in self.chips.items():
             with self.subTest(chip=name):
                 self.assertGreater(chip.num_cols, 0)
+                self.assertEqual(chip.num_main_cols, chip.num_cols)
                 if chip.has_pv:
                     # main ingests public inputs; skip the no-PV smoke path.
                     continue
                 trace = fnp.asarray(
-                    np.zeros((2, chip.num_cols), dtype=np.uint64), dtype=goldilocks
+                    np.zeros((2, chip.num_main_cols), dtype=np.uint64),
+                    dtype=goldilocks,
                 )
                 violations = chip.eval_constraints(trace)
                 self.assertEqual(violations.shape[0], 2)
@@ -94,7 +96,7 @@ class ChipLoaderTest(absltest.TestCase):
         # must run under the Goldilocks interaction dtype (not SP1's uint32).
         binary = self.chips["binary"]
         trace = fnp.asarray(
-            np.zeros((2, binary.num_cols), dtype=np.uint64), dtype=goldilocks
+            np.zeros((2, binary.num_main_cols), dtype=np.uint64), dtype=goldilocks
         )
         tuples = binary.eval_interactions(trace)
         self.assertNotEmpty(tuples)

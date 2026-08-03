@@ -109,7 +109,7 @@ def _chip_eval_fn(chip_name: str) -> tuple[Callable, int, int]:
     from zisk_zorch.constraints.chip_loader import load_zisk_chips
 
     chip = load_zisk_chips(chip_names=[chip_name])[chip_name]
-    n_cols = chip.num_cols
+    n_cols = chip.num_main_cols
     k = int(chip.eval_constraints(fnp.zeros((2, n_cols), F)).shape[-1])
     return (lambda t: chip.eval_constraints(t)), n_cols, k
 
