@@ -1,0 +1,49 @@
+# Rust driver for the pil2-reference per-stage dumps.
+#
+# Runs one real pil2-proofman `genProof` in-process with the per-stage dump
+# hooks armed, so every `verify_*` runnable byte-matches against the prover
+# ZisK actually runs rather than against a re-implementation.
+#
+# ── DEP SOURCING ─────────────────────────────────────────────────────────
+# git-pinned to the pil2-proofman fork `fractalyze/pil2-proofman` @
+# `31016248880f79e90dea15c530db91a657f54ea2` — the `v1.0.0-alpha` base plus
+# one fork change: `PIL2_DUMP_DIR`-gated per-stage buffer dumps inside
+# `gen_proof.hpp` (`pil2_dump.hpp`). The hooks are writes only, so a prove
+# with them armed is byte-identical to one without — the fibonacci-square
+# proof still self-verifies. They exist because the stages this repo gates
+# (DEEP, FRI fold, evals, grand sum) have no Rust or C++ entry point outside
+# `genProof`: pil2's host wrappers each take a fully-built prover context,
+# so the intermediates can only be observed from inside a real prove.
+#
+# Mirrors sp1-zorch's `tools/fixture-gen`, which git-pins `fractalyze/sp1`
+# for the same reason. Same pin → byte-identical dumps.
+#
+# For local iteration against a sibling pil2-proofman checkout, swap the
+# `git`/`rev` deps below for `path` deps temporarily.
+[package]
+name = "zisk-zorch-pil2-dump"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "pil2-dump"
+path = "src/main.rs"
+
+# Standalone workspace — don't attach to any ambient parent workspace.
+[workspace]
+
+[dependencies]
+proofman = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "31016248880f79e90dea15c530db91a657f54ea2" }
+proofman-common = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "31016248880f79e90dea15c530db91a657f54ea2" }
+fields = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "31016248880f79e90dea15c530db91a657f54ea2" }
+# Declared so `cpu-only` below can reach it: its build.rs probes `nvidia-smi`
+# and builds the CUDA starks lib unless that feature is on, and masking `nvcc`
+# out of PATH is not enough to stop it.
+proofman-starks-lib-c = { git = "https://github.com/fractalyze/pil2-proofman.git", rev = "31016248880f79e90dea15c530db91a657f54ea2" }
+serde_json = "1"
+
+[features]
+# Build the reference against the CPU prover — the path the committed dumps
+# come from, and the only one that builds without a CUDA toolchain.
+cpu-only = ["proofman-starks-lib-c/cpu-only"]
