@@ -32,6 +32,7 @@ import json
 import pathlib
 import tempfile
 from types import SimpleNamespace
+from unittest import mock
 
 import frx
 
@@ -47,7 +48,9 @@ from zk_dtypes import goldilocksx3 as F3  # noqa: E402
 
 from zisk_zorch.constraints import const_fixture  # noqa: E402
 from zisk_zorch.constraints.preprocessed import (  # noqa: E402
+    DERIVED_PREPROCESSED,
     Preprocessed,
+    full_trace,
     load_chip_preprocessed,
     load_preprocessed,
 )
@@ -253,6 +256,64 @@ class ChipPreprocessedTest(absltest.TestCase):
         chip = _chip(PreprocessedColumn(name="pc", index=0, width=3))
         with self.assertRaises(NotImplementedError):
             load_chip_preprocessed(chip, _AIR, root=self.key)
+
+    def test_a_derived_column_is_the_roll_sum_of_its_base(self) -> None:
+        """A derived gate has no const pol of its own: its values are the
+        cyclic roll-sum of a key-backed base column, and near row 0 those
+        wrap into the END of the trace — which is why the genuine column is
+        rolled instead of reconstructing `row mod period`."""
+        chip = _chip(
+            PreprocessedColumn(name=_OPID, index=0, width=1),
+            PreprocessedColumn(name="OPID_BACK_2", index=1, width=1),
+        )
+        with mock.patch.dict(
+            DERIVED_PREPROCESSED, {"OPID_BACK_2": (_OPID, 1, 2)}, clear=False
+        ):
+            prep = load_chip_preprocessed(chip, _AIR, root=self.key)
+
+        assert prep is not None
+        base = np.asarray(
+            load_preprocessed(_AIR, root=self.key).column(f"{_AIR}.{_OPID}"),
+            dtype=np.uint64,
+        )
+        want = np.roll(base, 1) + np.roll(base, 2)
+        self.assertTrue(
+            bool(fnp.array_equal(prep[:, 1], fnp.array(want, dtype=F)))
+        )
+
+    def test_full_trace_prepends_the_prefix(self) -> None:
+        chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1))
+        main = fnp.array(
+            np.arange(_N * chip.num_main_cols, dtype=np.uint64).reshape(
+                _N, chip.num_main_cols
+            )
+            % 7,
+            dtype=F,
+        )
+
+        full = full_trace(chip, main, air=_AIR, root=self.key)
+
+        self.assertEqual(full.shape, (_N, chip.num_cols))
+        key_col = load_preprocessed(_AIR, root=self.key).column(f"{_AIR}.{_OPID}")
+        self.assertTrue(bool(fnp.array_equal(full[:, 0], key_col)))
+        self.assertTrue(bool(fnp.array_equal(full[:, 1:], main)))
+
+    def test_full_trace_passes_a_prep_free_chip_through(self) -> None:
+        chip = _chip()
+        main = fnp.array(np.zeros((3, chip.num_main_cols), dtype=np.uint64), dtype=F)
+        # An unreadable root proves no key is touched on this path.
+        got = full_trace(chip, main, air=_AIR, root=self.key / "nope")
+        self.assertIs(got, main)
+
+    def test_full_trace_rejects_a_height_mismatch(self) -> None:
+        """The key's columns span the air's full height; a shorter main trace
+        cannot be aligned to them without guessing which rows it covers."""
+        chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1))
+        main = fnp.array(
+            np.zeros((_N // 2, chip.num_main_cols), dtype=np.uint64), dtype=F
+        )
+        with self.assertRaisesRegex(ValueError, "full height"):
+            full_trace(chip, main, air=_AIR, root=self.key)
 
 
 if __name__ == "__main__":
