@@ -403,6 +403,51 @@ class RealProvingKeyTest(absltest.TestCase):
                 else:
                     self.assertLess(int(clk0.sum()), int(naive.sum()))
 
+    def test_derived_gates_hold_their_defining_property_on_the_key(self) -> None:
+        """`DERIVED_PREPROCESSED` landed ahead of the wheel that declares these
+        columns, so nothing had checked its shifts against real values.
+
+        Each gate sums `CLK_0` over shifts `k_lo..k_hi`, and every range is
+        narrower than its period, so at most one clock start can fall in the
+        window: the gate is a 0/1 indicator of "this row sits `k_lo..k_hi` rows
+        into a real operation". Asserting that from the clock's own set
+        positions checks the shift direction and the range together — a forward
+        roll, or an off-by-one range, breaks it.
+        """
+        gates = (
+            ("ArithEq384", 24, "SEL_LATCH_GATE"),
+            ("ArithEq384", 24, "CLK_0_BACK_23"),
+            ("Keccakf", 25, "IN_USE_LATCHED"),
+            ("Sha256f", 72, "IN_USE_ACTIVE"),
+        )
+        for air, period, gate_name in gates:
+            with self.subTest(gate=gate_name):
+                base, k_lo, k_hi = DERIVED_PREPROCESSED[gate_name]
+                self.assertEqual(base, "CLK_0")
+                self.assertLess(k_hi, period, "a wider window would double-count")
+                chip = _chip(
+                    PreprocessedColumn(name="CLK_0", index=0, width=1),
+                    PreprocessedColumn(name=gate_name, index=1, width=1),
+                )
+                cols = load_chip_preprocessed(chip, air, root=_ZISK_KEY)
+                assert cols is not None
+                values = np.asarray(cols.view(fnp.uint64))
+                clk0, gate = values[:, 0], values[:, 1]
+
+                # Row-wise, not row-by-start: the pairwise form is O(N * ops),
+                # which is 45e9 cells on ArithEq384 and takes the box down.
+                # Each row's only candidate start is the multiple of the period
+                # at or below it, and the gate fires when that start is real and
+                # the row sits `k_lo..k_hi` past it.
+                rows = np.arange(len(clk0))
+                phase = rows % period
+                inside = (phase >= k_lo) & (phase <= k_hi) & (clk0[rows - phase] == 1)
+                self.assertTrue(np.array_equal(gate, inside.astype(gate.dtype)))
+                # The zeroed tail is what keeps the wrap clean: rolling a column
+                # whose last operation ran to the final row would carry starts
+                # back onto row 0's window.
+                self.assertEqual(gate[0], 0)
+
 
 if __name__ == "__main__":
     absltest.main()
