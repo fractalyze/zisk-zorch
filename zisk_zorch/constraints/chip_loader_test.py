@@ -25,6 +25,7 @@ from rw_constraints import PreprocessedColumn  # noqa: E402
 from zk_dtypes import goldilocks  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
+from zisk_zorch.constraints.preprocessed import ZISK_CHIP_AIRS  # noqa: E402
 
 # The ZisK v1 chip set exported by riscv-witness (constraints/zisk/v1).
 _EXPECTED_CHIPS = frozenset(
@@ -59,6 +60,15 @@ class ChipLoaderTest(absltest.TestCase):
 
     def test_loads_the_full_zisk_chip_set(self) -> None:
         self.assertEqual(frozenset(self.chips), _EXPECTED_CHIPS)
+
+    def test_every_chip_has_a_proving_key_air(self) -> None:
+        """`full_trace` looks the air up by chip name, so a chip missing from
+        the table surfaces as a bare `KeyError` at the point of use. The table
+        mirrors the oracle's `CHIP_AIRS` (riscv-witness
+        `tools/zisk/zisk_constraint_eval/src/main.rs`), which is what makes
+        both sides read the same key column.
+        """
+        self.assertEqual(frozenset(ZISK_CHIP_AIRS), frozenset(self.chips))
 
     def test_each_chip_evaluates_constraints_on_its_declared_width(self) -> None:
         for name, chip in self.chips.items():
