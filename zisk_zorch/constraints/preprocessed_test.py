@@ -2,9 +2,10 @@
 """Preprocessed columns — the key reader, and the join onto a chip's index space.
 
 The `.const` input is built by `const_fixture` rather than committed, so the
-fixture is readable code instead of an opaque 6 KB blob. Not a ZisK AIR — none
-commits a fixed column yet (riscv-witness#2189) and no ZisK key is checked in —
-but `.const` is pil2-stark's format, not a per-key one.
+fixture is readable code instead of an opaque 6 KB blob. Not a ZisK AIR — no
+ZisK proving key is checked in, and the four chips that now declare `CLK_0`
+(riscv-witness#2189 Phase C) draw its values from one — but `.const` is
+pil2-stark's format, not a per-key one.
 
 `__L1__` decoding as the row-0 Lagrange basis pins the reader's canonical,
 row-major reading of what it is handed.
@@ -151,9 +152,9 @@ def _chip(
     num_main_cols: int = 4,
     name: str = "arith_eq",
 ) -> SimpleNamespace:
-    """The four `Chip` attributes the join reads. Standing in for a real chip
-    because no ZisK chip declares a fixed column yet (riscv-witness#2189 Phase
-    C) — the rw-side shape is `PreprocessedColumn`, which is the real class.
+    """The four `Chip` attributes the join reads. A stand-in because the key
+    here is fibonacci-square's, which no ZisK chip is defined over — the
+    rw-side shape is `PreprocessedColumn`, which is the real class.
 
     `n_prep` overrides the width `num_cols` implies, for the disagreement case.
     """
@@ -277,9 +278,7 @@ class ChipPreprocessedTest(absltest.TestCase):
             dtype=np.uint64,
         )
         want = np.roll(base, 1) + np.roll(base, 2)
-        self.assertTrue(
-            bool(fnp.array_equal(prep[:, 1], fnp.array(want, dtype=F)))
-        )
+        self.assertTrue(bool(fnp.array_equal(prep[:, 1], fnp.array(want, dtype=F))))
 
     def test_full_trace_prepends_the_prefix(self) -> None:
         chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1))
@@ -314,6 +313,17 @@ class ChipPreprocessedTest(absltest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "full height"):
             full_trace(chip, main, air=_AIR, root=self.key)
+
+    def test_full_trace_rejects_an_already_combined_row(self) -> None:
+        """Width is the axis that fails quietly. Prefixing a combined row a
+        second time yields a trace an exported fn still slices in range, so it
+        would evaluate and disagree rather than raise — measured on `arith_eq`,
+        where a 45-wide trace against its 46 returns different violations.
+        """
+        chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1))
+        combined = fnp.array(np.zeros((_N, chip.num_cols), dtype=np.uint64), dtype=F)
+        with self.assertRaisesRegex(ValueError, "columns wide"):
+            full_trace(chip, combined, air=_AIR, root=self.key)
 
 
 if __name__ == "__main__":

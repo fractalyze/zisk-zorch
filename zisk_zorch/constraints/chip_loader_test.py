@@ -21,9 +21,8 @@ frx.config.update("jax_enable_x64", True)
 import frx.numpy as fnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
-from zk_dtypes import goldilocks  # noqa: E402
-
 from rw_constraints import PreprocessedColumn  # noqa: E402
+from zk_dtypes import goldilocks  # noqa: E402
 
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
 
@@ -104,6 +103,38 @@ class ChipLoaderTest(absltest.TestCase):
         for name, chip in self.chips.items():
             with self.subTest(chip=name):
                 self.assertEqual(chip.preprocessed_cols, expected.get(name, []))
+
+    def test_the_clk0_prefix_reaches_a_gated_chips_constraints(self) -> None:
+        """What Phase C actually bought: `arith_eq`'s constraint fns *read* the
+        fixed column, not merely accept a wider trace.
+
+        Flipping CLK_0 alone — same main columns — has to move the violations,
+        or the prefix is being carried and ignored, which is the shape a
+        silently-dropped preprocessed column takes. The values here are
+        synthetic (the real ones are the proving key's, and no ZisK key is
+        checked in), which is enough: liveness is a question about the
+        constraints, not about the key.
+        """
+        chip = self.chips["arith_eq"]
+        rows = 16
+        rng = np.random.default_rng(0)
+        main = rng.integers(0, 2, size=(rows, chip.num_main_cols), dtype=np.uint64)
+        gated = np.zeros((rows, 1), dtype=np.uint64)
+        gated[0, 0] = 1  # the operation's first row, which is what CLK_0 marks
+
+        def violations(prefix: np.ndarray) -> np.ndarray:
+            trace = np.concatenate([prefix, main], axis=1)
+            evaluated = chip.eval_constraints(fnp.asarray(trace, dtype=goldilocks))
+            return np.asarray(evaluated.view(fnp.uint64))
+
+        on, off = violations(gated), violations(np.zeros_like(gated))
+        self.assertEqual(on.shape[0], rows)
+        self.assertFalse(np.array_equal(on, off))
+        # Exactly two rows may move: the gated row itself, and the last row,
+        # whose transition constraint reads the next row cyclically and so
+        # sees row 0. A diff on any other row would mean the prefix shifted
+        # the main columns rather than gating anything.
+        self.assertEqual(set(np.argwhere(on != off)[:, 0].tolist()), {0, rows - 1})
 
     def test_chip_name_filter_is_applied(self) -> None:
         only = load_zisk_chips(chip_names=["arith"])
