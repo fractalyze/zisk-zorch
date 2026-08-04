@@ -17,8 +17,9 @@ the values and the on-disk byte order, since the reader only ever parses what
 
 The same fixture serves both halves. It is a real pil2 `constPolsMap`, so it
 carries the naming split the join turns on — `SpecifiedRanges.OPID` authored and
-qualified, `__L1__` synthesized and bare — even though the chip declaring those
-columns has to be a stand-in until a ZisK schema declares one.
+qualified, `__L1__` synthesized and bare — with a stand-in chip, since no ZisK
+chip is defined over this key. `RealProvingKeyTest` closes that last gap when a
+ZisK key is on hand.
 
 There is deliberately no LDE assertion here. `extend`'s agreement with pil2's
 `extendPol` is already byte-matched against a pil2-derived golden in
@@ -30,6 +31,7 @@ function twice and needed a prover dump to do it.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tempfile
 from types import SimpleNamespace
@@ -174,8 +176,8 @@ class ChipPreprocessedTest(absltest.TestCase):
     The rule under test is that pil2 qualifies an authored const pol with its
     AIR where rw's schema name is bare. `SpecifiedRanges` exercises it for real
     — `OPID` / `VALS` are authored and dotted, `__L1__` is pil2's own and bare —
-    but on a fixture chip, since the first genuine case is a ZisK schema that
-    does not exist yet.
+    on a stand-in chip. `RealProvingKeyTest` runs the same join against a ZisK
+    key's `ArithEq.CLK_0`.
     """
 
     def setUp(self) -> None:
@@ -324,6 +326,82 @@ class ChipPreprocessedTest(absltest.TestCase):
         combined = fnp.array(np.zeros((_N, chip.num_cols), dtype=np.uint64), dtype=F)
         with self.assertRaisesRegex(ValueError, "columns wide"):
             full_trace(chip, combined, air=_AIR, root=self.key)
+
+
+# `$ZISK_PROVING_KEY`, the same variable `load_preprocessed` defaults from. No
+# ZisK key is checked in — it is a multi-GB download — so this is the one place
+# the contract can be checked against the real thing when a key is at hand.
+_ZISK_KEY = (
+    pathlib.Path(os.environ["ZISK_PROVING_KEY"])
+    if os.environ.get("ZISK_PROVING_KEY")
+    else None
+)
+
+
+@absltest.skipUnless(
+    _ZISK_KEY is not None and _ZISK_KEY.is_dir(),
+    "set ZISK_PROVING_KEY to a ZisK provingKey .../Zisk/airs directory",
+)
+class RealProvingKeyTest(absltest.TestCase):
+    """The join and the reader against a real ZisK key, not the fixture.
+
+    Everything else in this file proves the code is self-consistent. This is
+    what proves it agrees with pil2.
+    """
+
+    # rw chip name -> (pil2 air, rows one operation occupies). The periods are
+    # the schemas' own CLOCKS; only arith_eq's divides a power-of-two height.
+    _GATED = (
+        ("arith_eq", "ArithEq", 16),
+        ("arith_eq_384", "ArithEq384", 24),
+        ("keccak", "Keccakf", 25),
+        ("sha256", "Sha256f", 72),
+    )
+
+    def _clk0(self, air: str) -> np.ndarray:
+        chip = _chip(PreprocessedColumn(name="CLK_0", index=0, width=1))
+        values = load_chip_preprocessed(chip, air, root=_ZISK_KEY)
+        assert values is not None
+        return np.asarray(values.view(fnp.uint64)).reshape(-1)
+
+    def test_the_join_resolves_clk0_on_every_gated_air(self) -> None:
+        """`CLK_0` is bare in rw's schema and AIR-qualified in the key, so this
+        fails outright if the prefix rule is wrong — there is no near-miss."""
+        for _, air, period in self._GATED:
+            with self.subTest(air=air):
+                clk0 = self._clk0(air)
+                self.assertEqual(set(np.unique(clk0).tolist()), {0, 1})
+                # Row-major decoding is what puts the ones on the period; a
+                # column-major misread of the same bytes would not.
+                self.assertEqual(
+                    np.flatnonzero(clk0)[:3].tolist(), [0, period, 2 * period]
+                )
+                self.assertTrue(np.all(np.flatnonzero(clk0) % period == 0))
+
+    def test_recomputing_the_period_would_not_reproduce_the_key(self) -> None:
+        """Why the values are read rather than generated (#115 rejected
+        recomputation as inventing a second authority for a fixed column).
+
+        The key's column is the naive `r % period == 0` *minus a tail*: where
+        the period does not divide the height the last operation cannot be
+        whole, and the key drops those clock starts. rw's own producer fills
+        `r % period == 0` for every row, so the two agree only on `arith_eq`.
+        A generated column would be wrong on those rows — silently, since it is
+        the right dtype and shape.
+        """
+        for name, air, period in self._GATED:
+            with self.subTest(air=air):
+                clk0 = self._clk0(air)
+                naive = np.zeros_like(clk0)
+                naive[::period] = 1
+                # The key never sets a row the formula does not.
+                self.assertTrue(np.all(clk0 <= naive))
+                divides = len(clk0) % period == 0
+                self.assertEqual(name == "arith_eq", divides)
+                if divides:
+                    self.assertTrue(np.array_equal(clk0, naive))
+                else:
+                    self.assertLess(int(clk0.sum()), int(naive.sum()))
 
 
 if __name__ == "__main__":
