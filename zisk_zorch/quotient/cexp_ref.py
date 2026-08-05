@@ -51,7 +51,7 @@ def _load_inputs(case: dict) -> dict:
         "challenges": challenges,
         "airvalues": airvalues,
         "airgroupvalues": airgroupvalues,
-        "zi": embed(case["zi"]),
+        "zi": {0: embed(case["zi"])},
     }
 
 
@@ -72,14 +72,23 @@ def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int) -> Array:
         return env["airvalues"][s["id"]]
     if t == "airgroupvalue":
         return env["airgroupvalues"][s["id"]]
+    if t == "public":
+        return env["publics"][s["id"]]
+    if t == "proofvalue":
+        return env["proofvalues"][s["id"]]
+    if t == "custom":
+        return fnp.roll(
+            env["custom"][(s.get("commitId", 0), s["id"])],
+            -(s.get("prime", 0) * extend),
+        )
     if t == "tmp":
         return tmp[s["id"]]
     if t == "Zi":
-        return env["zi"]
+        return env["zi"][s.get("boundaryId", 0)]
     raise ValueError(f"unhandled cExp operand type {t!r}")
 
 
-def _run_block(code: list[dict], env: dict, extend: int) -> Array:
+def run_block(code: list[dict], env: dict, extend: int) -> Array:
     """Interpret one straight-line SSA block — pil2's full composite `cExp` or a
     single `constraints[]` body — over `F3`, returning the value its final op
     writes (the `q` dest for the composite; the last tmp for a lone constraint)."""
@@ -116,7 +125,7 @@ def evaluate(fragment: dict, case: dict) -> Array:
     cExp fragment (`code` + maps); `case` carries the synthetic inputs and shape."""
     n_bits, blowup_bits = case["n_bits"], case["blowup_bits"]
     env = _load_inputs(case)
-    q = _run_block(fragment["code"], env, 1 << blowup_bits)
+    q = run_block(fragment["code"], env, 1 << blowup_bits)
     return fnp.broadcast_to(q, (1 << (n_bits + blowup_bits),))
 
 
@@ -134,7 +143,7 @@ def evaluate_from_constraints(constraints: list[dict], case: dict) -> Array:
     env = _load_inputs(case)
     if any(c["boundary"] != "everyRow" for c in constraints):
         raise NotImplementedError("only everyRow-boundary constraints are folded today")
-    cols = [_run_block(c["code"], env, extend) for c in constraints]
+    cols = [run_block(c["code"], env, extend) for c in constraints]
     vc = env["challenges"][2]
     composite = cols[0]
     for col in cols[1:]:

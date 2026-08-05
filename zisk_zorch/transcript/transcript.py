@@ -35,6 +35,10 @@ _HASH_FAMILY_PERMS = {
 }
 DEFAULT_HASH_FAMILY = "Poseidon2"
 
+# A transcript digest is the flushed state's first four elements — pil2's
+# `HASH_SIZE`, independent of the transcript width.
+DIGEST = 4
+
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
 CHALLENGE_LIMBS = 3
 # get_permutations packs 63 usable bits per squeezed element (canonical u64
@@ -124,6 +128,30 @@ class Transcript:
                     cur_field += 1
             out[i] = acc
         return out
+
+
+def transcript_hash(
+    values: Array, width: int = 12, hash_family: str = DEFAULT_HASH_FAMILY
+) -> Array:
+    """pil2 ``calculateHash``: a fresh transcript absorbs the buffer and its
+    flushed state's first four elements are the digest."""
+    t = Transcript(width, hash_family)
+    t.put(values)
+    return t.get_state()[:DIGEST]
+
+
+def absorb_section(transcript: Transcript, values: Array, *, hashed: bool) -> None:
+    """Absorb a proof section — its raw limbs, or its `transcript_hash`
+    digest under a ``hashCommits`` stark struct. One definition, so the
+    prover, the schedule replay, and the query phase cannot disagree on
+    which form a section enters the stream in. The inner hash runs the
+    parent transcript's own family."""
+    if hashed:
+        transcript.put(
+            transcript_hash(values, transcript.width, transcript._hash_family)
+        )
+    else:
+        transcript.put(values)
 
 
 def _transcript_flatten(t: Transcript) -> tuple[tuple, tuple]:

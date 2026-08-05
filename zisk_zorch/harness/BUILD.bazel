@@ -1,0 +1,117 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# pil2's value-packing and buffer-layout conventions — one home below the
+# harness's loader, replay, and roles, so the packing cannot drift between
+# the pil2-mode prover and the byte-gates' reference reads.
+py_library(
+    name = "pil2",
+    srcs = [
+        "__init__.py",
+        "pil2.py",
+    ],
+    deps = [
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+        requirement("pyzorch"),
+    ],
+)
+
+# The pil2-mode prover: the byte-match harness's composite and its claim
+# types — conformance tooling, never a production role, which is why it
+# lives here and not in the stage packages.
+py_library(
+    name = "pil2_prover",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["pil2_prover.py"],
+    deps = [
+        "//zisk_zorch/logup",
+        ":pil2",
+        "//zisk_zorch:golden",
+        "//zisk_zorch:types",
+        "//zisk_zorch/commit:openings",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/fri:prover",
+        "//zisk_zorch/fri:queries",
+        "//zisk_zorch/quotient",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# Loader for a PIL2_DUMP_DIR capture bundle: file naming, npy decoding, limb
+# layout, and the pil2 packing conventions delegated to :pil2.
+py_library(
+    name = "capture",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["capture.py"],
+    deps = [
+        ":pil2",
+        ":pil2_prover",
+        "//zisk_zorch/quotient",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# genProof's Fiat-Shamir schedule, replayable against a capture bundle.
+py_library(
+    name = "schedule",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["schedule.py"],
+    deps = [
+        ":capture",
+        ":pil2",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/fri:seam",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# The per-stage byte-gates: production path on the capture's dumped inputs
+# vs its dumped section, one gate per stage in proof order.
+py_library(
+    name = "gates",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["gates.py"],
+    deps = [
+        "//zisk_zorch/logup",
+        ":capture",
+        ":schedule",
+        "//zisk_zorch/commit:trace_commit",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/fri:fold",
+        "//zisk_zorch/quotient",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+# Skips loudly without a ZISK_PIL2_CAPTURE bundle: the reference is a
+# host-provided native artifact, so CI (no capture) skips and provisioned
+# hosts run the gates for real.
+py_test(
+    name = "gates_test",
+    size = "large",
+    srcs = ["gates_test.py"],
+    env_inherit = ["ZISK_PIL2_CAPTURE"],
+    deps = [
+        ":capture",
+        ":gates",
+        requirement("absl_py"),
+    ],
+)
