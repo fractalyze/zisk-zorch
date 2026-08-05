@@ -78,7 +78,9 @@ def verify_transcript_schedule(cap: Capture) -> bool:
 
 def verify_trace_commit(cap: Capture) -> bool:
     """pil2 STEP_1: extend-and-merkelize the settled witness -> ``root1``."""
-    commitment = commit_trace(cap.trace, blowup=cap.stride, arity=cap.arity)
+    commitment = commit_trace(
+        cap.trace, blowup=cap.stride, arity=cap.arity, hash_family=cap.hash_family
+    )
     got = np.asarray(commitment.root).astype(np.uint64)
     return _check(
         np.array_equal(got, cap.u64("root1")), "stage-1 commit root (real witness)"
@@ -124,7 +126,9 @@ def verify_logup_commit(cap: Capture) -> bool | None:
     if not cap.cm2_cols or not cap.path("cm2_base").exists():
         return None
     cm2_base = fnp.array(cap.u64("cm2_base").astype(F).reshape(cap.n, cap.cm2_cols))
-    commitment = commit_trace(cm2_base, blowup=cap.stride, arity=cap.arity)
+    commitment = commit_trace(
+        cm2_base, blowup=cap.stride, arity=cap.arity, hash_family=cap.hash_family
+    )
     ok = _check(
         np.array_equal(
             np.asarray(commitment.extended).astype(np.uint64).reshape(-1),

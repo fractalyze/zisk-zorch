@@ -52,6 +52,9 @@ class Pil2Key:
     const_base: np.ndarray
     const_ext: np.ndarray
     custom_ext: dict[int, np.ndarray]
+    # `pilout.globalInfo.json`'s `hash` — the sponge every tree, transcript,
+    # and grind of this key runs ("Poseidon1" on native ZisK keys).
+    hash_family: str = "Poseidon2"
 
 
 def to_field(words) -> Array:

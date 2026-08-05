@@ -75,16 +75,19 @@ def main() -> int:
     ), "schedule replay must be green before the serializer can be judged"
     nonce = int(native[-1])
     pow_bits = ss["powBits"]
-    assert grind_is_valid(fnp.array(seed.astype(np.uint64), dtype=F), nonce, pow_bits)
+    assert grind_is_valid(
+        fnp.array(seed.astype(np.uint64), dtype=F), nonce, pow_bits, cap.hash_family
+    )
     positions = query_positions_for(
         fnp.array(seed.astype(np.uint64), dtype=F),
         transcript_width(ss),
         nonce,
         n_queries=ss["nQueries"],
         n_bits_ext=nbe,
+        hash_family=cap.hash_family,
     )
 
-    mt = merkle_tree(arity)
+    mt = merkle_tree(arity, cap.hash_family)
 
     def committed(section: str, cols: int) -> TreeOpening:
         matrix = fnp.array(cap.u64(section).astype(F).reshape(1 << nbe, cols))
