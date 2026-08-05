@@ -200,6 +200,7 @@ class LogUpWitnessProver(
     def __init__(self, key: Pil2Key) -> None:
         si, ss = key.starkinfo, key.starkinfo["starkStruct"]
         self._key = key
+        self._family = key.hash_family
         self._n = 1 << ss["nBits"]
         self._blowup = 1 << (ss["nBitsExt"] - ss["nBits"])
         self._arity = ss["merkleTreeArity"]
@@ -277,7 +278,9 @@ class LogUpWitnessProver(
         matrix, gsum_result = self._logup_jit(env)
         airgroupvalues = {hint_value(self._gsum_hint, "result")["id"]: gsum_result}
         assert matrix.shape[1] == si["mapSectionsN"]["cm2"], "cm2 width mismatch"
-        commitment = commit_trace(matrix, blowup=self._blowup, arity=self._arity)
+        commitment = commit_trace(
+            matrix, blowup=self._blowup, arity=self._arity, hash_family=self._family
+        )
         transcript.put(commitment.root)
         absorb_stage2_airvalues(transcript, claim.pil2.airvalues, si["airValuesMap"])
         return ProveResult(
@@ -317,6 +320,7 @@ class Pil2QuotientProver(
     def __init__(self, key: Pil2Key) -> None:
         si, ss = key.starkinfo, key.starkinfo["starkStruct"]
         self._key = key
+        self._family = key.hash_family
         self._si = si
         self._nb = ss["nBits"]
         self._blowup_bits = ss["nBitsExt"] - ss["nBits"]
@@ -367,7 +371,7 @@ class Pil2QuotientProver(
         }
         quotient = self._q_jit(env)
         matrix = split_coeffs(quotient)
-        root, layers = merkle_tree(self._arity).commit(matrix)
+        root, layers = merkle_tree(self._arity, self._family).commit(matrix)
         transcript.put(root)
         return ProveResult(
             Pil2QuotientBoundClaim(
@@ -412,6 +416,7 @@ class Pil2OpeningProver(
     def __init__(self, key: Pil2Key) -> None:
         si, ss = key.starkinfo, key.starkinfo["starkStruct"]
         self._key = key
+        self._family = key.hash_family
         self._si = si
         self._nb, self._nbe = ss["nBits"], ss["nBitsExt"]
         self._steps = [s["nBits"] for s in ss["steps"]]
@@ -435,7 +440,10 @@ class Pil2OpeningProver(
         the pil2 composite absorbs no root for it (the global challenge
         arrives already bound to it)."""
         return commit_trace(
-            witness.trace, blowup=1 << (self._nbe - self._nb), arity=self._arity
+            witness.trace,
+            blowup=1 << (self._nbe - self._nb),
+            arity=self._arity,
+            hash_family=self._family,
         )
 
     def prove(
@@ -480,7 +488,11 @@ class Pil2OpeningProver(
         fri_pol = self._deep_jit(columns, evals, domain, xi, vf1, vf2)
 
         fri, fri_layers = prove(
-            fri_pol, self._steps, arity=self._arity, transcript=transcript
+            fri_pol,
+            self._steps,
+            arity=self._arity,
+            transcript=transcript,
+            hash_family=self._family,
         )
         positions, nonce = sample_query_positions(
             transcript,
@@ -494,7 +506,7 @@ class Pil2OpeningProver(
         trace_batched = frx.vmap(
             partial(
                 group_proof,
-                merkle_tree(self._arity),
+                merkle_tree(self._arity, self._family),
                 witness.trace_commit.extended,
                 witness.trace_commit.digest_layers,
             )
@@ -502,7 +514,7 @@ class Pil2OpeningProver(
         quotient_batched = frx.vmap(
             partial(
                 group_proof,
-                merkle_tree(self._arity),
+                merkle_tree(self._arity, self._family),
                 witness.quotient.matrix,
                 witness.quotient.layers,
             )

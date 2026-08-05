@@ -165,7 +165,7 @@ def verify_composed_prove(cap: Capture, max_stage: int) -> bool:
     prover = Pil2InnerProver(cap.pil2_key)
     ss = cap.si["starkStruct"]
     width = transcript_width(ss)
-    transcript = Transcript(width)
+    transcript = Transcript(width, cap.hash_family)
     checks = stage_checks(cap, width)
     ok, ran = True, 0
     with frx.default_device(frx.devices("cpu")[0]):

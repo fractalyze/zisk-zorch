@@ -52,6 +52,26 @@ def limbs(x) -> np.ndarray:
     return np.asarray(split_coeffs(x)).reshape(-1)
 
 
+def untile_gpu(flat: np.ndarray, rows: int, cols: int) -> np.ndarray:
+    """A GPU-dumped matrix section -> row-major ``(rows, cols)``.
+
+    ``genProof_gpu`` dumps matrix buffers in the prover's storage format
+    (pil2-stark ``goldilocks_trace_layout.cuh``): column-major tiles of
+    256 rows x 4 cols, the last column group narrowed to ``cols % 4``.
+    Row-major buffers (the FRI polynomial chain, 1-D sections) pass through
+    the plain path — this is only for the committed/tree-source sections."""
+    assert flat.size == rows * cols, (flat.size, rows, cols)
+    assert rows % 256 == 0, rows
+    out = np.empty((rows, cols), dtype=flat.dtype)
+    base = 0
+    for g in range((cols + 3) // 4):
+        ncb = min(cols - 4 * g, 4)
+        block = flat[base : base + rows * ncb].reshape(rows // 256, ncb, 256)
+        out[:, 4 * g : 4 * g + ncb] = block.transpose(0, 2, 1).reshape(rows, ncb)
+        base += rows * ncb
+    return out
+
+
 class Capture:
     """One dumped AIR instance: starkinfo/expressionsinfo shape metadata plus
     lazy, cached readers for the per-stage ``<instance>_<name>.npy`` sections."""
@@ -76,6 +96,39 @@ class Capture:
         self.cm2_cols = self.si["mapSectionsN"].get("cm2", 0)
         self.n_customs = len(self.si.get("customCommits", []))
         self._sections: dict[str, np.ndarray] = {}
+        # A genProof_gpu capture (detectable by its missing per-stage root
+        # sections) stores matrix sections in the prover's column-major tile
+        # layout and its roots inside the pinned staging `proof` buffer; a
+        # CPU capture is row-major with one file per root.
+        self.gpu_dump = not self.path("root1").exists()
+        q_name = "cm" + str(self.si["nStages"] + 1)
+        self._matrix_shapes = {
+            "trace": (self.n, self.n_cols),
+            "trace_post": (self.n, self.n_cols),
+            "cm1_ext": (self.ne, self.n_cols),
+            "cm2_base": (self.n, self.cm2_cols),
+            "cm2_ext": (self.ne, self.cm2_cols),
+            "q_ext": (self.ne, self.si["qDim"]),
+            "quotient_cm": (self.ne, self.si["mapSectionsN"][q_name]),
+            "const_ext": (self.ne, self.si["nConstants"]),
+        }
+        for ci, c in enumerate(self.si.get("customCommits", [])):
+            self._matrix_shapes[f"custom{ci}_ext"] = (
+                self.ne,
+                self.si["mapSectionsN"][c["name"] + "0"],
+            )
+
+    @cached_property
+    def hash_family(self) -> str:
+        """The key's Poseidon family — `pilout.globalInfo.json` (at the key
+        root above the starkinfo) says `"hash": "Poseidon1"` on the ziskup
+        key; the example keys are Poseidon2."""
+        for parent in self.starkinfo_path.parents:
+            gi = parent / "pilout.globalInfo.json"
+            if gi.exists():
+                fam = json.loads(gi.read_text()).get("hash")
+                return fam if fam in ("Poseidon1", "Poseidon2") else "Poseidon2"
+        return "Poseidon2"
 
     # -- dumped sections ----------------------------------------------------
 
@@ -85,12 +138,34 @@ class Capture:
     def u64(self, name: str) -> np.ndarray:
         """A dumped section's u64 words, loaded once — several gates read the
         same multi-hundred-MB sections, so uncached reloads dominate a run's
-        I/O at real scale."""
+        I/O at real scale. pil2's lazily-reduced arithmetic can leave +P
+        residues in dumped sections, which `astype(F)` would ingest as raw
+        non-canonical lanes — canonicalize on read; a canonical dump is
+        unchanged."""
         if name not in self._sections:
+            if self.gpu_dump and name in ("root1", "root2", "rootQ"):
+                self._sections[name] = self._staged_root(name)
+                return self._sections[name]
             arr = np.load(self.path(name))
             assert arr.dtype == np.uint64, f"{name}: expected u64 dump, got {arr.dtype}"
-            self._sections[name] = arr
+            if self.gpu_dump and name in self._matrix_shapes:
+                arr = untile_gpu(arr, *self._matrix_shapes[name]).reshape(-1)
+            p = np.uint64(P)
+            self._sections[name] = np.where(arr >= p, arr - p, arr)
         return self._sections[name]
+
+    def _staged_root(self, name: str) -> np.ndarray:
+        """Roots from the pinned staging buffer `setProof` fills: per stage
+        1..nStages+1, [root (4 words)] then the arity**llv last-level digests
+        when lastLevelVerification is on."""
+        ss = self.si["starkStruct"]
+        llv = ss.get("lastLevelVerification", 0)
+        per = 4 + ((self.arity**llv) * 4 if llv else 0)
+        i = {"root1": 0, "root2": 1, "rootQ": self.si["nStages"]}[name]
+        staged = np.load(self.path("proof"))
+        root = staged[i * per : i * per + 4]
+        p = np.uint64(P)
+        return np.where(root >= p, root - p, root)
 
     @cached_property
     def expressionsinfo(self) -> dict:
@@ -190,6 +265,7 @@ class Capture:
             const_base=self.const_base.astype(F),
             const_ext=self.bufs[("const", 0)],
             custom_ext={ci: self.bufs[("custom", ci)] for ci in range(self.n_customs)},
+            hash_family=self.hash_family,
         )
 
     def pil2_claim(self) -> Pil2Claim:

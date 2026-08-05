@@ -37,7 +37,7 @@ def _fri_layer_root(cap, code, layer_words: np.ndarray):
     from zorch.pcs.fold import to_base_field
 
     leaves = to_base_field(code.group_leaves(cubic(layer_words)))
-    root, _ = merkle_tree(cap.arity).commit(leaves)
+    root, _ = merkle_tree(cap.arity, cap.hash_family).commit(leaves)
     return root
 
 
@@ -60,7 +60,7 @@ def replay_challenges(cap) -> Iterator[tuple[str, np.ndarray, np.ndarray]]:
             name = cap.si["challengesMap"][i].get("name", str(i))
             yield f"challenge {name} (stage {stage})", got, want[i]
 
-    t = Transcript(width)
+    t = Transcript(width, cap.hash_family)
     # No root1 absorb: the contributions phase derives the global challenge
     # from every instance's stage-1 root, so the transcript arrives already
     # bound to it (root1 rides inside the seed, not the schedule).
