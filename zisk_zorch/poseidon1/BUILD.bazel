@@ -30,3 +30,22 @@ py_test(
         requirement("absl_py"),
     ],
 )
+
+py_library(
+    name = "goldilocks_host",
+    srcs = ["goldilocks_host.py"],
+    data = ["goldilocks_constants.json"],
+    visibility = ["//visibility:public"],
+    deps = [requirement("numpy")],
+)
+
+py_test(
+    name = "goldilocks_host_test",
+    size = "medium",
+    srcs = ["goldilocks_host_test.py"],
+    data = glob(["testdata/golden/**"]),
+    deps = [
+        ":goldilocks_host",
+        requirement("absl_py"),
+    ],
+)
