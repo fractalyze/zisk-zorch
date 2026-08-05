@@ -2,9 +2,10 @@
 """Preprocessed columns — the key reader, and the join onto a chip's index space.
 
 The `.const` input is built by `const_fixture` rather than committed, so the
-fixture is readable code instead of an opaque 6 KB blob. Not a ZisK AIR — none
-commits a fixed column yet (riscv-witness#2189) and no ZisK key is checked in —
-but `.const` is pil2-stark's format, not a per-key one.
+fixture is readable code instead of an opaque 6 KB blob. Not a ZisK AIR — no
+ZisK proving key is checked in, and the four chips that now declare `CLK_0`
+(riscv-witness#2189 Phase C) draw its values from one — but `.const` is
+pil2-stark's format, not a per-key one.
 
 `__L1__` decoding as the row-0 Lagrange basis pins the reader's canonical,
 row-major reading of what it is handed.
@@ -16,8 +17,9 @@ the values and the on-disk byte order, since the reader only ever parses what
 
 The same fixture serves both halves. It is a real pil2 `constPolsMap`, so it
 carries the naming split the join turns on — `SpecifiedRanges.OPID` authored and
-qualified, `__L1__` synthesized and bare — even though the chip declaring those
-columns has to be a stand-in until a ZisK schema declares one.
+qualified, `__L1__` synthesized and bare — with a stand-in chip, since no ZisK
+chip is defined over this key. `RealProvingKeyTest` closes that last gap when a
+ZisK key is on hand.
 
 There is deliberately no LDE assertion here. `extend`'s agreement with pil2's
 `extendPol` is already byte-matched against a pil2-derived golden in
@@ -29,6 +31,7 @@ function twice and needed a prover dump to do it.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tempfile
 from types import SimpleNamespace
@@ -151,9 +154,9 @@ def _chip(
     num_main_cols: int = 4,
     name: str = "arith_eq",
 ) -> SimpleNamespace:
-    """The four `Chip` attributes the join reads. Standing in for a real chip
-    because no ZisK chip declares a fixed column yet (riscv-witness#2189 Phase
-    C) — the rw-side shape is `PreprocessedColumn`, which is the real class.
+    """The four `Chip` attributes the join reads. A stand-in because the key
+    here is fibonacci-square's, which no ZisK chip is defined over — the
+    rw-side shape is `PreprocessedColumn`, which is the real class.
 
     `n_prep` overrides the width `num_cols` implies, for the disagreement case.
     """
@@ -173,8 +176,8 @@ class ChipPreprocessedTest(absltest.TestCase):
     The rule under test is that pil2 qualifies an authored const pol with its
     AIR where rw's schema name is bare. `SpecifiedRanges` exercises it for real
     — `OPID` / `VALS` are authored and dotted, `__L1__` is pil2's own and bare —
-    but on a fixture chip, since the first genuine case is a ZisK schema that
-    does not exist yet.
+    on a stand-in chip. `RealProvingKeyTest` runs the same join against a ZisK
+    key's `ArithEq.CLK_0`.
     """
 
     def setUp(self) -> None:
@@ -277,9 +280,7 @@ class ChipPreprocessedTest(absltest.TestCase):
             dtype=np.uint64,
         )
         want = np.roll(base, 1) + np.roll(base, 2)
-        self.assertTrue(
-            bool(fnp.array_equal(prep[:, 1], fnp.array(want, dtype=F)))
-        )
+        self.assertTrue(bool(fnp.array_equal(prep[:, 1], fnp.array(want, dtype=F))))
 
     def test_full_trace_prepends_the_prefix(self) -> None:
         chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1))
@@ -314,6 +315,138 @@ class ChipPreprocessedTest(absltest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "full height"):
             full_trace(chip, main, air=_AIR, root=self.key)
+
+    def test_full_trace_rejects_an_already_combined_row(self) -> None:
+        """Width is the axis that fails quietly. Prefixing a combined row a
+        second time yields a trace an exported fn still slices in range, so it
+        would evaluate and disagree rather than raise — measured on `arith_eq`,
+        where a 45-wide trace against its 46 returns different violations.
+        """
+        chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1))
+        combined = fnp.array(np.zeros((_N, chip.num_cols), dtype=np.uint64), dtype=F)
+        with self.assertRaisesRegex(ValueError, "columns wide"):
+            full_trace(chip, combined, air=_AIR, root=self.key)
+
+
+# `$ZISK_PROVING_KEY`, the same variable `load_preprocessed` defaults from. No
+# ZisK key is checked in — it is a multi-GB download — so this is the one place
+# the contract can be checked against the real thing when a key is at hand.
+_ZISK_KEY = (
+    pathlib.Path(os.environ["ZISK_PROVING_KEY"])
+    if os.environ.get("ZISK_PROVING_KEY")
+    else None
+)
+
+
+@absltest.skipUnless(
+    _ZISK_KEY is not None and _ZISK_KEY.is_dir(),
+    "set ZISK_PROVING_KEY to a ZisK provingKey .../Zisk/airs directory",
+)
+class RealProvingKeyTest(absltest.TestCase):
+    """The join and the reader against a real ZisK key, not the fixture.
+
+    Everything else in this file proves the code is self-consistent. This is
+    what proves it agrees with pil2.
+    """
+
+    # rw chip name -> (pil2 air, rows one operation occupies). The periods are
+    # the schemas' own CLOCKS; only arith_eq's divides a power-of-two height.
+    _GATED = (
+        ("arith_eq", "ArithEq", 16),
+        ("arith_eq_384", "ArithEq384", 24),
+        ("keccak", "Keccakf", 25),
+        ("sha256", "Sha256f", 72),
+    )
+
+    def _clk0(self, air: str) -> np.ndarray:
+        chip = _chip(PreprocessedColumn(name="CLK_0", index=0, width=1))
+        values = load_chip_preprocessed(chip, air, root=_ZISK_KEY)
+        assert values is not None
+        return np.asarray(values.view(fnp.uint64)).reshape(-1)
+
+    def test_the_join_resolves_clk0_on_every_gated_air(self) -> None:
+        """`CLK_0` is bare in rw's schema and AIR-qualified in the key, so this
+        fails outright if the prefix rule is wrong — there is no near-miss."""
+        for _, air, period in self._GATED:
+            with self.subTest(air=air):
+                clk0 = self._clk0(air)
+                self.assertEqual(set(np.unique(clk0).tolist()), {0, 1})
+                # Row-major decoding is what puts the ones on the period; a
+                # column-major misread of the same bytes would not.
+                self.assertEqual(
+                    np.flatnonzero(clk0)[:3].tolist(), [0, period, 2 * period]
+                )
+                self.assertTrue(np.all(np.flatnonzero(clk0) % period == 0))
+
+    def test_recomputing_the_period_would_not_reproduce_the_key(self) -> None:
+        """Why the values are read rather than generated (#115 rejected
+        recomputation as inventing a second authority for a fixed column).
+
+        The key's column is the naive `r % period == 0` *minus a tail*: where
+        the period does not divide the height the last operation cannot be
+        whole, and the key drops those clock starts. rw's own producer fills
+        `r % period == 0` for every row, so the two agree only on `arith_eq`.
+        A generated column would be wrong on those rows — silently, since it is
+        the right dtype and shape.
+        """
+        for name, air, period in self._GATED:
+            with self.subTest(air=air):
+                clk0 = self._clk0(air)
+                naive = np.zeros_like(clk0)
+                naive[::period] = 1
+                # The key never sets a row the formula does not.
+                self.assertTrue(np.all(clk0 <= naive))
+                divides = len(clk0) % period == 0
+                self.assertEqual(name == "arith_eq", divides)
+                if divides:
+                    self.assertTrue(np.array_equal(clk0, naive))
+                else:
+                    self.assertLess(int(clk0.sum()), int(naive.sum()))
+
+    def test_derived_gates_hold_their_defining_property_on_the_key(self) -> None:
+        """`DERIVED_PREPROCESSED` landed ahead of the wheel that declares these
+        columns, so nothing had checked its shifts against real values.
+
+        Each gate sums `CLK_0` over shifts `k_lo..k_hi`, and every range is
+        narrower than its period, so at most one clock start can fall in the
+        window: the gate is a 0/1 indicator of "this row sits `k_lo..k_hi` rows
+        into a real operation". Asserting that from the clock's own set
+        positions checks the shift direction and the range together — a forward
+        roll, or an off-by-one range, breaks it.
+        """
+        gates = (
+            ("ArithEq384", 24, "SEL_LATCH_GATE"),
+            ("ArithEq384", 24, "CLK_0_BACK_23"),
+            ("Keccakf", 25, "IN_USE_LATCHED"),
+            ("Sha256f", 72, "IN_USE_ACTIVE"),
+        )
+        for air, period, gate_name in gates:
+            with self.subTest(gate=gate_name):
+                base, k_lo, k_hi = DERIVED_PREPROCESSED[gate_name]
+                self.assertEqual(base, "CLK_0")
+                self.assertLess(k_hi, period, "a wider window would double-count")
+                chip = _chip(
+                    PreprocessedColumn(name="CLK_0", index=0, width=1),
+                    PreprocessedColumn(name=gate_name, index=1, width=1),
+                )
+                cols = load_chip_preprocessed(chip, air, root=_ZISK_KEY)
+                assert cols is not None
+                values = np.asarray(cols.view(fnp.uint64))
+                clk0, gate = values[:, 0], values[:, 1]
+
+                # Row-wise, not row-by-start: the pairwise form is O(N * ops),
+                # which is 45e9 cells on ArithEq384 and takes the box down.
+                # Each row's only candidate start is the multiple of the period
+                # at or below it, and the gate fires when that start is real and
+                # the row sits `k_lo..k_hi` past it.
+                rows = np.arange(len(clk0))
+                phase = rows % period
+                inside = (phase >= k_lo) & (phase <= k_hi) & (clk0[rows - phase] == 1)
+                self.assertTrue(np.array_equal(gate, inside.astype(gate.dtype)))
+                # The zeroed tail is what keeps the wrap clean: rolling a column
+                # whose last operation ran to the final row would carry starts
+                # back onto row 0's window.
+                self.assertEqual(gate[0], 0)
 
 
 if __name__ == "__main__":

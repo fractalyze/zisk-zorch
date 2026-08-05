@@ -63,8 +63,12 @@ py_test(
     srcs = ["chip_loader_test.py"],
     deps = [
         ":chip_loader",
+        # ZISK_CHIP_AIRS, which must cover the loaded chip set.
+        ":preprocessed",
         requirement("absl_py"),
         requirement("frx"),
         requirement("numpy"),
+        # `PreprocessedColumn` — the declared CLK_0 descriptors.
+        requirement("rw_constraints"),
     ],
 )

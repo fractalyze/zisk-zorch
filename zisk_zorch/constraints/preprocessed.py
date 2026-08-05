@@ -169,6 +169,15 @@ def full_trace(
     the air's full height, aligned at row 0 — exactly what a pil2 dump or a
     generated witness is. A chip with no fixed columns passes through.
     """
+    if main_trace.shape[1] != chip.num_main_cols:
+        # Width is the axis that fails quietly: an exported fn slicing a trace
+        # of the wrong width stays in range and returns a wrong answer instead
+        # of raising (`arith_eq` at 45 against its 46 evaluates and disagrees).
+        raise ValueError(
+            f"{chip.name}: main trace is {main_trace.shape[1]} columns wide, "
+            f"expected num_main_cols {chip.num_main_cols} — a combined row "
+            "passed in here would be prefixed a second time"
+        )
     prep = load_chip_preprocessed(
         chip, air if air is not None else ZISK_CHIP_AIRS[chip.name], root=root
     )
@@ -208,9 +217,7 @@ def load_chip_preprocessed(
     # column, so the key load is the union of the directly-declared names and
     # the derived columns' bases.
     key_backed = [n for n in names if n not in DERIVED_PREPROCESSED]
-    bases = [
-        DERIVED_PREPROCESSED[n][0] for n in names if n in DERIVED_PREPROCESSED
-    ]
+    bases = [DERIVED_PREPROCESSED[n][0] for n in names if n in DERIVED_PREPROCESSED]
     load_names = list(dict.fromkeys(key_backed + bases))
     loaded = load_preprocessed(
         air, root=root, columns=[_const_pol_name(air, n) for n in load_names]
