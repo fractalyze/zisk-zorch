@@ -1,0 +1,41 @@
+# rw-fixture-gen — the native-ZisK byte-parity oracle.
+# Drives native ZisK state machines to emit the trace-parity fixtures and
+# goldens consumed by riscv-witness's zisk trace-dump gates. Lives here (like
+# ../fixture-gen) with ZisK as a pinned dependency: a fractalyze/zisk rev on
+# the `rw/zisk-v1.0.0-alpha` line — upstream v1.0.0-alpha plus the targeted SM
+# re-exports and direct guests the oracle needs.
+[package]
+name = "rw-fixture-gen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "rw-fixture-gen"
+path = "src/main.rs"
+
+[dependencies]
+precomp-arith-eq = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+precomp-arith-eq-384 = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+precomp-keccakf = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+precomp-sha256f = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+sm-binary = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+sm-main = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+sm-arith = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+sm-mem = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+mem-common = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+zisk-common = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+zisk-core = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+data-bus = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+ziskemu = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+zisk-pil = { git = "https://github.com/fractalyze/zisk.git", rev = "a195d2fa67a61c2deb7362b9224f0a41b9bd0738" }
+proofman = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v1.0.0-alpha" }
+proofman-common = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v1.0.0-alpha" }
+pil-std-lib = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v1.0.0-alpha" }
+fields = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v1.0.0-alpha" }
+anyhow = "1.0"
+clap = { version = "4", features = ["derive", "env"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+sha2 = { version = "0.10.9", features = ["compress"] }
+flate2 = "1"
+byteorder = "1"
