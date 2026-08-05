@@ -10,6 +10,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//zisk_zorch/poseidon1:goldilocks",
         "//zisk_zorch/poseidon2:goldilocks",
         requirement("frx"),
         requirement("numpy"),

@@ -343,7 +343,7 @@ fn merkle_proof_cases(seed: u64) -> Value {
     json!({"cases": out})
 }
 
-fn transcript_case<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize>(seed: u64) -> Value {
+fn transcript_case<C: Hash<Goldilocks>, const W: usize>(seed: u64, hash_family: &str) -> Value {
     let mut state = seed;
     let mut t = Transcript::<Goldilocks, C>::new();
     let mut steps = Vec::new();
@@ -377,7 +377,7 @@ fn transcript_case<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize>(
     let st = t.get_state();
     steps.push(json!({"op": "get_state", "output": ser(&st)}));
 
-    json!({"width": W, "steps": steps})
+    json!({"width": W, "hash_family": hash_family, "steps": steps})
 }
 
 /// pil2-stark `extendPol`: INTT the evaluations, scale coefficient i by
@@ -1291,9 +1291,12 @@ fn main() {
         "zisk_zorch/transcript/testdata/golden/transcript.json",
         json!({
             "widths": [
-                transcript_case::<Poseidon2_8, 8>(0xD1),
-                transcript_case::<Poseidon2_12, 12>(0xD2),
-                transcript_case::<Poseidon2_16, 16>(0xD3),
+                transcript_case::<Poseidon2_8, 8>(0xD1, "Poseidon2"),
+                transcript_case::<Poseidon2_12, 12>(0xD2, "Poseidon2"),
+                transcript_case::<Poseidon2_16, 16>(0xD3, "Poseidon2"),
+                transcript_case::<Poseidon1_8, 8>(0xD4, "Poseidon1"),
+                transcript_case::<Poseidon1_12, 12>(0xD5, "Poseidon1"),
+                transcript_case::<Poseidon1_16, 16>(0xD6, "Poseidon1"),
             ]
         }),
     );
