@@ -74,6 +74,17 @@ class ChipLoaderTest(absltest.TestCase):
                 violations = chip.eval_constraints(trace)
                 self.assertEqual(violations.shape[0], 2)
 
+    def test_no_zisk_chip_declares_a_preprocessed_column_yet(self) -> None:
+        """A tripwire, not an invariant. riscv-witness#2189 Phase C gives
+        `arith_eq` the first one (`CLK_0`), and the wheel bump that carries it
+        should fail here — the prep trace has to be threaded into whatever
+        evaluates that chip, which nothing does yet. `load_chip_preprocessed` is
+        what supplies it.
+        """
+        for name, chip in self.chips.items():
+            with self.subTest(chip=name):
+                self.assertEqual(chip.preprocessed_cols, [])
+
     def test_chip_name_filter_is_applied(self) -> None:
         only = load_zisk_chips(chip_names=["arith"])
         self.assertEqual(frozenset(only), {"arith"})

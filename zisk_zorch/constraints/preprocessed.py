@@ -13,7 +13,8 @@ change has to surface as an error, not as a sheared trace.
 ``constPolsMap`` order is pil2's, not rw's preprocessed index space — pil2
 synthesizes selectors rw never authored (``__L1__``), and names authored pols
 ``<Air>.<NAME>`` against rw's bare ``<NAME>``. So ``values`` must not be passed
-to ``eval_pair_col`` as if rw-indexed; use ``columns=``.
+to ``eval_pair_col`` as if rw-indexed; :func:`load_chip_preprocessed` is what
+crosses the two index spaces.
 """
 
 from __future__ import annotations
@@ -22,12 +23,15 @@ import dataclasses
 import json
 import os
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
+
+if TYPE_CHECKING:
+    from rw_constraints import Chip
 
 # The ziskup proving key, same default as `scripts/extract_cexp.py`.
 _PROVING_KEY = Path(
@@ -111,3 +115,75 @@ def load_preprocessed(
         names = tuple(columns)
         selected = np.stack([raw[:, available.index(c)] for c in names], axis=1)
     return Preprocessed(values=fnp.array(selected, dtype=F), names=names)
+
+
+def load_chip_preprocessed(
+    chip: "Chip", air: str, root: Path | None = None
+) -> Array | None:
+    """The chip's fixed columns as a trace in **rw's** preprocessed index space.
+
+    This is the ``preprocessed`` argument of
+    :meth:`~zisk_zorch.logup.bus.LogUpBus.eval_pair_col`: column ``j`` is what a
+    term flagged ``is_preprocessed`` at index ``j`` reads. ``None`` when the chip
+    declares no fixed column — which is what that argument takes for a chip whose
+    terms never set the flag, so every ZisK chip today. Columns come back in
+    ``chip.preprocessed_cols`` order, which is where their names stay.
+
+    The two sides key the same column differently, and neither ordering can be
+    made to serve the other: rw's manifest identifies it by index into a space
+    its schema owns, pil2's key by name in ``constPolsMap``. ``air`` names the
+    pil2 AIR holding the values; it is not derivable from ``chip.name``, since
+    pil2's AIR names are the native ZisK ones rather than rw's chip names.
+    """
+    names = _preprocessed_names(chip)
+    if not names:
+        return None
+    columns = [_const_pol_name(air, name) for name in names]
+    return load_preprocessed(air, root=root, columns=columns).values
+
+
+def _preprocessed_names(chip: "Chip") -> tuple[str, ...]:
+    """The chip's ``{preprocessed}`` column names, ordered by rw's flat index.
+
+    The descriptors must tile ``[0, num_cols - num_main_cols)`` exactly. A gap
+    means a name is missing, and because the result is positional every later
+    column would then sit one slot off — a real fixed value under the wrong
+    index, which is the failure mode this whole path exists to prevent.
+    """
+    n_prep = chip.num_cols - chip.num_main_cols
+    names: list[str] = []
+    end = 0
+    for col in sorted(chip.preprocessed_cols, key=lambda c: c.index):
+        if col.index != end:
+            raise ValueError(
+                f"{chip.name}: preprocessed descriptors do not tile the index "
+                f"space — {col.name!r} starts at {col.index}, expected {end}"
+            )
+        if col.width != 1:
+            # How pil2 names a tensor const pol's elements is unpinned, and no
+            # ZisK schema declares one (this is SP1's `program_rom.pc`).
+            raise NotImplementedError(
+                f"{chip.name}: preprocessed column {col.name!r} spans "
+                f"{col.width} indices; pil2's per-element const-pol name is "
+                "unverified (fractalyze/zisk-zorch#115)"
+            )
+        names.append(col.name)
+        end += col.width
+    if end != n_prep:
+        raise ValueError(
+            f"{chip.name}: preprocessed descriptors cover {end} columns, but "
+            f"num_cols {chip.num_cols} - num_main_cols {chip.num_main_cols} "
+            f"= {n_prep}"
+        )
+    return tuple(names)
+
+
+def _const_pol_name(air: str, name: str) -> str:
+    """pil2's name for the const pol rw's schema calls ``name``.
+
+    pil2 qualifies an authored const pol with its AIR — ``SpecifiedRanges.OPID``,
+    and ZisK's own ``Main.SEGMENT_STEP`` — where rw's ``chip.col`` name is bare.
+    Its synthesized selectors (``__L1__``) are unqualified instead, but rw never
+    authored those and so never references one.
+    """
+    return f"{air}.{name}"

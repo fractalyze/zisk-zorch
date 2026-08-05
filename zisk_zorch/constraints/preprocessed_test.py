@@ -1,5 +1,5 @@
 # Copyright 2026 The zisk-zorch Authors. SPDX-License-Identifier: Apache-2.0
-"""Preprocessed-column reader, against fibonacci-square's `SpecifiedRanges` AIR.
+"""Preprocessed columns — the key reader, and the join onto a chip's index space.
 
 The `.const` input is built by `const_fixture` rather than committed, so the
 fixture is readable code instead of an opaque 6 KB blob. Not a ZisK AIR — none
@@ -13,6 +13,11 @@ What a generated input cannot pin is the correspondence to pil2 itself — both
 the values and the on-disk byte order, since the reader only ever parses what
 `const_fixture` wrote. Both belong to `scripts/extract_const_fixture.py
 --check`, which diffs the generated payload against a real pil2 bundle.
+
+The same fixture serves both halves. It is a real pil2 `constPolsMap`, so it
+carries the naming split the join turns on — `SpecifiedRanges.OPID` authored and
+qualified, `__L1__` synthesized and bare — even though the chip declaring those
+columns has to be a stand-in until a ZisK schema declares one.
 
 There is deliberately no LDE assertion here. `extend`'s agreement with pil2's
 `extendPol` is already byte-matched against a pil2-derived golden in
@@ -36,12 +41,14 @@ frx.config.update("jax_enable_x64", True)
 import frx.numpy as fnp  # noqa: E402
 import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
+from rw_constraints import PreprocessedColumn  # noqa: E402
 from zk_dtypes import goldilocks as F  # noqa: E402
 from zk_dtypes import goldilocksx3 as F3  # noqa: E402
 
 from zisk_zorch.constraints import const_fixture  # noqa: E402
 from zisk_zorch.constraints.preprocessed import (  # noqa: E402
     Preprocessed,
+    load_chip_preprocessed,
     load_preprocessed,
 )
 from zisk_zorch.logup.bus import LogUpBus  # noqa: E402
@@ -49,6 +56,9 @@ from zisk_zorch.logup.bus import LogUpBus  # noqa: E402
 _AIR = "SpecifiedRanges"
 _NAMES = const_fixture.COL_NAMES
 _N = const_fixture.N_ROWS
+# The fixture's two authored const pols, under the bare names an rw schema would
+# declare them with.
+_OPID, _VALS = "OPID", "VALS"
 
 
 def _key_root(tmp: pathlib.Path, const: bytes | None = None) -> pathlib.Path:
@@ -130,6 +140,119 @@ class PreprocessedTest(absltest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "preprocessed"):
             LogUpBus.eval_pair_col(vpc, main)
+
+
+def _chip(
+    *cols: PreprocessedColumn,
+    n_prep: int | None = None,
+    num_main_cols: int = 4,
+    name: str = "arith_eq",
+) -> SimpleNamespace:
+    """The four `Chip` attributes the join reads. Standing in for a real chip
+    because no ZisK chip declares a fixed column yet (riscv-witness#2189 Phase
+    C) — the rw-side shape is `PreprocessedColumn`, which is the real class.
+
+    `n_prep` overrides the width `num_cols` implies, for the disagreement case.
+    """
+    if n_prep is None:
+        n_prep = sum(c.width for c in cols)
+    return SimpleNamespace(
+        name=name,
+        preprocessed_cols=list(cols),
+        num_main_cols=num_main_cols,
+        num_cols=num_main_cols + n_prep,
+    )
+
+
+class ChipPreprocessedTest(absltest.TestCase):
+    """The join: rw's preprocessed index space against pil2's named const pols.
+
+    The rule under test is that pil2 qualifies an authored const pol with its
+    AIR where rw's schema name is bare. `SpecifiedRanges` exercises it for real
+    — `OPID` / `VALS` are authored and dotted, `__L1__` is pil2's own and bare —
+    but on a fixture chip, since the first genuine case is a ZisK schema that
+    does not exist yet.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.key = _key_root(pathlib.Path(self._tmp.name))
+
+    def test_a_chip_with_no_fixed_column_needs_no_key(self) -> None:
+        """Every ZisK chip today. The `None` is `eval_pair_col`'s own default,
+        and no key is read to produce it — hence the unreadable root."""
+        chip = _chip()
+        self.assertIsNone(load_chip_preprocessed(chip, _AIR, root=self.key / "nope"))
+
+    def test_columns_land_in_rw_index_order_not_constpolsmap_order(self) -> None:
+        """The two orders are independent, so the chip declares them reversed:
+        reading the key's order instead would swap the columns silently."""
+        chip = _chip(
+            PreprocessedColumn(name=_VALS, index=0, width=1),
+            PreprocessedColumn(name=_OPID, index=1, width=1),
+        )
+        key = load_preprocessed(_AIR, root=self.key)
+
+        prep = load_chip_preprocessed(chip, _AIR, root=self.key)
+
+        assert prep is not None  # a declared column means a trace, not `None`
+        self.assertEqual(prep.shape, (_N, 2))
+        self.assertTrue(
+            bool(fnp.array_equal(prep[:, 0], key.column(f"{_AIR}.{_VALS}")))
+        )
+        self.assertTrue(
+            bool(fnp.array_equal(prep[:, 1], key.column(f"{_AIR}.{_OPID}")))
+        )
+
+    def test_the_trace_reads_back_through_a_flagged_term(self) -> None:
+        """End to end: a term flagged at rw index 1 gets the column the chip
+        declared there, through the same path a bus denominator takes."""
+        chip = _chip(
+            PreprocessedColumn(name=_VALS, index=0, width=1),
+            PreprocessedColumn(name=_OPID, index=1, width=1),
+        )
+        prep = load_chip_preprocessed(chip, _AIR, root=self.key)
+        main = fnp.array(np.zeros((_N, chip.num_main_cols), dtype=np.uint64), dtype=F)
+        vpc = SimpleNamespace(
+            constant="0", column_weights=[(1, True, "1")], column_products=[]
+        )
+
+        got = LogUpBus.eval_pair_col(vpc, main, prep)
+
+        want = load_preprocessed(_AIR, root=self.key).column(f"{_AIR}.{_OPID}")
+        self.assertTrue(bool(fnp.array_equal(got, want.astype(F3))))
+
+    def test_a_name_the_key_does_not_carry_raises(self) -> None:
+        """The join is the unverified half of this contract, so a miss has to be
+        an error and not a fallback: `CLK_0` is what ZisK will declare first."""
+        chip = _chip(PreprocessedColumn(name="CLK_0", index=0, width=1))
+        with self.assertRaisesRegex(KeyError, "CLK_0"):
+            load_chip_preprocessed(chip, _AIR, root=self.key)
+
+    def test_a_gap_in_the_index_space_raises(self) -> None:
+        chip = _chip(
+            PreprocessedColumn(name=_OPID, index=0, width=1),
+            PreprocessedColumn(name=_VALS, index=2, width=1),
+            n_prep=3,
+        )
+        with self.assertRaisesRegex(ValueError, "do not tile"):
+            load_chip_preprocessed(chip, _AIR, root=self.key)
+
+    def test_descriptors_disagreeing_with_the_declared_width_raise(self) -> None:
+        """`num_cols - num_main_cols` is the width a flagged index may reach;
+        descriptors covering less of it would leave the tail unnamed."""
+        chip = _chip(PreprocessedColumn(name=_OPID, index=0, width=1), n_prep=2)
+        with self.assertRaisesRegex(ValueError, "cover 1 columns"):
+            load_chip_preprocessed(chip, _AIR, root=self.key)
+
+    def test_a_tensor_column_raises(self) -> None:
+        """SP1's `program_rom.pc` is `tensor<3x!F>`; nothing pins what pil2 calls
+        its elements, so the reader must not guess."""
+        chip = _chip(PreprocessedColumn(name="pc", index=0, width=3))
+        with self.assertRaises(NotImplementedError):
+            load_chip_preprocessed(chip, _AIR, root=self.key)
 
 
 if __name__ == "__main__":
