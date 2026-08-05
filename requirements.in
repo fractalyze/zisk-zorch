@@ -15,7 +15,7 @@ frxlib==0.10.1
 frx-cuda12-plugin==0.10.1
 frx-cuda12-pjrt==0.10.1
 
-rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260803063315/rw_constraints-0.1.0.dev20260803063315-py3-none-any.whl
+rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260804022415/rw_constraints-0.1.0.dev20260804022415-py3-none-any.whl
 
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
 # (warm-GPU inner-proof microbench, zisk-zorch#30). Direct wheel URL: the pypi

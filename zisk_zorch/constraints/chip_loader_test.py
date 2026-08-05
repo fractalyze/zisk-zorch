@@ -23,6 +23,8 @@ import numpy as np  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 from zk_dtypes import goldilocks  # noqa: E402
 
+from rw_constraints import PreprocessedColumn  # noqa: E402
+
 from zisk_zorch.constraints.chip_loader import load_zisk_chips  # noqa: E402
 
 # The ZisK v1 chip set exported by riscv-witness (constraints/zisk/v1).
@@ -63,27 +65,45 @@ class ChipLoaderTest(absltest.TestCase):
         for name, chip in self.chips.items():
             with self.subTest(chip=name):
                 self.assertGreater(chip.num_cols, 0)
-                self.assertEqual(chip.num_main_cols, chip.num_cols)
+                # num_cols counts the preprocessed prefix; num_main_cols does
+                # not, and the declared columns must account for the gap.
+                self.assertEqual(
+                    chip.num_cols - chip.num_main_cols,
+                    sum(c.width for c in chip.preprocessed_cols),
+                )
                 if chip.has_pv:
                     # main ingests public inputs; skip the no-PV smoke path.
                     continue
+                # Constraint fns evaluate over the combined [prep | main] row,
+                # so the smoke trace is num_cols wide (an all-zero prefix is a
+                # valid CLK_0 = 0 interior row).
                 trace = fnp.asarray(
-                    np.zeros((2, chip.num_main_cols), dtype=np.uint64),
+                    np.zeros((2, chip.num_cols), dtype=np.uint64),
                     dtype=goldilocks,
                 )
                 violations = chip.eval_constraints(trace)
                 self.assertEqual(violations.shape[0], 2)
 
-    def test_no_zisk_chip_declares_a_preprocessed_column_yet(self) -> None:
-        """A tripwire, not an invariant. riscv-witness#2189 Phase C gives
-        `arith_eq` the first one (`CLK_0`), and the wheel bump that carries it
-        should fail here — the prep trace has to be threaded into whatever
-        evaluates that chip, which nothing does yet. `load_chip_preprocessed` is
-        what supplies it.
+    def test_preprocessed_columns_are_exactly_the_clk0_set(self) -> None:
+        """A tripwire, not an invariant. The rw#2189 Phase C wheel gives the
+        four gated chips their `CLK_0`; `full_trace` /
+        `load_chip_preprocessed` supply the prefix their constraint fns read.
+        The next rw wheel (rw#2342) adds the derived shifted-clock gate
+        columns (SEL_LATCH_GATE, CLK_0_BACK_23, IN_USE_LATCHED,
+        IN_USE_ACTIVE) and should fail here — extend the expectation AND
+        confirm `DERIVED_PREPROCESSED` covers each new name, or the loader
+        would try to read them from the proving key and raise.
         """
+        clk0 = [PreprocessedColumn(name="CLK_0", index=0, width=1)]
+        expected = {
+            "arith_eq": clk0,
+            "arith_eq_384": clk0,
+            "keccak": clk0,
+            "sha256": clk0,
+        }
         for name, chip in self.chips.items():
             with self.subTest(chip=name):
-                self.assertEqual(chip.preprocessed_cols, [])
+                self.assertEqual(chip.preprocessed_cols, expected.get(name, []))
 
     def test_chip_name_filter_is_applied(self) -> None:
         only = load_zisk_chips(chip_names=["arith"])

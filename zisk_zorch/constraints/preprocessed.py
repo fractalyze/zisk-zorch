@@ -117,6 +117,72 @@ def load_preprocessed(
     return Preprocessed(values=fnp.array(selected, dtype=F), names=names)
 
 
+# rw chip name -> pil2 AIR directory name under the proving key. Mirrors the
+# oracle's CHIP_AIRS table (riscv-witness tools/zisk/zisk_constraint_eval);
+# not derivable from `chip.name`, since pil2 keeps the native ZisK air names.
+ZISK_CHIP_AIRS: dict[str, str] = {
+    "add256": "Add256",
+    "arith": "Arith",
+    "arith_eq": "ArithEq",
+    "arith_eq_384": "ArithEq384",
+    "binary": "Binary",
+    "binary_add": "BinaryAdd",
+    "binary_extension": "BinaryExtension",
+    "keccak": "Keccakf",
+    "main": "Main",
+    "mem": "Mem",
+    "mem_align": "MemAlign",
+    "mem_align_byte": "MemAlignByte",
+    "mem_align_read_byte": "MemAlignReadByte",
+    "mem_align_write_byte": "MemAlignWriteByte",
+    "sha256": "Sha256f",
+}
+
+# Derived preprocessed columns: rw-side rolls of a proving-key fixed column,
+# with NO const pol of their own — the schema comments in riscv-witness carry
+# the same derivation, and its cross-reference gate pins the values against
+# the native shifted-clock gates. name -> (base column, k_lo, k_hi), meaning
+# sum_{k=k_lo..k_hi} base[(row - k) mod N]: shifted PIL references wrap the
+# trace cyclically, and N is generally NOT a multiple of the clock period, so
+# the roll of the genuine key column is required — the values near row 0
+# cannot be reconstructed from `row mod period`.
+DERIVED_PREPROCESSED: dict[str, tuple[str, int, int]] = {
+    "SEL_LATCH_GATE": ("CLK_0", 1, 20),
+    "CLK_0_BACK_23": ("CLK_0", 23, 23),
+    "IN_USE_LATCHED": ("CLK_0", 1, 24),
+    "IN_USE_ACTIVE": ("CLK_0", 1, 17),
+}
+
+
+def full_trace(
+    chip: "Chip",
+    main_trace: Array,
+    air: str | None = None,
+    root: Path | None = None,
+) -> Array:
+    """The ``[prep | main]`` trace ``eval_constraints`` expects for `chip`.
+
+    A chip whose schema carries ``{preprocessed}`` columns exports its
+    constraint fns over the combined row, so the main trace alone is the
+    wrong width. The prefix values come from the proving key (and the
+    derived-column rolls), which fixes the row count: the main trace must be
+    the air's full height, aligned at row 0 — exactly what a pil2 dump or a
+    generated witness is. A chip with no fixed columns passes through.
+    """
+    prep = load_chip_preprocessed(
+        chip, air if air is not None else ZISK_CHIP_AIRS[chip.name], root=root
+    )
+    if prep is None:
+        return main_trace
+    if main_trace.shape[0] != prep.shape[0]:
+        raise ValueError(
+            f"{chip.name}: main trace has {main_trace.shape[0]} rows but the "
+            f"proving key's preprocessed columns span {prep.shape[0]} — the "
+            "trace must be the air's full height, aligned at row 0"
+        )
+    return fnp.concatenate([prep, main_trace], axis=1)
+
+
 def load_chip_preprocessed(
     chip: "Chip", air: str, root: Path | None = None
 ) -> Array | None:
@@ -138,8 +204,30 @@ def load_chip_preprocessed(
     names = _preprocessed_names(chip)
     if not names:
         return None
-    columns = [_const_pol_name(air, name) for name in names]
-    return load_preprocessed(air, root=root, columns=columns).values
+    # A derived column has no const pol; it is a roll-sum of a key-backed base
+    # column, so the key load is the union of the directly-declared names and
+    # the derived columns' bases.
+    key_backed = [n for n in names if n not in DERIVED_PREPROCESSED]
+    bases = [
+        DERIVED_PREPROCESSED[n][0] for n in names if n in DERIVED_PREPROCESSED
+    ]
+    load_names = list(dict.fromkeys(key_backed + bases))
+    loaded = load_preprocessed(
+        air, root=root, columns=[_const_pol_name(air, n) for n in load_names]
+    ).values
+    by_name = {n: loaded[:, i] for i, n in enumerate(load_names)}
+    cols = []
+    for name in names:
+        if name in DERIVED_PREPROCESSED:
+            base, k_lo, k_hi = DERIVED_PREPROCESSED[name]
+            src = by_name[base]
+            acc = fnp.roll(src, k_lo, axis=0)
+            for k in range(k_lo + 1, k_hi + 1):
+                acc = acc + fnp.roll(src, k, axis=0)
+            cols.append(acc)
+        else:
+            cols.append(by_name[name])
+    return fnp.stack(cols, axis=1)
 
 
 def _preprocessed_names(chip: "Chip") -> tuple[str, ...]:
