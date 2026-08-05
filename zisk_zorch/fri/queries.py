@@ -32,9 +32,14 @@ from zorch.utils.field import split_coeffs
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.transcript.transcript import Transcript, _canonical, absorb_section
 
-# Grinding is the width-4 Poseidon2 compression (`Poseidon2GoldilocksGrinding =
-# Poseidon2Goldilocks<4>`), independent of the transcript width.
-_GRIND_WIDTH = 4
+# Grinding is the WIDTH-8 permutation of the key's hash family
+# (`Poseidon2GoldilocksGrinding = Poseidon2Goldilocks<8>`,
+# `poseidon2_goldilocks.hpp` L377 at v1.0.0-alpha; family 1 routes to
+# `PoseidonGoldilocks<8>`): state `[challenge(3), nonce, 0-pad]`, image =
+# output lane 0. Independent of the transcript width. Pinned against a real
+# CPU prove's nonce — the width-4 form this module used to model does not
+# reproduce it.
+_GRIND_WIDTH = 8
 _GRIND_PERM = goldilocks_perm(_GRIND_WIDTH)
 _GOLDILOCKS_ORDER = int(pfinfo(F).modulus)
 
@@ -46,14 +51,16 @@ def _grind_level(pow_bits: int) -> int:
 
 
 def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
-    """Canonical u64 of the first lane of the width-4 Poseidon2 permutation of
-    `challenge ++ nonce` for each nonce — pil2's grinding image (`state[0]`).
+    """Canonical u64 of the first lane of the width-8 grind permutation of
+    `[challenge, nonce, 0-pad]` for each nonce — pil2's grinding image
+    (`state[0]`).
 
-    `nonce` rides the last input slot as `Goldilocks::fromU64(nonce)`; the value
-    cast to `F` reduces mod p, so callers must pass canonical nonces."""
+    `nonce` rides slot 3 as `Goldilocks::fromU64(nonce)`; the value cast to
+    `F` reduces mod p, so callers must pass canonical nonces."""
     nonce_fe = fnp.asarray(nonces, dtype=F)  # (C,) canonical -> plain field
-    chal = fnp.broadcast_to(challenge, (nonce_fe.shape[0], _GRIND_WIDTH - 1))
-    states = fnp.concatenate([chal, nonce_fe[:, None]], axis=1)  # (C, 4)
+    chal = fnp.broadcast_to(challenge, (nonce_fe.shape[0], 3))
+    pad = fnp.zeros((nonce_fe.shape[0], _GRIND_WIDTH - 4), F)
+    states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)  # (C, 8)
     out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
     return _canonical(out0)  # decode to canonical u64 (transcript's path)
 
@@ -75,8 +82,9 @@ def _grind(challenge: Array, pow_bits: int) -> int:
 
     def check_batch(counters: Array) -> Array:
         nonce_fe = counters.astype(F)  # canonical < 2^32 -> value-encodes
-        chal = fnp.broadcast_to(challenge, (counters.shape[0], _GRIND_WIDTH - 1))
-        states = fnp.concatenate([chal, nonce_fe[:, None]], axis=1)
+        chal = fnp.broadcast_to(challenge, (counters.shape[0], 3))
+        pad = fnp.zeros((counters.shape[0], _GRIND_WIDTH - 4), F)
+        states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)
         out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
         halves = lax.bitcast_convert_type(out0.astype(F), fnp.uint32)
         lo, hi = halves[..., 0], halves[..., 1]
