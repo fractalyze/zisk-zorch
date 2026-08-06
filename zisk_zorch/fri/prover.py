@@ -39,7 +39,7 @@ from zorch.pcs.fold import FoldState, PreFoldKGroupCommitRound
 from zorch.prove import fold_rounds
 
 from zisk_zorch.commit.openings import group_proof
-from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.commit.trace_commit import DEFAULT_HASH_FAMILY, merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import FriProof
@@ -61,6 +61,7 @@ def prove(
     *,
     arity: int,
     transcript: Transcript,
+    hash_family: str = DEFAULT_HASH_FAMILY,
 ) -> tuple[FriProof, list[_Layer]]:
     """Fold `fri_pol` (cubic, length `2^steps[0]`) down the layer chain,
     committing each intermediate layer and squeezing challenges from
@@ -70,7 +71,8 @@ def prove(
     hold full matrices and digest paths, which only `prove_queries` reads —
     they stay prover-side, and only the per-query group proofs cross."""
     code = Pil2FriCode(tuple(steps))  # validates the step schedule
-    tree = merkle_tree(arity)  # validates arity; fixed across layers, build once.
+    # validates arity; fixed across layers, build once.
+    tree = merkle_tree(arity, hash_family)
     n_bits_ext = steps[0]
     if fri_pol.shape != (1 << n_bits_ext,):
         raise ValueError(

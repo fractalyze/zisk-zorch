@@ -22,9 +22,18 @@ import numpy as np
 import zk_dtypes
 from frx import Array, lax
 from zk_dtypes import goldilocks as F
-from zorch.hash.poseidon2.poseidon2 import Poseidon2
 
-from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zisk_zorch.poseidon1.goldilocks import goldilocks_perm as _poseidon1_perm
+from zisk_zorch.poseidon2.goldilocks import goldilocks_perm as _poseidon2_perm
+
+# The transcript sponge's permutation per key hash family — the same registry
+# convention as `commit.trace_commit` (native ZisK keys select "Poseidon1",
+# the pil2 examples "Poseidon2"; the buffer discipline is family-independent).
+_HASH_FAMILY_PERMS = {
+    "Poseidon2": _poseidon2_perm,
+    "Poseidon1": _poseidon1_perm,
+}
+DEFAULT_HASH_FAMILY = "Poseidon2"
 
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
 CHALLENGE_LIMBS = 3
@@ -45,10 +54,17 @@ def _canonical(values: Array) -> np.ndarray:
 
 
 class Transcript:
-    """pil2 transcript over the width-`4*transcript_arity` Poseidon2."""
+    """pil2 transcript over the width-`4*transcript_arity` sponge of the
+    key's hash family."""
 
-    def __init__(self, width: int = 12) -> None:
-        self._perm: Poseidon2 = goldilocks_perm(width)
+    def __init__(self, width: int = 12, hash_family: str = DEFAULT_HASH_FAMILY) -> None:
+        if hash_family not in _HASH_FAMILY_PERMS:
+            raise ValueError(
+                f"hash_family must be one of {sorted(_HASH_FAMILY_PERMS)}, got "
+                f"{hash_family!r}"
+            )
+        self._perm = _HASH_FAMILY_PERMS[hash_family](width)
+        self._hash_family = hash_family
         self.width = width
         self._state = fnp.zeros((width,), F)
         self._out = fnp.zeros((width,), F)
@@ -116,14 +132,21 @@ def _transcript_flatten(t: Transcript) -> tuple[tuple, tuple]:
     # fixed absorb/squeeze schedule, so they are static per call site — two
     # zones whose schedules leave different pending/cursor shapes compile
     # separately, as they must.
-    return (t._state, t._out, tuple(t._pending)), (t.width, t._out_cursor)
+    return (t._state, t._out, tuple(t._pending)), (
+        t.width,
+        t._hash_family,
+        t._out_cursor,
+    )
 
 
 def _transcript_unflatten(aux: tuple, children: tuple) -> Transcript:
-    width, cursor = aux
+    width, hash_family, cursor = aux
     state, out, pending = children
     t = object.__new__(Transcript)
-    t._perm = goldilocks_perm(width)  # cached per width — no rebuild cost
+    # Cached per (family, width) — no rebuild cost. The family must ride the
+    # aux data or a family-1 transcript would silently come back Poseidon2.
+    t._perm = _HASH_FAMILY_PERMS[hash_family](width)
+    t._hash_family = hash_family
     t.width = width
     t._state = state
     t._out = out

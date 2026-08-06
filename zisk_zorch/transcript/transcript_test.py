@@ -20,7 +20,8 @@ class TranscriptTest(absltest.TestCase):
     def test_matches_pil2_reference(self) -> None:
         for entry in load(_GOLDEN)["widths"]:
             width = entry["width"]
-            t = Transcript(width)
+            family = entry.get("hash_family", "Poseidon2")
+            t = Transcript(width, family)
             for step in entry["steps"]:
                 op = step["op"]
                 if op == "put":
