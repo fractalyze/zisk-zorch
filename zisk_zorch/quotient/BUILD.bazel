@@ -38,6 +38,18 @@ py_test(
 )
 
 py_test(
+    name = "compute_q_test",
+    size = "small",
+    srcs = ["compute_q_test.py"],
+    deps = [
+        ":quotient",
+        requirement("absl_py"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
     name = "cexp_ref_test",
     size = "medium",
     srcs = ["cexp_ref_test.py"],
