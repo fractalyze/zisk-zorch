@@ -58,6 +58,7 @@ from zisk_zorch.harness.pil2 import (
 )
 from zisk_zorch.logup.bus import LogUpBus
 from zisk_zorch.quotient.cexp_ref import run_block
+from zisk_zorch.quotient.compute_q import compute_q
 from zisk_zorch.quotient.zerofier import _coset_points, inv_zerofier
 from zisk_zorch.transcript.transcript import Transcript, absorb_section
 from zisk_zorch.types import (
@@ -236,6 +237,14 @@ class LogUpWitnessProver(
         )
         gsum = LogUpBus.grand_sum(gsum_num[None, :], gsum_den[None, :])
         env["cm"][hint_value(self._gsum_hint, "reference")["id"]] = gsum
+        # pil2's single-row direct update: bus terms that never materialize
+        # an im column enter the airgroup export as one scalar added to the
+        # running sum's last entry — they are NOT part of the committed
+        # column (std_sum.pil; the dumped cm2 pins this).
+        direct = self._direct_term(env)
+        result = LogUpBus.gsum_result(gsum)
+        if direct is not None:
+            result = result + direct
         for i, p in self._logup_cols:
             if p.get("imPol"):
                 env["cm"][i] = run_block(self._exps[p["expId"]], env, 1)
@@ -243,8 +252,21 @@ class LogUpWitnessProver(
             fnp.concatenate(
                 [split_coeffs(env["cm"][i]) for i, _ in self._logup_cols], axis=1
             ),
-            LogUpBus.gsum_result(gsum),
+            result,
         )
+
+    def _direct_term(self, env):
+        """The gsum hint's direct contribution — a scalar expression (or the
+        literal 0), divided by its denominator unless that is the literal 1
+        (a dead cubic reciprocal otherwise)."""
+        num_v = hint_value(self._gsum_hint, "numerator_direct")
+        if num_v["op"] == "number" and int(num_v["value"]) == 0:
+            return None
+        num = run_block(self._exps[num_v["id"]], env, 1)
+        den_v = hint_value(self._gsum_hint, "denominator_direct")
+        if not (den_v["op"] == "number" and int(den_v["value"]) == 1):
+            num = num / run_block(self._exps[den_v["id"]], env, 1)
+        return num
 
     def prove(
         self,
@@ -272,8 +294,6 @@ class LogUpWitnessProver(
             ),
             "zi": {},
         }
-        if hint_value(self._gsum_hint, "numerator_direct")["value"] != "0":
-            raise NotImplementedError("gsum_col with a direct term")
 
         matrix, gsum_result = self._logup_jit(env)
         airgroupvalues = {hint_value(self._gsum_hint, "result")["id"]: gsum_result}
@@ -314,8 +334,10 @@ class Pil2QuotientProver(
     interpreter run. The environment mixes the witness's committed sections
     (extended trace, extended stage-2 columns) with the key's extended
     constant/custom sections and the claim's scalar sections; the inverse
-    zerofier rides as the ``Zi`` operand. Cubic rows commit as 3 contiguous
-    base limbs, exactly as `QuotientProver` does."""
+    zerofier rides as the ``Zi`` operand. The committed section is pil2's
+    ``computeQ`` of the evaluations — the identity (3 contiguous base limbs,
+    `QuotientProver`'s shape) only when ``qDeg == 1``; a real AIR like ZisK's
+    Main has qDeg 2, committing ``3·qDeg`` lanes per row."""
 
     def __init__(self, key: Pil2Key) -> None:
         si, ss = key.starkinfo, key.starkinfo["starkStruct"]
@@ -335,6 +357,14 @@ class Pil2QuotientProver(
         # which crashes the compiler on the zerofier coset (#67).
         self._q_jit = frx.jit(
             lambda env: run_block(self._code, env, 1 << self._blowup_bits)
+        )
+        q_deg = si["mapSectionsN"]["cm" + str(si["nStages"] + 1)] // 3
+        self._qsec_jit = frx.jit(
+            split_coeffs
+            if q_deg == 1
+            else lambda q: compute_q(
+                split_coeffs(q), ss["nBits"], ss["nBitsExt"], q_deg
+            )
         )
 
     def prove(
@@ -370,7 +400,7 @@ class Pil2QuotientProver(
             "zi": {0: inv_zerofier(self._nb, self._blowup_bits)},
         }
         quotient = self._q_jit(env)
-        matrix = split_coeffs(quotient)
+        matrix = self._qsec_jit(quotient)
         root, layers = merkle_tree(self._arity, self._family).commit(matrix)
         transcript.put(root)
         return ProveResult(
@@ -424,15 +454,40 @@ class Pil2OpeningProver(
         self._pow_bits = ss["powBits"]
         self._n_queries = ss["nQueries"]
         self._hash_commits = ss.get("hashCommits", False)
-        # Jitted once per role; columns/evals/coset enter as arguments (the
-        # in-trace coset feeding the cubic reciprocal is #67's crash trigger).
-        self._deep_jit = frx.jit(
-            partial(
-                deep_two_challenge,
-                ev_map=si["evMap"],
-                openings=si["openingPoints"],
-                n_bits=ss["nBits"],
-            )
+        # Jitted once per role; evals/coset enter as arguments (the in-trace
+        # coset feeding the cubic reciprocal is #67's crash trigger). The
+        # evMap COLUMNS are built inside each trace from the section
+        # buffers: an eager per-entry `committed_column` list materializes
+        # |evMap| full cubic columns on device, which exceeds device memory
+        # at ZisK Main width (183 entries x 2^23) — inside the jit they are
+        # fused slices that never exist whole.
+        self._evals_jit = frx.jit(self._evals_fn)
+        self._deep_jit = frx.jit(self._deep_fn)
+
+    def _columns(self, bufs: dict) -> list:
+        return [
+            committed_column(e, self._si["cmPolsMap"], bufs) for e in self._si["evMap"]
+        ]
+
+    def _evals_fn(self, bufs: dict, lev):
+        return open_evmap_columns(
+            self._columns(bufs),
+            self._si["evMap"],
+            lev,
+            stride=1 << (self._nbe - self._nb),
+        )
+
+    def _deep_fn(self, bufs: dict, evals, domain, xi, vf1, vf2):
+        return deep_two_challenge(
+            self._columns(bufs),
+            evals,
+            domain,
+            xi,
+            vf1,
+            vf2,
+            ev_map=self._si["evMap"],
+            openings=self._si["openingPoints"],
+            n_bits=self._nb,
         )
 
     def commit(self, witness: InnerWitness) -> TraceCommitment:
@@ -453,7 +508,7 @@ class Pil2OpeningProver(
         transcript: Transcript,
     ) -> ProveResult[TrivialClaim, OpeningProof]:
         si = self._si
-        ev_map, opening_points = si["evMap"], si["openingPoints"]
+        opening_points = si["openingPoints"]
         challenges = dict(claim.challenges)
         challenges.update(
             squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 2)
@@ -468,12 +523,12 @@ class Pil2OpeningProver(
         }
         for ci, buf in self._key.custom_ext.items():
             bufs[("custom", ci)] = buf
-        columns = [committed_column(e, si["cmPolsMap"], bufs) for e in ev_map]
 
+        # lev materialized before the openings (its trace inside the same
+        # zone regresses the openings' fusion — see
+        # zisk-zorch@lev-must-be-materialized).
         lev = compute_lev(xi, list(opening_points), self._nb)
-        evals = open_evmap_columns(
-            columns, ev_map, lev, stride=1 << (self._nbe - self._nb)
-        )
+        evals = self._evals_jit(bufs, lev)
         absorb_section(
             transcript, split_coeffs(evals).reshape(-1), hashed=self._hash_commits
         )
@@ -485,7 +540,7 @@ class Pil2OpeningProver(
         vf2 = challenges[challenge_id(si["challengesMap"], "std_vf2")]
 
         domain = _coset_points(self._nb, self._nbe - self._nb)
-        fri_pol = self._deep_jit(columns, evals, domain, xi, vf1, vf2)
+        fri_pol = self._deep_jit(bufs, evals, domain, xi, vf1, vf2)
 
         fri, fri_layers = prove(
             fri_pol,

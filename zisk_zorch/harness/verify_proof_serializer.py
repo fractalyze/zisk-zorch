@@ -22,7 +22,7 @@ from zk_dtypes import goldilocks as F
 from zorch.pcs.fold import to_base_field
 
 from zisk_zorch.commit.trace_commit import merkle_tree
-from zisk_zorch.fri.queries import grind_is_valid, query_positions_for
+from zisk_zorch.fri.queries import _grind, grind_is_valid, query_positions_for
 from zisk_zorch.fri.seam import Pil2FriCode
 from zisk_zorch.harness.capture import Capture, cubic
 from zisk_zorch.harness.pil2 import transcript_width
@@ -58,6 +58,12 @@ def main() -> int:
     ap.add_argument("--dump", type=pathlib.Path, required=True)
     ap.add_argument("--instance", required=True)
     ap.add_argument("--starkinfo", type=pathlib.Path, required=True)
+    ap.add_argument(
+        "--emit",
+        type=pathlib.Path,
+        default=None,
+        help="write the serialized proof here (npy)",
+    )
     args = ap.parse_args()
     cap = Capture(args.dump, args.instance, args.starkinfo)
     si = cap.si
@@ -73,8 +79,16 @@ def main() -> int:
     assert label == "grinding seed" and np.array_equal(
         seed.astype(np.uint64), want_seed
     ), "schedule replay must be green before the serializer can be judged"
-    nonce = int(native[-1])
     pow_bits = ss["powBits"]
+    if cap.gpu_dump:
+        # The GPU staging buffer truncates before its nonce (the layout is
+        # larger than proofSize), so the nonce is self-ground; the grind
+        # construction is byte-pinned against real CPU proves.
+        nonce = _grind(
+            fnp.array(seed.astype(np.uint64), dtype=F), pow_bits, cap.hash_family
+        )
+    else:
+        nonce = int(native[-1])
     assert grind_is_valid(
         fnp.array(seed.astype(np.uint64), dtype=F), nonce, pow_bits, cap.hash_family
     )
@@ -167,10 +181,51 @@ def main() -> int:
         layout += tree_sizes(f"fri step {k + 1}", opening)
     layout += [("final pol", 3 << steps[-1]), ("nonce", 1)]
 
+    if args.emit is not None:
+        np.save(args.emit, got)
+        print(f"emitted {got.size}-word proof -> {args.emit}")
+
+    if cap.gpu_dump:
+        # The staging buffer is not proof2pointer, so only its head regions
+        # cross-check: per stage [root | arity^llv last-level digests], then
+        # the const tree's last level.
+        per = 4 + (arity**llv) * 4 if llv else 4
+        ok = True
+        for s, opening in enumerate(stage_opens):
+            block = native[s * per : (s + 1) * per]
+            ok &= np.array_equal(
+                _canon(block[:4]), cap.u64(f"root{s + 1}" if s < 2 else "rootQ")
+            )
+            got_ll = opening.last_level
+            want_ll = _canon(block[4:])
+            match = np.array_equal(got_ll, want_ll)
+            ok &= match
+            print(
+                ("OK       " if match else "MISMATCH ") + f"cm{s + 1} staged last-level"
+            )
+        want_const_ll = _canon(
+            native[3 * per : 3 * per + (arity**llv) * 4]
+            if llv
+            else np.zeros(0, np.uint64)
+        )
+        match = np.array_equal(const_open.last_level, want_const_ll)
+        print(("OK       " if match else "MISMATCH ") + "const staged last-level")
+        ok &= match
+        print(
+            "flat-proof (GPU capture): "
+            + ("STAGED HEAD MATCH" if ok else "STAGED HEAD FAILED")
+        )
+        return 0 if ok else 1
+
     print(f"{args.instance}: serialized {got.size} vs native {native.size}")
     ok = _region_report(got, native, layout)
     print("flat-proof serialization: " + ("BYTE-MATCH" if ok else "FAILED"))
     return 0 if ok else 1
+
+
+def _canon(a: np.ndarray) -> np.ndarray:
+    p = np.uint64(0xFFFFFFFF00000001)
+    return np.where(a >= p, a - p, a)
 
 
 if __name__ == "__main__":
