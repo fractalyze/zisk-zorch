@@ -9,34 +9,28 @@ sets no `hash`, so pil2's `DEFAULT_HASH_ID = "Poseidon1"` wins).
 
 from __future__ import annotations
 
-import json
 import pathlib
 
 import frx.numpy as fnp
-import numpy as np
 from absl.testing import absltest
-from zk_dtypes import goldilocks as F
 
+from zisk_zorch.golden import load, u64
 from zisk_zorch.poseidon1.goldilocks import WIDTHS, goldilocks_perm
 
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "permutation.json"
 
 
-def _u64(values: list[str]) -> fnp.ndarray:
-    return fnp.array(np.array([int(v) for v in values], dtype=np.uint64), dtype=F)
-
-
 class GoldilocksPoseidon1Test(absltest.TestCase):
     def test_permute_matches_pil2_reference(self) -> None:
-        golden = json.loads(_GOLDEN.read_text())
+        golden = load(_GOLDEN)
         widths_seen = []
         for entry in golden["widths"]:
             width = entry["width"]
             widths_seen.append(width)
             perm = goldilocks_perm(width)
             for case in entry["cases"]:
-                out = perm.permute(_u64(case["input"]))
-                expected = _u64(case["output"])
+                out = perm.permute(u64(case["input"]))
+                expected = u64(case["output"])
                 self.assertTrue(
                     bool(fnp.array_equal(out, expected)),
                     msg=f"width {width}: {out} != {expected}",

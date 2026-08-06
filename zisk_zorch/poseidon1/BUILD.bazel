@@ -27,6 +27,7 @@ py_test(
     data = glob(["testdata/golden/**"]),
     deps = [
         ":goldilocks",
+        "//zisk_zorch:golden",
         requirement("absl_py"),
     ],
 )
