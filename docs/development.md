@@ -282,6 +282,40 @@ Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
 verify at 2^22 with 64 queries takes ~765 s — the verifier's per-query host
 loops are the minutes-scale wall, and the next per-stage issue candidate.
 
+### pil2 conformance (`harness/`)
+
+`zisk_zorch/harness/` clamps the prover against the native pil2 reference:
+`Capture` loads a `PIL2_DUMP_DIR` bundle (CPU or `genProof_gpu` — GPU dumps
+untile the prover's column-major 256×4 matrix layout and read roots off the
+pinned staging buffer), `gates_test` byte-checks each stage in isolation, and
+`verify_inner_proof`'s composed gate drives `Pil2InnerProver` — the prover
+that runs its OWN Fiat-Shamir from the contributions global challenge —
+comparing every seam (challenges, roots, committed sections, grinding nonce,
+query draw) against the capture:
+
+```sh
+python -m zisk_zorch.harness.verify_inner_proof --dump=<capture> \
+    --instance=<ag..._instN> --starkinfo=<...starkinfo.json> [--backend=device]
+
+# The wire proof itself (proof2pointer layout), byte-matched region by
+# region against the capture's flat proof (CPU dumps), or emitted with a
+# self-ground nonce plus staged-head cross-checks (GPU dumps):
+python -m zisk_zorch.harness.verify_proof_serializer --dump=<capture> ... [--emit=out.npy]
+```
+
+Both are family-aware: the key's `pilout.globalInfo.json` `hash` field
+selects Poseidon1/Poseidon2 through every tree, transcript, and the grind
+(family-1 grinding runs the host numpy engine — its width-8 permutation
+hangs on the device stack, zorch#565). Grinding is the WIDTH-8 permutation
+of the key's family with state `[challenge(3), nonce, 0-pad]` — pinned
+against real CPU proves' nonces.
+
+`--backend=device` at real scale (ZisK Main, N=2^22) needs a frx wheel
+carrying the xla#335/#340 codegen fixes (`> 0.10.1.dev20260729002119`):
+the 0.10.1 stable release predates them and miscompiles the fused stage-2
+witness graph — row-subset value corruption that small captures (fibsq,
+N=2^8) never trip.
+
 ### Measure shipped code
 
 A number is only a baseline if it runs what the team **ships**:

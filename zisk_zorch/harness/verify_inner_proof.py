@@ -140,8 +140,12 @@ def stage_checks(cap: Capture, width: int) -> dict[str, Callable[[object], bool]
             proof.nonce,
             n_queries=ss["nQueries"],
             n_bits_ext=cap.nbe,
+            hash_family=cap.hash_family,
         )
-        ok &= _check(grind_is_valid(seed, proof.nonce, ss["powBits"]), "grinding nonce")
+        ok &= _check(
+            grind_is_valid(seed, proof.nonce, ss["powBits"], cap.hash_family),
+            "grinding nonce",
+        )
         return ok & _match("query positions", proof.positions, want_positions)
 
     return {
@@ -152,7 +156,7 @@ def stage_checks(cap: Capture, width: int) -> dict[str, Callable[[object], bool]
     }
 
 
-def verify_composed_prove(cap: Capture, max_stage: int) -> bool:
+def verify_composed_prove(cap: Capture, max_stage: int, backend: str = "cpu") -> bool:
     """Drive the composed prover through the first `max_stage` stages,
     byte-comparing each against the capture as it lands and stopping at the
     first mismatch.
@@ -168,7 +172,8 @@ def verify_composed_prove(cap: Capture, max_stage: int) -> bool:
     transcript = Transcript(width, cap.hash_family)
     checks = stage_checks(cap, width)
     ok, ran = True, 0
-    with frx.default_device(frx.devices("cpu")[0]):
+    device = frx.devices("cpu")[0] if backend == "cpu" else frx.devices()[0]
+    with frx.default_device(device):
         for name, result in prover.prove_stages(
             cap.pil2_claim(), InnerWitness(cap.trace), transcript
         ):
@@ -199,6 +204,13 @@ def main() -> int:
         help="run and check only the first N stages: "
         + ", ".join(f"{i + 1}={s}" for i, s in enumerate(_STAGES)),
     )
+    ap.add_argument(
+        "--backend",
+        choices=["cpu", "device"],
+        default="cpu",
+        help="cpu pins every stage to the host (small captures); device runs "
+        "on the accelerator (real-scale AIRs exceed host patience)",
+    )
     args = ap.parse_args()
     dump = args.dump
     if dump is None:
@@ -215,7 +227,7 @@ def main() -> int:
         f"instance {cap.instance}: N=2^{cap.nb} ext=2^{cap.nbe} "
         f"cm1={cap.n_cols} arity={cap.arity}"
     )
-    return 0 if verify_composed_prove(cap, args.max_stage) else 1
+    return 0 if verify_composed_prove(cap, args.max_stage, args.backend) else 1
 
 
 if __name__ == "__main__":
