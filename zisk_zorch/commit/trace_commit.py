@@ -7,7 +7,7 @@ exactly pil2's `NTT_Goldilocks::extendPol` (INTT with coset-power scaling, NTT
 on 2^nBitsExt).
 
 commit: leaf-hash every extended row with pil2's chained linear hash and fold
-the k-ary tree (arity 2/3/4 -> node width 8/12/16, 4-element root) —
+the k-ary tree (arity 4 -> node width 16, 4-element root) —
 `MerkleTreeGL::merkelize`. The tree is zorch's MerkleTree; everything pil2 about
 it (hash family, leaf convention, arity-to-width map) rides in via the blocks,
 so selecting Poseidon1 or Poseidon2 only swaps the permutation the blocks hold.
@@ -46,9 +46,16 @@ COSET_SHIFT = 7
 # fold cannot disagree on which root pil2 is on.
 
 # starkinfo's merkleTreeArity -> the permutation width hashing that tree
-# (MerkleTreeGL::merkelize switches arity {2,3,4} to the width-{8,12,16}
-# permutation for both the leaf linear hash and the node hash).
-_ARITY_WIDTHS = {2: 8, 3: 12, 4: 16}
+# (MerkleTreeGL::merkelize switches the arity to the width-4*arity permutation
+# for both the leaf linear hash and the node hash).
+#
+# Only arity 4 is modelled: `merkleTreeArity` is a single per-key value that
+# pil2-stark applies to the stage trees, the constant tree and the FRI layer
+# trees alike, and ZisK fixes it at 4. The parameter stays so a key that
+# declares anything else fails loudly here rather than committing a root no
+# golden pins.
+_ARITY = 4
+_WIDTH = 4 * _ARITY
 
 # The hash family the merkle tree commits with. Native ZisK defaults to
 # "Poseidon1" (the installed proving key sets no `hash`, so pil2's
@@ -119,14 +126,14 @@ def extend(trace: Array, blowup: int) -> Array:
 def merkle_tree(arity: int, hash_family: str = DEFAULT_HASH_FAMILY) -> MerkleTree:
     """pil2's tree for `arity`: linear-hash leaves + arity-to-1 nodes, one
     width-`4*arity` permutation of `hash_family` for both."""
-    if arity not in _ARITY_WIDTHS:
-        raise ValueError(f"arity must be one of {sorted(_ARITY_WIDTHS)}, got {arity}")
+    if arity != _ARITY:
+        raise ValueError(f"arity must be {_ARITY}, got {arity}")
     if hash_family not in _HASH_FAMILY_PERMS:
         raise ValueError(
             f"hash_family must be one of {sorted(_HASH_FAMILY_PERMS)}, got "
             f"{hash_family!r}"
         )
-    perm = _HASH_FAMILY_PERMS[hash_family](_ARITY_WIDTHS[arity])
+    perm = _HASH_FAMILY_PERMS[hash_family](_WIDTH)
     return MerkleTree(
         LinearHash(perm),
         Compression(perm, CompressionParams(arity=arity, chunk=DIGEST_ELEMS)),

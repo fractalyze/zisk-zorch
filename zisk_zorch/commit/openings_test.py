@@ -20,18 +20,9 @@ from zisk_zorch.golden import load, u64
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
 
 
-def _cases() -> list[dict]:
-    cases = load(_TESTDATA / "merkle_proof.json")["cases"]
-    # zorch's binary tree keeps its pad-free power-of-two-height contract (the
-    # fold-PCS query layout); a stage-1 commit always has 2^nBitsExt rows, so
-    # pil2's padded binary case is unreachable on this path. Arity 3/4 still
-    # pin the padding.
-    return [c for c in cases if c["arity"] != 2 or not c["height"] & (c["height"] - 1)]
-
-
 class GroupProofTest(absltest.TestCase):
     def test_matches_pil2_get_group_proof(self) -> None:
-        for case in _cases():
+        for case in load(_TESTDATA / "merkle_proof.json")["cases"]:
             rows = u64(case["rows"]).reshape(case["height"], case["n_cols"])
             tree = merkle_tree(case["arity"])
             root, digest_layers = tree.commit(rows)
@@ -48,7 +39,7 @@ class GroupProofTest(absltest.TestCase):
                 )
 
     def test_golden_proofs_reconstruct_the_root(self) -> None:
-        for case in _cases():
+        for case in load(_TESTDATA / "merkle_proof.json")["cases"]:
             tree = merkle_tree(case["arity"])
             root = u64(case["root"])
             for query in case["queries"]:

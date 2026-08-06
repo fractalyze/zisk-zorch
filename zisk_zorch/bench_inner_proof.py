@@ -31,7 +31,7 @@ Run (on a GPU host, the PJRT plugin resolved via the venv):
 
     PYTHONPATH=<zisk-zorch>:<zorch> CUDA_VISIBLE_DEVICES=<free> \\
         python -m zisk_zorch.bench_inner_proof \\
-        --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 --arity=2 -o report.json
+        --n_bits=20 --n_bits=21 --n_bits=22 --n_cols=64 -o report.json
 
     # real Main-AIR quotient vs pil2 (#66); --chip forces JAX x64 (rw exports
     # `.view(FIELD_DTYPE)` over u64), so run it with --stages=quotient alone.
@@ -55,7 +55,7 @@ from zisk_zorch.commit.trace_commit import extend, merkle_tree
 from zisk_zorch.fri.prover import prove
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.quotient.quotient import compute_quotient, quotient_from_constraints
-from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.transcript.transcript import WIDTH, Transcript
 
 _STAGES = ("extend", "commit", "full", "quotient", "divide", "fri")
 
@@ -177,9 +177,10 @@ class InnerProofBenchmark(FrxBenchmark):
         parser.add_argument(
             "--arity",
             type=int,
-            default=2,
-            help="Merkle arity (2/3/4 -> Poseidon2 8/12/16); arity>=3 hits the "
-            "merkle_commit power-of-two leaf-layer limit at scale, so default 2.",
+            default=4,
+            help="Merkle arity. Only 4 is modelled — the one ZisK proves at. "
+            "It needs an even nBitsExt, or the leaf layer is not a power of "
+            "the arity and merkle_commit rejects it.",
         )
         parser.add_argument("--n_constraints", type=int, default=64)
         parser.add_argument("--degree", type=int, default=3)
@@ -314,10 +315,10 @@ class InnerProofBenchmark(FrxBenchmark):
 
         if "fri" in stages:
             # `prove` builds its transcript sponge and `merkle_tree(arity)` inside
-            # the trace, so both perms must be memoized host-side first — their M4
-            # analysis cannot see a tracer. Derive the Merkle width from `arity`;
-            # enumerating widths silently drops whichever arity is not listed.
-            goldilocks_perm(12)
+            # the jit trace, and building a permutation there would hand its
+            # external-M4 matrix analysis a tracer instead of concrete constants.
+            # Both perms therefore have to be memoized host-side first.
+            goldilocks_perm(WIDTH)
             merkle_tree(args.arity)
             n_bits_ext = n_bits + args.blowup_bits
             steps = _fold_steps(n_bits_ext, args.fold_bits, args.final_bits)
@@ -329,7 +330,7 @@ class InnerProofBenchmark(FrxBenchmark):
                 # A fresh transcript per call keeps the squeezed challenges
                 # deterministic; return the arrays so block_until_ready waits on
                 # the fold/commit chain (FriProof is not a pytree).
-                t = Transcript()  # width 12 == pil2 transcriptArity 3
+                t = Transcript()
                 t.put(fnp.zeros((1,), F))  # stand-in for the pre-FRI proof state
                 proof = prove(pol, steps, arity=arity, transcript=t)
                 return (proof.final_pol, *proof.roots)

@@ -11,7 +11,12 @@ import numpy as np
 from absl.testing import absltest
 
 from zisk_zorch.golden import load, u64
-from zisk_zorch.transcript.transcript import DIGEST, Transcript, transcript_hash
+from zisk_zorch.transcript.transcript import (
+    DIGEST,
+    WIDTH,
+    Transcript,
+    transcript_hash,
+)
 
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "transcript.json"
 
@@ -61,21 +66,29 @@ class TranscriptTest(absltest.TestCase):
         # at every block-boundary shape: empty, mid-block, exact multiples,
         # one past a multiple, and a section-sized buffer.
         rng = np.random.default_rng(7)
-        for width in (12, 16):
-            rate = width - 4
-            for family in ("Poseidon2", "Poseidon1"):
-                for n in (0, 1, rate - 1, rate, rate + 1, 3 * rate, 462):
-                    values = u64(
-                        rng.integers(0, (1 << 64) - (1 << 32), n, dtype=np.uint64)
-                    )
-                    t = Transcript(width, family)
-                    t.put(values)
-                    expected = t.get_state()[:DIGEST]
-                    got = transcript_hash(values, width, family)
-                    self.assertTrue(
-                        bool(fnp.array_equal(got, expected)),
-                        msg=f"width {width} {family} n={n}",
-                    )
+        rate = WIDTH - DIGEST
+        for family in ("Poseidon2", "Poseidon1"):
+            for n in (0, 1, rate - 1, rate, rate + 1, 3 * rate, 462):
+                values = u64(
+                    rng.integers(0, (1 << 64) - (1 << 32), n, dtype=np.uint64)
+                )
+                t = Transcript(WIDTH, family)
+                t.put(values)
+                expected = t.get_state()[:DIGEST]
+                got = transcript_hash(values, WIDTH, family)
+                self.assertTrue(
+                    bool(fnp.array_equal(got, expected)),
+                    msg=f"{family} n={n}",
+                )
+
+    def test_rejects_a_width_pil2_never_sponges(self) -> None:
+        # Width 4 is the one that has to raise rather than build: Poseidon2
+        # carries it for the grinding predicate, so the permutation accepts it
+        # and the sponge would come back with rate 0 and never flush.
+        with self.assertRaises(ValueError):
+            Transcript(4)
+        with self.assertRaises(ValueError):
+            transcript_hash(u64(np.arange(3, dtype=np.uint64)), 4)
 
 
 if __name__ == "__main__":

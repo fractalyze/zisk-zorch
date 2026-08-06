@@ -155,7 +155,7 @@ zkbench owns warmup (3) + timed iterations (20) and reports warm `latency`,
 - **Run `--phase compile` and `--phase runtime` separately** — the memory peak
   is process-cumulative.
 - **The defaults are not production-shaped**: `--n_cols` defaults to 64 (Main
-  is 38 cm1 / 24 cm2) and `--arity` to 2 (production is 4). For the quotient,
+  is 38 cm1 / 24 cm2). For the quotient,
   `--stages=quotient --chip=main` folds the chip's actual `eval_constraints`;
   the synthetic `--n_constraints` path is only as real as its products are
   distinct (`bench_inner_proof_test` pins the density).

@@ -110,15 +110,15 @@ class QuerySampleTest(absltest.TestCase):
         final_pol = u64x3(["2", "3", "5", "8", "13", "21"])  # 2 cubic elements
         pow_bits, n_queries, n_bits_ext = 8, 4, 5
 
-        t1 = Transcript(12)
+        t1 = Transcript(16)
         t1.put(seed)
         challenge = grinding_seed_challenge(t1, final_pol)
         want_nonce = _grind(challenge, pow_bits)
         want_pos = query_positions_for(
-            challenge, 12, want_nonce, n_queries=n_queries, n_bits_ext=n_bits_ext
+            challenge, 16, want_nonce, n_queries=n_queries, n_bits_ext=n_bits_ext
         )
 
-        t2 = Transcript(12)
+        t2 = Transcript(16)
         t2.put(seed)
         positions, nonce = sample_query_positions(
             t2, final_pol, pow_bits=pow_bits, n_queries=n_queries, n_bits_ext=n_bits_ext

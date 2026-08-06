@@ -30,7 +30,7 @@ class BenchInnerProofTest(absltest.TestCase):
     def test_parser_defaults_match_the_production_fri_schedule(self) -> None:
         args = _parse([])
         self.assertEqual(args.stages, ",".join(_STAGES))
-        self.assertEqual(args.arity, 2)
+        self.assertEqual(args.arity, 4)
         # The ZisK v1.0.0-alpha starkStructs fold by 3 down to nBits 5.
         self.assertEqual(args.fold_bits, 3)
         self.assertEqual(args.final_bits, 5)
@@ -67,20 +67,15 @@ class BenchInnerProofTest(absltest.TestCase):
         self.assertLen({out[:, j].tobytes() for j in range(900)}, 900)
 
     def test_fri_leg_warms_the_perm_width_its_arity_needs(self) -> None:
-        # The fri leg jits `prove`, which builds `merkle_tree(arity)` *inside* the
-        # trace, so the width-4*arity perm must be memoized host-side first or its
-        # M4 analysis meets a tracer. Every arity must warm, not a listed few.
-        for arity, width in ((2, 8), (3, 12), (4, 16)):
-            with self.subTest(arity=arity):
-                goldilocks_perm.cache_clear()
-                list(
-                    InnerProofBenchmark().get_ops(
-                        _parse([f"--arity={arity}", "--stages=fri", "--n_bits=7"])
-                    )
-                )
-                before = goldilocks_perm.cache_info().hits
-                goldilocks_perm(width)  # a hit iff get_ops already warmed it
-                self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
+        # `prove` builds `merkle_tree(arity)` inside the jit trace, and building
+        # the permutation there would hand its external-M4 matrix analysis a
+        # tracer instead of concrete constants. So `get_ops` has to populate the
+        # `goldilocks_perm` cache host-side before jitting; this asserts it did.
+        goldilocks_perm.cache_clear()
+        list(InnerProofBenchmark().get_ops(_parse(["--stages=fri", "--n_bits=7"])))
+        before = goldilocks_perm.cache_info().hits
+        goldilocks_perm(16)  # a hit iff get_ops already warmed it
+        self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
 
     def test_chip_mode_folds_a_real_air(self) -> None:
         # #66: the chip leg replaces the proxy's independent products with a real

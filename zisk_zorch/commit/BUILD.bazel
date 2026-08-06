@@ -54,6 +54,7 @@ py_test(
     deps = [
         ":linear_hash",
         "//zisk_zorch:golden",
+        "//zisk_zorch/poseidon1:goldilocks",
         "//zisk_zorch/poseidon2:goldilocks",
         requirement("absl_py"),
     ],

@@ -11,7 +11,8 @@ from absl.testing import absltest
 
 from zisk_zorch.commit.linear_hash import LinearHash
 from zisk_zorch.golden import load, u64
-from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zisk_zorch.poseidon1.goldilocks import goldilocks_perm as poseidon1_perm
+from zisk_zorch.poseidon2.goldilocks import goldilocks_perm as poseidon2_perm
 
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "linear_hash.json"
 
@@ -19,7 +20,7 @@ _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "linear_hash.j
 class LinearHashTest(absltest.TestCase):
     def test_matches_pil2_reference(self) -> None:
         for entry in load(_GOLDEN)["widths"]:
-            hasher = LinearHash(goldilocks_perm(entry["width"]))
+            hasher = LinearHash(poseidon2_perm(entry["width"]))
             self.assertEqual(hasher.rate, entry["rate"])
             for case in entry["cases"]:
                 out = hasher.hash(u64(case["input"]))
@@ -33,11 +34,13 @@ class LinearHashTest(absltest.TestCase):
 
     def test_value_equality(self) -> None:
         # Fresh instances over the same permutation are one static jit-zone
-        # key; different widths are distinct keys.
-        a, b = LinearHash(goldilocks_perm(12)), LinearHash(goldilocks_perm(12))
+        # key; a different permutation is a distinct key. Both families run at
+        # the same width now that only arity 4 is modelled, so the hash family
+        # is what has to separate them.
+        a, b = LinearHash(poseidon2_perm(16)), LinearHash(poseidon2_perm(16))
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
-        self.assertNotEqual(a, LinearHash(goldilocks_perm(16)))
+        self.assertNotEqual(a, LinearHash(poseidon1_perm(16)))
         self.assertNotEqual(a, object())
 
 

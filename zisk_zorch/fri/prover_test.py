@@ -24,7 +24,7 @@ class FriProveTest(absltest.TestCase):
     def test_matches_pil2_fri_prover(self) -> None:
         for case in load(_TESTDATA / "fri_prove.json")["cases"]:
             with self.subTest(steps=case["steps"], arity=case["arity"]):
-                transcript = Transcript()  # width 12 == pil2 transcriptArity 3
+                transcript = Transcript()
                 transcript.put(u64(case["seed"]))
                 proof, layers = prove(
                     u64x3(case["init_pol"]),
