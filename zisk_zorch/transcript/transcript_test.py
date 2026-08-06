@@ -15,19 +15,12 @@ from zisk_zorch.transcript.transcript import Transcript
 
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "transcript.json"
 
-# The width-8 Poseidon1 permutation compiles and then never returns from
-# execution on the pinned frx stack (fractalyze/zorch#565) — same skip as the
-# poseidon1 goldens; its transcript entry stays committed but is not run.
-_UNRUNNABLE = {("Poseidon1", 8)}
-
 
 class TranscriptTest(absltest.TestCase):
     def test_matches_pil2_reference(self) -> None:
         for entry in load(_GOLDEN)["widths"]:
             width = entry["width"]
             family = entry.get("hash_family", "Poseidon2")
-            if (family, width) in _UNRUNNABLE:
-                continue
             t = Transcript(width, family)
             for step in entry["steps"]:
                 op = step["op"]
