@@ -219,6 +219,21 @@ class LogUpWitnessProver(
         # and a per-prove `frx.jit` wrapper would retrace on every instance
         # proved with the same key.
         self._logup_jit = frx.jit(self._logup_columns)
+        # Jitted for the same reasons as the opening role's commit: a dedicated
+        # hash fusion only exists inside a jit region, and the eager LDE emits a
+        # standalone `lax.ntt` pass fusion that can overrun ptxas's 48 KB static
+        # shared-memory cap at ZisK Main width.
+        self._commit_jit = frx.jit(self._commit_fn)
+
+    def _commit_fn(self, matrix):
+        # Components, not the dataclass: `TraceCommitment` is not a pytree.
+        c = commit_trace(
+            matrix,
+            blowup=self._blowup,
+            arity=self._arity,
+            hash_family=self._family,
+        )
+        return c.root, c.digest_layers, c.extended
 
     def _logup_columns(self, env):
         # The environment enters as an argument: a closure-captured array
@@ -298,8 +313,9 @@ class LogUpWitnessProver(
         matrix, gsum_result = self._logup_jit(env)
         airgroupvalues = {hint_value(self._gsum_hint, "result")["id"]: gsum_result}
         assert matrix.shape[1] == si["mapSectionsN"]["cm2"], "cm2 width mismatch"
-        commitment = commit_trace(
-            matrix, blowup=self._blowup, arity=self._arity, hash_family=self._family
+        root, digest_layers, extended = self._commit_jit(matrix)
+        commitment = TraceCommitment(
+            root=root, digest_layers=digest_layers, extended=extended
         )
         transcript.put(commitment.root)
         absorb_stage2_airvalues(transcript, claim.pil2.airvalues, si["airValuesMap"])
@@ -463,6 +479,15 @@ class Pil2OpeningProver(
         # fused slices that never exist whole.
         self._evals_jit = frx.jit(self._evals_fn)
         self._deep_jit = frx.jit(self._deep_fn)
+        # The commit is jitted for the same reason, plus two of its own. A
+        # dedicated hash fusion only exists INSIDE a jit region, so an eager
+        # commit silently gives up the fused Poseidon kernel; and the eager
+        # LDE dispatches `lax.ntt` as a standalone pass fusion, whose config
+        # is assembled outside the NTT rewriter and can request more STATIC
+        # shared memory than ptxas allows (48 KB) even though it fits the
+        # device's dynamic budget -- a hard `uses too much shared data` build
+        # error at ZisK Main width on sm_120.
+        self._commit_jit = frx.jit(self._commit_fn)
 
     def _columns(self, bufs: dict) -> list:
         return [
@@ -490,15 +515,25 @@ class Pil2OpeningProver(
             n_bits=self._nb,
         )
 
+    def _commit_fn(self, trace):
+        # `TraceCommitment` is a plain dataclass, not a registered pytree, so
+        # the traced function hands back its components and `commit` rebuilds
+        # it outside the trace.
+        c = commit_trace(
+            trace,
+            blowup=1 << (self._nbe - self._nb),
+            arity=self._arity,
+            hash_family=self._family,
+        )
+        return c.root, c.digest_layers, c.extended
+
     def commit(self, witness: InnerWitness) -> TraceCommitment:
         """The scheme's commit half — identical to `OpeningProver.commit`;
         the pil2 composite absorbs no root for it (the global challenge
         arrives already bound to it)."""
-        return commit_trace(
-            witness.trace,
-            blowup=1 << (self._nbe - self._nb),
-            arity=self._arity,
-            hash_family=self._family,
+        root, digest_layers, extended = self._commit_jit(witness.trace)
+        return TraceCommitment(
+            root=root, digest_layers=digest_layers, extended=extended
         )
 
     def prove(
