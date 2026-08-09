@@ -2,8 +2,8 @@
 
 After the fold loop, pil2's query phase (`gen_proof.hpp`) absorbs the final
 polynomial into the running transcript and squeezes a cubic challenge, then runs
-proof-of-work: search a `nonce` such that the width-4 Poseidon2 permutation of
-`challenge ++ nonce` has `powBits` leading zero bits. It then seeds a FRESH
+proof-of-work: search a `nonce` such that the width-8 permutation of the key's
+hash family applied to `challenge ++ nonce` has `powBits` leading zero bits. It then seeds a FRESH
 transcript with `challenge ++ nonce` and reads the query positions off it via
 `getPermutations` (`nQueries` indices of `nBitsExt` bits each), and transmits
 `nonce` in the proof so the verifier can re-check the grind.
@@ -20,6 +20,8 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
+import functools
+
 import frx
 import frx.numpy as fnp
 import numpy as np
@@ -29,8 +31,8 @@ from zk_dtypes import pfinfo
 from zorch.grind import grind_search
 from zorch.utils.field import split_coeffs
 
-from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
 from zisk_zorch.transcript.transcript import (
+    _HASH_FAMILY_PERMS,
     DEFAULT_HASH_FAMILY,
     Transcript,
     _canonical,
@@ -45,8 +47,13 @@ from zisk_zorch.transcript.transcript import (
 # CPU prove's nonce — the width-4 form this module used to model does not
 # reproduce it.
 _GRIND_WIDTH = 8
-_GRIND_PERM = goldilocks_perm(_GRIND_WIDTH)
 _GOLDILOCKS_ORDER = int(pfinfo(F).modulus)
+
+
+@functools.cache
+def _grind_perm(hash_family: str):
+    """The width-8 grinding permutation of `hash_family`."""
+    return _HASH_FAMILY_PERMS[hash_family](_GRIND_WIDTH)
 
 
 def _grind_level(pow_bits: int) -> int:
@@ -55,7 +62,9 @@ def _grind_level(pow_bits: int) -> int:
     return 1 << (64 - pow_bits)
 
 
-def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
+def _grind_images(
+    challenge: Array, nonces: np.ndarray, hash_family: str = DEFAULT_HASH_FAMILY
+) -> np.ndarray:
     """Canonical u64 of the first lane of the width-8 grind permutation of
     `[challenge, nonce, 0-pad]` for each nonce — pil2's grinding image
     (`state[0]`).
@@ -66,7 +75,7 @@ def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
     chal = fnp.broadcast_to(challenge, (nonce_fe.shape[0], 3))
     pad = fnp.zeros((nonce_fe.shape[0], _GRIND_WIDTH - 4), F)
     states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)  # (C, 8)
-    out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
+    out0 = frx.vmap(_grind_perm(hash_family).permute)(states)[:, 0]
     return _canonical(out0)  # decode to canonical u64 (transcript's path)
 
 
@@ -85,22 +94,15 @@ def _grind(
     `image < 2^(64-b)` is a plain half comparison. The search covers the
     uint32 counter space — astronomically more than any real difficulty
     needs (expected work is `2^pow_bits`) — and `grind_search` returns an
-    unchecked 0 on exhaustion, so the hit is re-validated before use.
-
-    Family 1 runs the host engine instead: its width-8 Poseidon1
-    permutation hangs at execution on the device stack
-    (fractalyze/zorch#565), and pil2's own grind is host-paced anyway."""
-    if hash_family == "Poseidon1":
-        from zisk_zorch.poseidon1.goldilocks_host import grind_family1
-
-        return grind_family1(_canonical(challenge), pow_bits)
+    unchecked 0 on exhaustion, so the hit is re-validated before use."""
+    perm = _grind_perm(hash_family)
 
     def check_batch(counters: Array) -> Array:
         nonce_fe = counters.astype(F)  # canonical < 2^32 -> value-encodes
         chal = fnp.broadcast_to(challenge, (counters.shape[0], 3))
         pad = fnp.zeros((counters.shape[0], _GRIND_WIDTH - 4), F)
         states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)
-        out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
+        out0 = frx.vmap(perm.permute)(states)[:, 0]
         halves = lax.bitcast_convert_type(out0.astype(F), fnp.uint32)
         lo, hi = halves[..., 0], halves[..., 1]
         if pow_bits <= 32:
@@ -108,7 +110,7 @@ def _grind(
         return fnp.logical_and(hi == 0, lo < fnp.uint32(1 << (64 - pow_bits)))
 
     nonce = int(grind_search(check_batch, bound=1 << 32))
-    if not grind_is_valid(challenge, nonce, pow_bits):
+    if not grind_is_valid(challenge, nonce, pow_bits, hash_family):
         raise RuntimeError(
             f"grinding: no nonce in the search space for pow_bits={pow_bits}"
         )
@@ -126,11 +128,9 @@ def grind_is_valid(
     the proof-supplied nonce (pil2 `stark_verify.hpp` L195-L200)."""
     if not 0 <= nonce < _GOLDILOCKS_ORDER:
         return False
-    if hash_family == "Poseidon1":
-        from zisk_zorch.poseidon1.goldilocks_host import grind_family1_is_valid
-
-        return grind_family1_is_valid(_canonical(challenge), nonce, pow_bits)
-    image = int(_grind_images(challenge, np.array([nonce], dtype=np.uint64))[0])
+    image = int(
+        _grind_images(challenge, np.array([nonce], dtype=np.uint64), hash_family)[0]
+    )
     return image < _grind_level(pow_bits)
 
 

@@ -296,11 +296,10 @@ python -m zisk_zorch.harness.verify_proof_serializer --dump=<capture> ... [--emi
 ```
 
 Both are family-aware: the key's `pilout.globalInfo.json` `hash` field
-selects Poseidon1/Poseidon2 through every tree, transcript, and the grind
-(family-1 grinding runs the host numpy engine — its width-8 permutation
-hangs on the device stack, zorch#565). Grinding is the WIDTH-8 permutation
-of the key's family with state `[challenge(3), nonce, 0-pad]` — pinned
-against real CPU proves' nonces.
+selects Poseidon1/Poseidon2 through every tree, transcript, and the grind.
+Grinding is the WIDTH-8 permutation of the key's family with state
+`[challenge(3), nonce, 0-pad]`, searched on the batched device engine for
+both families — pinned against real CPU proves' nonces.
 
 `--backend=device` at real scale (ZisK Main, N=2^22) needs a frx wheel
 carrying the xla#335/#340 codegen fixes (`> 0.10.1.dev20260729002119`):
