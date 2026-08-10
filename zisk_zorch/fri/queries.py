@@ -56,6 +56,35 @@ def _grind_perm(hash_family: str):
     return _HASH_FAMILY_PERMS[hash_family](_GRIND_WIDTH)
 
 
+@functools.cache
+def _grind_search_jit(hash_family: str, pow_bits: int):
+    """The jitted grind search for `(hash_family, pow_bits)`, taking the
+    challenge as an argument — a fresh closure per challenge would bake it
+    into the trace as a constant and recompile the search every prove.
+
+    The predicate stays traceable by comparing the image's u32 halves
+    instead of decoding to a host u64: the level is a power of two, so
+    `image < 2^(64-b)` is a plain half comparison."""
+    perm = _grind_perm(hash_family)
+
+    def check_batch(challenge: Array, counters: Array) -> Array:
+        nonce_fe = counters.astype(F)  # canonical < 2^32 -> value-encodes
+        chal = fnp.broadcast_to(challenge, (counters.shape[0], 3))
+        pad = fnp.zeros((counters.shape[0], _GRIND_WIDTH - 4), F)
+        states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)
+        out0 = frx.vmap(perm.permute)(states)[:, 0]
+        halves = lax.bitcast_convert_type(out0.astype(F), fnp.uint32)
+        lo, hi = halves[..., 0], halves[..., 1]
+        if pow_bits <= 32:
+            return hi < fnp.uint32(1 << (32 - pow_bits))
+        return fnp.logical_and(hi == 0, lo < fnp.uint32(1 << (64 - pow_bits)))
+
+    def search(challenge: Array) -> Array:
+        return grind_search(functools.partial(check_batch, challenge), bound=1 << 32)
+
+    return frx.jit(search)
+
+
 def _grind_level(pow_bits: int) -> int:
     """The grind threshold: an image passes iff it is `< 2^(64 - pow_bits)`,
     i.e. its top `pow_bits` bits are zero."""
@@ -89,27 +118,11 @@ def _grind(
     deterministic smallest-nonce choice; the verifier reproduces it via the
     O(1) grind check).
 
-    The predicate stays traceable by comparing the image's u32 halves
-    instead of decoding to a host u64: the level is a power of two, so
-    `image < 2^(64-b)` is a plain half comparison. The search covers the
-    uint32 counter space — astronomically more than any real difficulty
-    needs (expected work is `2^pow_bits`) — and `grind_search` returns an
-    unchecked 0 on exhaustion, so the hit is re-validated before use."""
-    perm = _grind_perm(hash_family)
-
-    def check_batch(counters: Array) -> Array:
-        nonce_fe = counters.astype(F)  # canonical < 2^32 -> value-encodes
-        chal = fnp.broadcast_to(challenge, (counters.shape[0], 3))
-        pad = fnp.zeros((counters.shape[0], _GRIND_WIDTH - 4), F)
-        states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)
-        out0 = frx.vmap(perm.permute)(states)[:, 0]
-        halves = lax.bitcast_convert_type(out0.astype(F), fnp.uint32)
-        lo, hi = halves[..., 0], halves[..., 1]
-        if pow_bits <= 32:
-            return hi < fnp.uint32(1 << (32 - pow_bits))
-        return fnp.logical_and(hi == 0, lo < fnp.uint32(1 << (64 - pow_bits)))
-
-    nonce = int(grind_search(check_batch, bound=1 << 32))
+    The search covers the uint32 counter space — astronomically more than
+    any real difficulty needs (expected work is `2^pow_bits`) — and
+    `grind_search` returns an unchecked 0 on exhaustion, so the hit is
+    re-validated before use."""
+    nonce = int(_grind_search_jit(hash_family, pow_bits)(challenge))
     if not grind_is_valid(challenge, nonce, pow_bits, hash_family):
         raise RuntimeError(
             f"grinding: no nonce in the search space for pow_bits={pow_bits}"
