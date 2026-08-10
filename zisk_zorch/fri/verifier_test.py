@@ -145,11 +145,12 @@ class FriVerifierTest(absltest.TestCase):
                 )
 
                 # Tamper an opened value: breaks that layer's Merkle opening.
+                # Rows are host arrays (see `prove_queries`) — copy before the
+                # in-place bump so the shared batched base stays honest.
                 bad_openings = [list(per_q) for per_q in openings]
-                first = bad_openings[0][0]
-                bad_openings[0][0] = first.at[0].set(
-                    first[0] + fnp.ones((), first.dtype)
-                )
+                first = np.array(bad_openings[0][0])
+                first[0] = np.asarray(first[0] + fnp.ones((), first.dtype))
+                bad_openings[0][0] = first
                 self.assertFalse(
                     self._verify(
                         case, proof.roots, proof.final_pol, bad_openings, nonce

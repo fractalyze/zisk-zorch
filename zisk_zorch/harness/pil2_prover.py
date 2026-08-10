@@ -609,6 +609,12 @@ class Pil2OpeningProver(
                 witness.quotient.layers,
             )
         )(idx_ext)
+        # One device→host copy per tree, then host row views — a per-query
+        # device slice here is thousands of eager dispatches (see
+        # `prove_queries`).
+        trace_rows, quotient_rows = np.asarray(trace_batched), np.asarray(
+            quotient_batched
+        )
         return ProveResult(
             TrivialClaim(),
             OpeningProof(
@@ -616,10 +622,8 @@ class Pil2OpeningProver(
                 fri=fri,
                 nonce=nonce,
                 positions=positions,
-                trace_openings=[[trace_batched[q]] for q in range(len(positions))],
-                quotient_openings=[
-                    [quotient_batched[q]] for q in range(len(positions))
-                ],
+                trace_openings=[[row] for row in trace_rows],
+                quotient_openings=[[row] for row in quotient_rows],
                 fri_openings=prove_queries(fri_layers, positions),
             ),
             transcript,
