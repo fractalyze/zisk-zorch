@@ -30,7 +30,7 @@ from zk_dtypes import goldilocksx3 as F3
 
 from zisk_zorch.golden import base_trace, embed, u64x3
 from zisk_zorch.logup.bus import LogUpBus
-from zisk_zorch.quotient.cexp_ref import _load_inputs, _run_block
+from zisk_zorch.quotient.cexp_ref import _load_inputs, run_block
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
 _GOLDILOCKS_P = 0xFFFFFFFF00000001
@@ -201,7 +201,7 @@ def reauthor_arith_quotient(
     m = [_signed_multiplicity(it, trace) for it in bus.interactions]
 
     cols = [
-        _run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)
+        run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)
     ]
     for ci in range(49, 63):
         slot, group = _ARITH_IM[ci]

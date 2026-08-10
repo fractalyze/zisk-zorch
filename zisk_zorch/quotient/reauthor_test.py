@@ -97,7 +97,7 @@ class ArithOperationBusTest(absltest.TestCase):
                 )
                 den = bus.denominators(base_trace(case, 44))[0]
                 authored = cm[57] * den - cm[41]
-                target = cexp_ref._run_block(
+                target = cexp_ref.run_block(
                     constraints[61]["code"], env, 1 << case["blowup_bits"]
                 )
                 self.assertTrue(bool(fnp.array_equal(authored, target)))
