@@ -263,9 +263,17 @@ class LogUpWitnessProver(
         for i, p in self._logup_cols:
             if p.get("imPol"):
                 env["cm"][i] = run_block(self._exps[p["expId"]], env, 1)
+        # A stage-2 column may be base-field (dim 1, e.g. Keccakf.ImPol):
+        # it contributes one limb column where a cubic contributes three.
         return (
             fnp.concatenate(
-                [split_coeffs(env["cm"][i]) for i, _ in self._logup_cols], axis=1
+                [
+                    split_coeffs(env["cm"][i])
+                    if p["dim"] == 3
+                    else env["cm"][i].reshape(n, 1)
+                    for i, p in self._logup_cols
+                ],
+                axis=1,
             ),
             result,
         )

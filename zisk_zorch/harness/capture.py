@@ -275,7 +275,13 @@ class Capture:
             n_bits=self.nb,
             n_cols=self.n_cols,
             publics=self.u64("publics"),
-            airvalues=self.u64("airvalues"),
+            # An air with no airvalues (empty ``airValuesMap``) dumps no file;
+            # a missing dump for an air that HAS them stays loud.
+            airvalues=(
+                self.u64("airvalues")
+                if self.si.get("airValuesMap")
+                else np.zeros(0, dtype=np.uint64)
+            ),
             proofvalues=self.u64("proofvalues"),
             global_challenge=self.u64("global_challenge"),
         )
