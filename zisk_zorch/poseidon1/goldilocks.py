@@ -21,6 +21,7 @@ import functools
 import json
 import pathlib
 
+import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
@@ -117,5 +118,8 @@ def goldilocks_perm(width: int) -> SparsePoseidon:
     """The pil2-stark Poseidon1 permutation for `width` on zorch's optimized-sparse
     core. Cached: the params carry constant arrays whose host-side value-key is
     rebuilt per construction, and one commit builds the leaf/node permutation
-    repeatedly."""
-    return SparsePoseidon(goldilocks_params(width))
+    repeatedly. Construction is forced eager so a cache miss under an ambient
+    trace stores concrete constants, not that trace's tracers (the block
+    composite commits before anything else has warmed the cache)."""
+    with frx.ensure_compile_time_eval():
+        return SparsePoseidon(goldilocks_params(width))
