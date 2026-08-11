@@ -20,13 +20,14 @@ Two deliberate v1 shapes:
 from __future__ import annotations
 
 import gc
+import pathlib
 from dataclasses import dataclass, replace
 
 import frx.numpy as fnp
 import numpy as np
 from zorch.utils.field import split_coeffs
 
-from zisk_zorch.harness.capture import Capture
+from zisk_zorch.harness.capture import Capture, limbs
 from zisk_zorch.harness.contributions import (
     aggregate_contributions,
     global_challenge,
@@ -39,6 +40,7 @@ from zisk_zorch.harness.global_constraints import (
 )
 from zisk_zorch.harness.pil2 import stage_challenge_ids, transcript_width
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
+from zisk_zorch.harness.proof_serializer import serialize_proof
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerWitness
 
@@ -46,17 +48,56 @@ from zisk_zorch.types import InnerWitness
 @dataclass(frozen=True)
 class InstanceResult:
     """One instance's prove outcome: the airgroup-value words its LogUp
-    stage settled. Stage results are deliberately not retained — observe
-    them live via `prove_block`'s `on_stage` (38 instances' stage buffers
-    exceed both host and device memory)."""
+    stage settled, and the wire proof's path when emission was on. Stage
+    results are deliberately not retained — observe them live via
+    `prove_block`'s `on_stage` (38 instances' stage buffers exceed both
+    host and device memory)."""
 
     instance: str
     airgroupvalues: np.ndarray
+    wire_proof: pathlib.Path | None = None
 
 
 def _airgroupvalue_words(logup_claim) -> np.ndarray:
     (value,) = logup_claim.airgroupvalues.values()
     return np.asarray(split_coeffs(value)).reshape(-1).astype(np.uint64)
+
+
+def _dumped_airgroupvalues(claim) -> np.ndarray:
+    """A claim's airgroup values in their dumped packing: contiguous limb
+    triples in id order (the byte-gates compare exactly this form)."""
+    agv = claim.airgroupvalues
+    if not agv:
+        return np.zeros(0, dtype=np.uint64)
+    return np.concatenate([limbs(agv[i]) for i in sorted(agv)]).astype(np.uint64)
+
+
+def emit_wire_proof(
+    cap: Capture, out_dir: pathlib.Path, claim, opening
+) -> pathlib.Path:
+    """Serialize one instance's own-prove wire proof — `claim` is the
+    quotient-bound claim (the three roots and the values), `opening` the
+    `Pil2OpeningProof` carrying `WireOpenings`."""
+    proof = serialize_proof(
+        cap.si,
+        airgroup_values=_dumped_airgroupvalues(claim),
+        air_values=np.asarray(claim.pil2.airvalues, dtype=np.uint64),
+        roots=[
+            np.asarray(r).astype(np.uint64)
+            for r in (claim.trace_root, claim.root2, claim.quotient_root)
+        ],
+        evals=limbs(opening.evals),
+        const_opening=opening.wire.const,
+        custom_openings=opening.wire.customs,
+        stage_openings=opening.wire.stages,
+        fri_roots=[np.asarray(r).astype(np.uint64) for r in opening.fri.roots],
+        fri_openings=opening.wire.fri,
+        final_pol=limbs(opening.fri.final_pol),
+        nonce=opening.nonce,
+    )
+    path = out_dir / f"{cap.instance}_proof.npy"
+    np.save(path, proof)
+    return path
 
 
 def prove_block(
@@ -65,6 +106,7 @@ def prove_block(
     global_info: dict,
     global_constraints: list[dict],
     on_stage=None,
+    emit_dir: pathlib.Path | None = None,
 ) -> tuple[np.ndarray, list[InstanceResult], list[np.ndarray]]:
     """Prove `captures` (``(family, capture, verkey)`` triples, any order)
     as one block. Returns the derived global challenge, the per-instance
@@ -79,8 +121,11 @@ def prove_block(
 
     def prover_for(fam: str, cap: Capture) -> Pil2InnerProver:
         if fam not in provers:
-            provers[fam] = Pil2InnerProver(cap.pil2_key)
+            provers[fam] = Pil2InnerProver(cap.pil2_key, emit_wire=emit_dir is not None)
         return provers[fam]
+
+    if emit_dir is not None:
+        emit_dir.mkdir(parents=True, exist_ok=True)
 
     # Phase 1: stage-1 commits -> contributions. The commitment is dropped
     # immediately; only the root feeds the hash. The capture's caches go
@@ -133,12 +178,16 @@ def prove_block(
         transcript = Transcript(
             transcript_width(cap.si["starkStruct"]), cap.hash_family
         )
-        logup_claim = None
+        logup_claim = quotient_claim = opening_proof = None
         for name, result in prover.prove_stages(
             claim, InnerWitness(fnp.asarray(cap.trace)), transcript
         ):
             if name == "logup_witness":
                 logup_claim = result.reduced_claim
+            elif name == "quotient":
+                quotient_claim = result.reduced_claim
+            elif name == "opening":
+                opening_proof = result.reduction_proof
             if on_stage is not None:
                 on_stage(cap.instance, name, result)
         assert logup_claim is not None, f"{cap.instance}: no logup stage"
@@ -147,13 +196,19 @@ def prove_block(
             stage2_challenges = {
                 g: logup_claim.challenges[i] for g, i in enumerate(ids2)
             }
+        wire_path = (
+            emit_wire_proof(cap, emit_dir, quotient_claim, opening_proof)
+            if emit_dir is not None
+            else None
+        )
         results.append(
             InstanceResult(
                 instance=cap.instance,
                 airgroupvalues=_airgroupvalue_words(logup_claim),
+                wire_proof=wire_path,
             )
         )
-        del logup_claim, prover
+        del logup_claim, quotient_claim, opening_proof, prover
         cap.release()
         # A family's compiled executables are device-module memory; 20
         # families' worth cannot stay loaded at once. The manifest arrives

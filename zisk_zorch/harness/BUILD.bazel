@@ -19,6 +19,18 @@ py_library(
     ],
 )
 
+# pil2's flat-proof writer — proof2pointer in numpy, plus the per-tree
+# wire-shaped query openings the prover's emit_wire path assembles.
+py_library(
+    name = "proof_serializer",
+    srcs = ["proof_serializer.py"],
+    deps = [
+        "//zisk_zorch/commit:openings",
+        requirement("frx"),
+        requirement("numpy"),
+    ],
+)
+
 # The pil2-mode prover: the byte-match harness's composite and its claim
 # types — conformance tooling, never a production role, which is why it
 # lives here and not in the stage packages.
@@ -27,6 +39,7 @@ py_library(
     visibility = ["//zisk_zorch:__pkg__"],
     srcs = ["pil2_prover.py"],
     deps = [
+        ":proof_serializer",
         "//zisk_zorch/logup",
         ":pil2",
         "//zisk_zorch:golden",
@@ -109,6 +122,43 @@ py_test(
     srcs = ["capture_test.py"],
     deps = [
         ":capture",
+        requirement("absl_py"),
+    ],
+)
+
+# The block composite: every instance proved in one process from the
+# self-derived seed, with per-instance wire-proof emission. Bundles the
+# contributions phase and the global-constraints binding it orchestrates.
+py_library(
+    name = "block_composite",
+    srcs = [
+        "block_composite.py",
+        "contributions.py",
+        "global_constraints.py",
+    ],
+    deps = [
+        ":capture",
+        ":pil2",
+        ":pil2_prover",
+        ":proof_serializer",
+        "//zisk_zorch:types",
+        "//zisk_zorch/quotient",
+        "//zisk_zorch/transcript",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+    ],
+)
+
+py_test(
+    name = "wire_proof_test",
+    size = "large",
+    srcs = ["wire_proof_test.py"],
+    env_inherit = ["ZISK_PIL2_CAPTURE"],
+    deps = [
+        ":block_composite",
+        ":capture",
+        ":pil2_prover",
         requirement("absl_py"),
     ],
 )

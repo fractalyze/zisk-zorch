@@ -57,6 +57,7 @@ from zisk_zorch.harness.pil2 import (
     scalar_env,
     squeeze_stage_challenges,
 )
+from zisk_zorch.harness.proof_serializer import TreeOpening, open_tree
 from zisk_zorch.logup.bus import LogUpBus
 from zisk_zorch.quotient.cexp_ref import run_block
 from zisk_zorch.quotient.compute_q import compute_q
@@ -485,6 +486,26 @@ class Pil2QuotientProver(
         )
 
 
+@dataclass(frozen=True)
+class WireOpenings:
+    """Every committed tree's pil2 wire-shaped query openings — what
+    `serialize_proof` takes beyond the claim-side values."""
+
+    const: TreeOpening
+    customs: list[TreeOpening]
+    stages: list[TreeOpening]  # cm1, cm2, cmQ in stage order
+    fri: list[TreeOpening]  # one per committed fold layer
+
+
+@dataclass(frozen=True)
+class Pil2OpeningProof(OpeningProof):
+    """`OpeningProof` plus the wire-shaped tree openings, produced when the
+    prover is constructed with ``emit_wire`` (the serializer's inputs cost
+    query-sized work per tree, so they are opt-in)."""
+
+    wire: WireOpenings | None = None
+
+
 class Pil2OpeningProver(
     ProverStage[Pil2QuotientBoundClaim, Pil2OpeningWitness, TrivialClaim, OpeningProof]
 ):
@@ -503,13 +524,14 @@ class Pil2OpeningProver(
       opening group, one reciprocal per group, vf1-Horner across groups —
       which zorch's one-challenge `deep_composition` cannot express.
 
-    The query phase opens the trace, quotient, and FRI-layer trees. pil2
-    additionally opens the stage-2, constant, and custom trees per query;
-    those openings are not produced here (the byte-gates compare the
-    positions and nonce, which pin the whole draw) — the verifier dual is
-    deferred with them."""
+    The query phase opens the trace, quotient, and FRI-layer trees. Under
+    ``emit_wire`` it additionally opens the stage-2, constant, and custom
+    trees per query and returns every tree's `WireOpenings` on a
+    `Pil2OpeningProof`, ready for `serialize_proof`; without it those
+    openings are skipped (the byte-gates compare the positions and nonce,
+    which pin the whole draw)."""
 
-    def __init__(self, key: Pil2Key) -> None:
+    def __init__(self, key: Pil2Key, *, emit_wire: bool = False) -> None:
         si, ss = key.starkinfo, key.starkinfo["starkStruct"]
         self._key = key
         self._family = key.hash_family
@@ -520,6 +542,11 @@ class Pil2OpeningProver(
         self._pow_bits = ss["powBits"]
         self._n_queries = ss["nQueries"]
         self._hash_commits = ss.get("hashCommits", False)
+        self._emit_wire = emit_wire
+        self._llv = ss.get("lastLevelVerification", 0)
+        # The constant/custom trees are key-fixed; committed lazily on the
+        # first wire-emitting prove and reused for every instance of the key.
+        self._fixed_trees: list[tuple[Array, list[Array]]] | None = None
         # Jitted once per role; evals/coset enter as arguments (the in-trace
         # coset feeding the cubic reciprocal is #67's crash trigger). The
         # evMap COLUMNS are built inside each trace from the section
@@ -667,7 +694,7 @@ class Pil2OpeningProver(
         )
         return ProveResult(
             TrivialClaim(),
-            OpeningProof(
+            Pil2OpeningProof(
                 evals=evals,
                 fri=fri,
                 nonce=nonce,
@@ -675,8 +702,67 @@ class Pil2OpeningProver(
                 trace_openings=[[row] for row in trace_rows],
                 quotient_openings=[[row] for row in quotient_rows],
                 fri_openings=prove_queries(fri_layers, positions),
+                wire=(
+                    self._wire_openings(witness, fri_layers, positions)
+                    if self._emit_wire
+                    else None
+                ),
             ),
             transcript,
+        )
+
+    def _wire_openings(
+        self, witness: Pil2OpeningWitness, fri_layers, positions
+    ) -> WireOpenings:
+        """Open every committed tree at the drawn positions, wire-shaped."""
+        mt = merkle_tree(self._arity, self._family)
+        if self._fixed_trees is None:
+            # Device copies: the key's sections arrive as host arrays, and
+            # `open_tree`'s vmapped opening cannot index host numpy.
+            self._fixed_trees = []
+            for buf in (
+                self._key.const_ext,
+                *(v for _, v in sorted(self._key.custom_ext.items())),
+            ):
+                dev = fnp.asarray(buf)
+                self._fixed_trees.append((dev, mt.commit(dev)[1]))
+        (const_buf, const_layers), *customs = self._fixed_trees
+        pos = np.asarray(positions)
+        ext = {"n_bits": self._nbe, "arity": self._arity, "llv": self._llv}
+        return WireOpenings(
+            const=open_tree(mt, const_buf, const_layers, pos, **ext),
+            customs=[open_tree(mt, b, la, pos, **ext) for b, la in customs],
+            stages=[
+                open_tree(
+                    mt,
+                    witness.trace_commit.extended,
+                    witness.trace_commit.digest_layers,
+                    pos,
+                    **ext,
+                ),
+                open_tree(
+                    mt,
+                    witness.logup.commitment.extended,
+                    witness.logup.commitment.digest_layers,
+                    pos,
+                    **ext,
+                ),
+                open_tree(
+                    mt, witness.quotient.matrix, witness.quotient.layers, pos, **ext
+                ),
+            ],
+            fri=[
+                open_tree(
+                    mt,
+                    layer.matrix,
+                    layer.digest_layers,
+                    pos % (1 << layer.leaf_bits),
+                    n_bits=layer.leaf_bits,
+                    arity=self._arity,
+                    llv=self._llv,
+                )
+                for layer in fri_layers
+            ],
         )
 
 
@@ -702,10 +788,10 @@ class Pil2InnerProver:
     can return when something consumes one (the deferred serialize/FFI
     work)."""
 
-    def __init__(self, key: Pil2Key) -> None:
+    def __init__(self, key: Pil2Key, *, emit_wire: bool = False) -> None:
         self.logup = LogUpWitnessProver(key)
         self.quotient = Pil2QuotientProver(key)
-        self.opening = Pil2OpeningProver(key)
+        self.opening = Pil2OpeningProver(key, emit_wire=emit_wire)
 
     def prove_stages(
         self,
