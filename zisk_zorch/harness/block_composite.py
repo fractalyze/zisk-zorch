@@ -107,6 +107,7 @@ def prove_block(
     global_constraints: list[dict],
     on_stage=None,
     emit_dir: pathlib.Path | None = None,
+    provers: dict[str, Pil2InnerProver] | None = None,
 ) -> tuple[np.ndarray, list[InstanceResult], list[np.ndarray]]:
     """Prove `captures` (``(family, capture, verkey)`` triples, any order)
     as one block. Returns the derived global challenge, the per-instance
@@ -114,10 +115,17 @@ def prove_block(
 
     `on_stage(instance, stage_name, result)` observes each stage as it
     lands — the byte-gates ride there during the capture-fed transition.
-    """
+
+    `provers` is an optional caller-owned prover cache. Without it, each
+    family's prover is dropped after its last prove (20 keys' compiled
+    executables are device-module memory that cannot all stay loaded);
+    passing a dict keeps every prover warm across calls — the caller owns
+    that residency, e.g. a warm-timed benchmark pass."""
     lattice = global_info["latticeSize"]
     family_hash = global_info["hash"]
-    provers: dict[str, Pil2InnerProver] = {}
+    release_provers = provers is None
+    if provers is None:
+        provers = {}
 
     def prover_for(fam: str, cap: Capture) -> Pil2InnerProver:
         if fam not in provers:
@@ -214,8 +222,8 @@ def prove_block(
         # families' worth cannot stay loaded at once. The manifest arrives
         # family-grouped, so the prover is dropped after its family's last
         # prove (an ungrouped manifest stays correct — `prover_for` just
-        # recompiles).
-        if i + 1 == len(captures) or captures[i + 1][0] != fam:
+        # recompiles). A caller-owned `provers` cache opts out.
+        if release_provers and (i + 1 == len(captures) or captures[i + 1][0] != fam):
             provers.pop(fam, None)
         gc.collect()
 
