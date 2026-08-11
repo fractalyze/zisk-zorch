@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 
 import frx.numpy as fnp
 import numpy as np
+from zorch.utils.field import split_coeffs
 
 from zisk_zorch.harness.capture import Capture
 from zisk_zorch.harness.contributions import (
@@ -40,7 +41,6 @@ from zisk_zorch.harness.pil2 import stage_challenge_ids, transcript_width
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerWitness
-from zorch.utils.field import split_coeffs
 
 
 @dataclass(frozen=True)
