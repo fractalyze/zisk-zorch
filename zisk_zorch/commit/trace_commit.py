@@ -15,8 +15,11 @@ so selecting Poseidon1 or Poseidon2 only swaps the permutation the blocks hold.
 
 from __future__ import annotations
 
+import functools
+
 import frx.numpy as fnp
-from frx import Array
+import numpy as np
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zorch.coding.reed_solomon import ReedSolomon
 from zorch.commit.merkle import MerkleTree
@@ -55,6 +58,40 @@ _HASH_FAMILY_PERMS = {
     "Poseidon1": _poseidon1_perm,
 }
 DEFAULT_HASH_FAMILY = "Poseidon2"
+
+
+_GOLDILOCKS_P = 0xFFFFFFFF00000001
+
+
+@functools.cache
+def _shift_inv_powers(count: int) -> np.ndarray:
+    """`[7^0, 7^-1, ..., 7^-(count-1)] mod p` as canonical u64 — the coset
+    unscale `unextend` applies per coefficient (cached: a Python big-int
+    loop, same trap as the FRI fold's coset table)."""
+    inv = pow(COSET_SHIFT, -1, _GOLDILOCKS_P)
+    out = [1] * count
+    for k in range(1, count):
+        out[k] = out[k - 1] * inv % _GOLDILOCKS_P
+    return np.array(out, dtype=np.uint64)
+
+
+def unextend(extended: Array, blowup: int) -> Array:
+    """Inverse of `extend`: recover the (N, n_cols) base evaluations from a
+    coset-7 LDE in pil2's domain order.
+
+    INTT on the extended domain yields the polynomial's coefficients scaled
+    by `7^k`; unscale, keep the base-degree prefix (the rest vanish for a
+    genuine LDE), and NTT back at base length — all on `_PIL2_GENERATOR`'s
+    tower, so domain order round-trips exactly."""
+    if extended.ndim != 2:
+        raise ValueError(f"extended must be 2-D, got ndim={extended.ndim}")
+    ne = extended.shape[0]
+    n = ne // blowup
+    coeffs = lax.ntt(
+        extended.T, ntt_type="INTT", ntt_length=ne, generator=_PIL2_GENERATOR
+    )
+    unscaled = coeffs[:, :n] * fnp.array(_shift_inv_powers(ne)[:n], dtype=F)
+    return lax.ntt(unscaled, ntt_type="NTT", ntt_length=n, generator=_PIL2_GENERATOR).T
 
 
 def extend(trace: Array, blowup: int) -> Array:

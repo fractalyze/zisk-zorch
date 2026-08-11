@@ -19,6 +19,7 @@ from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 from zorch.utils.field import join_coeffs, split_coeffs
 
+from zisk_zorch.commit.trace_commit import unextend
 from zisk_zorch.harness.pil2 import (
     Pil2Key,
     cm_env,
@@ -265,6 +266,12 @@ class Capture:
             const_base=self.const_base.astype(F),
             const_ext=self.bufs[("const", 0)],
             custom_ext={ci: self.bufs[("custom", ci)] for ci in range(self.n_customs)},
+            # The dump carries customs extended-only; the stage-2 witness
+            # role reads them on the base domain (Rom).
+            custom_base={
+                ci: unextend(self.bufs[("custom", ci)], self.stride)
+                for ci in range(self.n_customs)
+            },
             hash_family=self.hash_family,
         )
 

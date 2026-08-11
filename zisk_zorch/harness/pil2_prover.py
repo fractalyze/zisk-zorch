@@ -25,6 +25,7 @@ Schedule source: ``gen_proof.hpp`` on the pinned pil2-proofman fork
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import partial
 
@@ -265,12 +266,17 @@ class LogUpWitnessProver(
                 env["cm"][i] = run_block(self._exps[p["expId"]], env, 1)
         # A stage-2 column may be base-field (dim 1, e.g. Keccakf.ImPol):
         # it contributes one limb column where a cubic contributes three.
+        # The interpreter can hand a dim-1 im pol back cubic-typed (a
+        # challenge touched the expression); pil2 stores the base limb, so
+        # keep the first coefficient — the gates pin the higher limbs at 0.
         return (
             fnp.concatenate(
                 [
-                    split_coeffs(env["cm"][i])
-                    if p["dim"] == 3
-                    else env["cm"][i].reshape(n, 1)
+                    (
+                        split_coeffs(env["cm"][i])
+                        if p["dim"] == 3
+                        else split_coeffs(env["cm"][i]).reshape(n, -1)[:, :1]
+                    )
                     for i, p in self._logup_cols
                 ],
                 axis=1,
@@ -285,11 +291,21 @@ class LogUpWitnessProver(
         num_v = hint_value(self._gsum_hint, "numerator_direct")
         if num_v["op"] == "number" and int(num_v["value"]) == 0:
             return None
-        num = run_block(self._exps[num_v["id"]], env, 1)
+        num = self._direct_value(num_v, env)
         den_v = hint_value(self._gsum_hint, "denominator_direct")
         if not (den_v["op"] == "number" and int(den_v["value"]) == 1):
-            num = num / run_block(self._exps[den_v["id"]], env, 1)
+            num = num / self._direct_value(den_v, env)
         return num
+
+    def _direct_value(self, v, env):
+        """A direct-term operand: pil2 emits either an expression reference
+        (``tmp`` — Main, Mem) or a scalar operand class directly (Binary's
+        numerator_direct is an ``airvalue``)."""
+        if v["op"] == "tmp":
+            return run_block(self._exps[v["id"]], env, 1)
+        if v["op"] == "airvalue":
+            return env["airvalues"][v["id"]]
+        raise NotImplementedError(f"direct-term operand kind {v['op']!r}")
 
     def prove(
         self,
@@ -306,7 +322,14 @@ class LogUpWitnessProver(
         env = {
             "cm": {i: witness.trace[:, i] for i in range(claim.pil2.n_cols)},
             "const": const_env({("const", 0): self._key.const_base}, si["nConstants"]),
-            "custom": {},
+            # Rom's stage-2 hints read the `rom` custom commit here; a key
+            # without customs leaves the class empty so a stray operand
+            # still fails loudly.
+            "custom": {
+                (ci, j): fnp.asarray(buf[:, j])
+                for ci, buf in self._key.custom_base.items()
+                for j in range(buf.shape[1])
+            },
             **scalar_env(
                 si,
                 publics=claim.pil2.publics,
@@ -382,6 +405,15 @@ class Pil2QuotientProver(
         self._q_jit = frx.jit(
             lambda env: run_block(self._code, env, 1 << self._blowup_bits)
         )
+        # Row-chunked evaluation for AIRs whose cExp working set exceeds
+        # device memory (Keccakf's ~30 GB at 3023 cols, zz#138). Off by
+        # default: the whole-domain graph fuses better.
+        self._q_chunks = int(os.environ.get("ZISK_QUOTIENT_ROW_CHUNKS", "1"))
+        self._q_chunk_jit = frx.jit(
+            lambda env, rows: run_block(
+                self._code, env, 1 << self._blowup_bits, rows=rows
+            )
+        )
         q_deg = si["mapSectionsN"]["cm" + str(si["nStages"] + 1)] // 3
         self._qsec_jit = frx.jit(
             split_coeffs
@@ -423,7 +455,17 @@ class Pil2QuotientProver(
             ),
             "zi": {0: inv_zerofier(self._nb, self._blowup_bits)},
         }
-        quotient = self._q_jit(env)
+        if self._q_chunks > 1:
+            ne = 1 << (self._nb + self._blowup_bits)
+            per = ne // self._q_chunks
+            quotient = fnp.concatenate(
+                [
+                    self._q_chunk_jit(env, fnp.arange(k * per, (k + 1) * per))
+                    for k in range(self._q_chunks)
+                ]
+            )
+        else:
+            quotient = self._q_jit(env)
         matrix = self._qsec_jit(quotient)
         root, layers = merkle_tree(self._arity, self._family).commit(matrix)
         transcript.put(root)

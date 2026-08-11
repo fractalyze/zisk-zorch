@@ -13,7 +13,7 @@ import pathlib
 import frx.numpy as fnp
 from absl.testing import absltest
 
-from zisk_zorch.commit.trace_commit import commit_trace, extend, merkle_tree
+from zisk_zorch.commit.trace_commit import commit_trace, extend, merkle_tree, unextend
 from zisk_zorch.golden import load, u64
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
@@ -37,6 +37,20 @@ class MerkleRootTest(absltest.TestCase):
 
 
 class LdeTest(absltest.TestCase):
+    def test_unextend_inverts_extend(self) -> None:
+        # The golden LDE cases double as unextend fixtures: recovering the
+        # base evaluations from the coset image must be exact (zz#138 —
+        # custom commits are dumped extended-only).
+        for case in load(_TESTDATA / "lde.json")["cases"]:
+            n, n_cols = 1 << case["n_bits"], case["n_cols"]
+            evals = u64(case["evals"]).reshape(n, n_cols)
+            blowup = 1 << case["blowup_bits"]
+            recovered = unextend(extend(evals, blowup=blowup), blowup)
+            self.assertTrue(
+                bool(fnp.array_equal(recovered, evals)),
+                msg=f"n_bits {case['n_bits']}, blowup_bits {case['blowup_bits']}",
+            )
+
     def test_matches_pil2_extend_pol(self) -> None:
         for case in load(_TESTDATA / "lde.json")["cases"]:
             n, n_cols = 1 << case["n_bits"], case["n_cols"]

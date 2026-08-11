@@ -18,7 +18,7 @@ instance data (publics, the trace, the global challenge) rides the claims in
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import frx.numpy as fnp
 import numpy as np
@@ -55,6 +55,11 @@ class Pil2Key:
     # `pilout.globalInfo.json`'s `hash` — the sponge every tree, transcript,
     # and grind of this key runs ("Poseidon1" on native ZisK keys).
     hash_family: str = "Poseidon2"
+    # Base-domain custom sections, keyed like `custom_ext`. The stage-2
+    # witness expressions evaluate over the base domain (Rom's read the
+    # `rom` custom commit there); recovered from the extended sections via
+    # `unextend` where the source provides only those.
+    custom_base: dict[int, np.ndarray] = field(default_factory=dict)
 
 
 def to_field(words) -> Array:

@@ -55,7 +55,18 @@ def _load_inputs(case: dict) -> dict:
     }
 
 
-def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int) -> Array:
+def _column(col: Array, prime: int, extend: int, rows) -> Array:
+    """A column operand's value: the whole (rolled) column, or — under row
+    chunking — the gathered `rows` window. The wrap stays cyclic, matching
+    `roll`, so chunked and whole evaluations agree bytewise."""
+    if rows is None:
+        return fnp.roll(col, -(prime * extend))
+    if prime:
+        return col[(rows + prime * extend) % col.shape[0]]
+    return col[rows]
+
+
+def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int, rows) -> Array:
     """Resolve one cExp SSA operand to its `F3` value. `cm`/`const` carry a `prime`
     rotation of ±`extend` rows — the extended-domain image of pil2's ±1
     next/previous-row opening."""
@@ -63,9 +74,9 @@ def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int) -> Array:
     if t == "number":
         return embed([s["value"]])
     if t == "cm":
-        return fnp.roll(env["cm"][s["id"]], -(s["prime"] * extend))
+        return _column(env["cm"][s["id"]], s["prime"], extend, rows)
     if t == "const":
-        return fnp.roll(env["const"][s["id"]], -(s["prime"] * extend))
+        return _column(env["const"][s["id"]], s["prime"], extend, rows)
     if t == "challenge":
         return env["challenges"][s["id"]]
     if t == "airvalue":
@@ -77,27 +88,33 @@ def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int) -> Array:
     if t == "proofvalue":
         return env["proofvalues"][s["id"]]
     if t == "custom":
-        return fnp.roll(
+        return _column(
             env["custom"][(s.get("commitId", 0), s["id"])],
-            -(s.get("prime", 0) * extend),
+            s.get("prime", 0),
+            extend,
+            rows,
         )
     if t == "tmp":
         return tmp[s["id"]]
     if t == "Zi":
-        return env["zi"][s.get("boundaryId", 0)]
+        return _column(env["zi"][s.get("boundaryId", 0)], 0, extend, rows)
     raise ValueError(f"unhandled cExp operand type {t!r}")
 
 
-def run_block(code: list[dict], env: dict, extend: int) -> Array:
+def run_block(code: list[dict], env: dict, extend: int, rows=None) -> Array:
     """Interpret one straight-line SSA block — pil2's full composite `cExp` or a
     single `constraints[]` body — over `F3`, returning the value its final op
-    writes (the `q` dest for the composite; the last tmp for a lone constraint)."""
+    writes (the `q` dest for the composite; the last tmp for a lone constraint).
+
+    `rows` (a device index vector) evaluates only that row window — the
+    tmp working set shrinks with the window, which is what lets a
+    3000-column AIR's composite fit device memory (zz#138's Keccakf)."""
     tmp: dict[int, Array] = {}
     q: Array | None = None
     result: Array | None = None
     for op in code:
-        a = _operand(op["src"][0], env, tmp, extend)
-        b = _operand(op["src"][1], env, tmp, extend)
+        a = _operand(op["src"][0], env, tmp, extend, rows)
+        b = _operand(op["src"][1], env, tmp, extend, rows)
         kind = op["op"]
         if kind == "add":
             result = a + b
