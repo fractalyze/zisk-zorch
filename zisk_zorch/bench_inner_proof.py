@@ -119,7 +119,10 @@ def _chip_eval_fn(chip_name: str) -> tuple[Callable, int, int]:
     # bench folds constraint structure, not boundary truth, so an all-zero
     # vector of ZisK's pilout width (nPublics) is the right stub.
     pv = fnp.zeros((zisk_n_publics,), F) if chip.has_pv else None
-    eval_fn = lambda t: chip.eval_constraints(t, pv)  # noqa: E731
+
+    def eval_fn(t):
+        return chip.eval_constraints(t, pv)
+
     k = int(eval_fn(fnp.zeros((2, n_cols), F)).shape[-1])
     return eval_fn, n_cols, k
 
