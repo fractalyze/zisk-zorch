@@ -63,6 +63,27 @@ def _as_u64(a) -> np.ndarray:
     return np.asarray(a).astype(np.uint64)
 
 
+def _match_rows(label: str, dev, want, chunk_rows: int = 1 << 19) -> bool:
+    """`_match(label, limbs(dev), want)` in leading-axis row blocks.
+
+    A one-shot `limbs()` of a Keccakf-sized codeword is a ~16 GB device
+    transient (split copy + D2H) that OOMs beside the prove's working set —
+    and frx's async dispatch surfaces that failure at the NEXT sync point,
+    outside any guard around the gate itself. Chunking bounds the transient
+    to ~1 GB regardless of AIR width."""
+    want = np.asarray(want)
+    rows = dev.shape[0]
+    per_row = want.size // rows
+    for i in range(0, rows, chunk_rows):
+        got = limbs(dev[i : i + chunk_rows])
+        if not np.array_equal(got, want[i * per_row : i * per_row + got.size]):
+            ok = _check(False, f"{label} (rows {i}..{i + chunk_rows})")
+            print(f"  got:  {got}")
+            print(f"  want: {want[i * per_row : i * per_row + got.size]}")
+            return ok
+    return _check(True, label)
+
+
 def stage_checks(cap: Capture, width: int) -> dict[str, Callable[[object], bool]]:
     """One golden check per schedule stage, keyed by `prove_stages`' names.
 
@@ -105,8 +126,8 @@ def stage_checks(cap: Capture, width: int) -> dict[str, Callable[[object], bool]
             quotient.reduced_claim,
             f"challenges through stage {cap.si['nStages'] + 1}",
         )
-        ok &= _match(
-            "quotient q", limbs(quotient.reduction_proof.codeword), cap.u64("q_ext")
+        ok &= _match_rows(
+            "quotient q", quotient.reduction_proof.codeword, cap.u64("q_ext")
         )
         return ok & _match(
             "rootQ", _as_u64(quotient.reduction_proof.root), cap.u64("rootQ")

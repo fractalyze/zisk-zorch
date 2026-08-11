@@ -105,6 +105,15 @@ py_library(
 # host-provided native artifact, so CI (no capture) skips and provisioned
 # hosts run the gates for real.
 py_test(
+    name = "capture_test",
+    srcs = ["capture_test.py"],
+    deps = [
+        ":capture",
+        requirement("absl_py"),
+    ],
+)
+
+py_test(
     name = "gates_test",
     size = "large",
     srcs = ["gates_test.py"],

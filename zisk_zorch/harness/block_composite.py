@@ -45,11 +45,12 @@ from zisk_zorch.types import InnerWitness
 
 @dataclass(frozen=True)
 class InstanceResult:
-    """One instance's prove outcome: the stage results by name and the
-    airgroup-value words its LogUp stage settled."""
+    """One instance's prove outcome: the airgroup-value words its LogUp
+    stage settled. Stage results are deliberately not retained — observe
+    them live via `prove_block`'s `on_stage` (38 instances' stage buffers
+    exceed both host and device memory)."""
 
     instance: str
-    stages: dict
     airgroupvalues: np.ndarray
 
 
@@ -82,7 +83,9 @@ def prove_block(
         return provers[fam]
 
     # Phase 1: stage-1 commits -> contributions. The commitment is dropped
-    # immediately; only the root feeds the hash.
+    # immediately; only the root feeds the hash. The capture's caches go
+    # with it — the 38 traces alone are larger than host RAM, so nothing
+    # per-instance may survive its iteration.
     contribs = []
     publics = proofvalues = None
     for fam, cap, vk in captures:
@@ -91,6 +94,7 @@ def prove_block(
         commitment = prover.opening.commit(InnerWitness(trace_dev))
         root1 = np.asarray(commitment.root).astype(np.uint64)
         del commitment, trace_dev
+        cap.release()
         gc.collect()
         av1 = (
             stage1_values(cap.u64("airvalues"), cap.si["airValuesMap"])
@@ -116,30 +120,48 @@ def prove_block(
         hash_family=family_hash,
     )
 
-    # Phase 3: every composed prove, seeded with OUR challenge.
+    # Phase 3: every composed prove, seeded with OUR challenge. Stage
+    # results are observed as they land (`on_stage`) and then dropped —
+    # retaining 38 instances' stage buffers is exactly the residency the
+    # recommit design exists to avoid. Phase 4 keeps only the airgroup
+    # values and the first instance's stage-2 challenges.
     results = []
-    for fam, cap, _ in captures:
+    stage2_challenges = None
+    for i, (fam, cap, _) in enumerate(captures):
         prover = prover_for(fam, cap)
         claim = replace(cap.pil2_claim(), global_challenge=seed)
         transcript = Transcript(
             transcript_width(cap.si["starkStruct"]), cap.hash_family
         )
-        stages = {}
+        logup_claim = None
         for name, result in prover.prove_stages(
             claim, InnerWitness(fnp.asarray(cap.trace)), transcript
         ):
-            stages[name] = result
+            if name == "logup_witness":
+                logup_claim = result.reduced_claim
             if on_stage is not None:
                 on_stage(cap.instance, name, result)
+        assert logup_claim is not None, f"{cap.instance}: no logup stage"
+        if stage2_challenges is None:
+            ids2 = stage_challenge_ids(cap.si["challengesMap"], 2)
+            stage2_challenges = {
+                g: logup_claim.challenges[i] for g, i in enumerate(ids2)
+            }
         results.append(
             InstanceResult(
                 instance=cap.instance,
-                stages=stages,
-                airgroupvalues=_airgroupvalue_words(
-                    stages["logup_witness"].reduced_claim
-                ),
+                airgroupvalues=_airgroupvalue_words(logup_claim),
             )
         )
+        del logup_claim, prover
+        cap.release()
+        # A family's compiled executables are device-module memory; 20
+        # families' worth cannot stay loaded at once. The manifest arrives
+        # family-grouped, so the prover is dropped after its family's last
+        # prove (an ungrouped manifest stays correct — `prover_for` just
+        # recompiles).
+        if i + 1 == len(captures) or captures[i + 1][0] != fam:
+            provers.pop(fam, None)
         gc.collect()
 
     # Phase 4: the block binding over OUR airgroup values.
@@ -147,15 +169,12 @@ def prove_block(
         [r.airgroupvalues for r in results], global_info["aggTypes"][0]
     )
     first = captures[0][1]
-    ids2 = stage_challenge_ids(first.si["challengesMap"], 2)
-    logup_claim = results[0].stages["logup_witness"].reduced_claim
-    challenges = {g: logup_claim.challenges[i] for g, i in enumerate(ids2)}
     constraint_values = check_global_constraints(
         global_constraints,
         publics=publics,
         proofvalues=first.u64("proofvalues"),
         proof_values_map=global_info["proofValuesMap"],
-        challenges=challenges,
+        challenges=stage2_challenges,
         airgroupvalues=aggregated,
     )
     return seed, results, constraint_values

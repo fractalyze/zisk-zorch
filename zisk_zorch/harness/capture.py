@@ -249,6 +249,25 @@ class Capture:
             )
         return bufs
 
+    def release(self) -> None:
+        """Drop the cached sections and every derived array. The caches make
+        one instance's gates cheap, but a block-scale run walks ~40 captures
+        in one process — left in place they accumulate the entire dump set
+        (host sections plus the device-resident trace). The next read
+        reloads from disk; `pil2_key` survives so a family's reused prover
+        keeps its artifacts."""
+        self._sections.clear()
+        for name in (
+            "trace",
+            "bufs",
+            "opened_columns",
+            "const_base",
+            "challenges",
+            "cexp_env",
+            "_scalar_env",
+        ):
+            self.__dict__.pop(name, None)
+
     # -- protocol objects the gates consume ----------------------------------
 
     def committed_column(self, entry: dict):
