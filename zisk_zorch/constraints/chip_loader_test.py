@@ -93,22 +93,32 @@ class ChipLoaderTest(absltest.TestCase):
                 violations = chip.eval_constraints(trace)
                 self.assertEqual(violations.shape[0], 2)
 
-    def test_preprocessed_columns_are_exactly_the_clk0_set(self) -> None:
-        """A tripwire, not an invariant. The rw#2189 Phase C wheel gives the
-        four gated chips their `CLK_0`; `full_trace` /
-        `load_chip_preprocessed` supply the prefix their constraint fns read.
-        The next rw wheel (rw#2342) adds the derived shifted-clock gate
-        columns (SEL_LATCH_GATE, CLK_0_BACK_23, IN_USE_LATCHED,
-        IN_USE_ACTIVE) and should fail here — extend the expectation AND
-        confirm `DERIVED_PREPROCESSED` covers each new name, or the loader
-        would try to read them from the proving key and raise.
+    def test_preprocessed_columns_are_exactly_the_declared_set(self) -> None:
+        """A tripwire, not an invariant. The rw#2342-lineage wheel landed the
+        derived shifted-clock gates (SEL_LATCH_GATE, CLK_0_BACK_23,
+        IN_USE_LATCHED, IN_USE_ACTIVE — every one covered by
+        `DERIVED_PREPROCESSED`) plus the key-backed segment-boundary columns
+        (SEGMENT_L1 / L1) on main, mem, and mem_align. A future wheel that
+        grows this set should fail here — extend the expectation AND confirm
+        each non-key-backed name is in `DERIVED_PREPROCESSED`, or the loader
+        would try to read it from the proving key and raise.
         """
-        clk0 = [PreprocessedColumn(name="CLK_0", index=0, width=1)]
+
+        def cols(*ncw) -> list[PreprocessedColumn]:
+            return [PreprocessedColumn(name=n, index=i, width=w) for n, i, w in ncw]
+
         expected = {
-            "arith_eq": clk0,
-            "arith_eq_384": clk0,
-            "keccak": clk0,
-            "sha256": clk0,
+            "arith_eq": cols(("CLK_0", 0, 1)),
+            "arith_eq_384": cols(
+                ("CLK_0", 0, 1),
+                ("SEL_LATCH_GATE", 1, 1),
+                ("CLK_0_BACK_23", 2, 1),
+            ),
+            "keccak": cols(("CLK_0", 0, 1), ("IN_USE_LATCHED", 1, 1)),
+            "sha256": cols(("CLK_0", 0, 1), ("IN_USE_ACTIVE", 1, 1)),
+            "main": cols(("SEGMENT_L1", 0, 1)),
+            "mem": cols(("SEGMENT_L1", 0, 1)),
+            "mem_align": cols(("L1", 0, 1)),
         }
         for name, chip in self.chips.items():
             with self.subTest(chip=name):
