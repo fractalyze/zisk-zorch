@@ -32,9 +32,9 @@ import functools
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
+from hash_frx.poseidon2.params import Poseidon2Params
+from hash_frx.poseidon2.poseidon2 import Poseidon2
 from zk_dtypes import goldilocks as F
-from zorch.hash.poseidon2.params import Poseidon2Params
-from zorch.hash.poseidon2.poseidon2 import Poseidon2
 
 WIDTHS = (4, 8, 12, 16)
 CAPACITY = 4
