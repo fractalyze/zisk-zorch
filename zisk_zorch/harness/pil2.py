@@ -170,6 +170,20 @@ def stage_challenge_ids(challenges_map: list, stage: int) -> list[int]:
     return [i for i, c in enumerate(challenges_map) if c.get("stage") == stage]
 
 
+def squeeze_stage_challenges_traced(
+    transcript: Transcript, challenges_map: list, stage: int
+) -> dict[int, Array]:
+    """The squeeze leg's pure body — advances `transcript` in place and is
+    safe to call under an ambient trace (a stage-fusion zone squeezes its
+    challenges inline instead of paying a dispatch per challenge)."""
+    ids = stage_challenge_ids(challenges_map, stage)
+    if not ids:
+        return {}
+    limbs = fnp.stack([transcript.get_field() for _ in range(len(ids))])
+    values = join_coeffs(limbs, F3)
+    return {ch: values[j].reshape(()) for j, ch in enumerate(ids)}
+
+
 @functools.lru_cache(maxsize=None)
 def _squeeze_leg_jit(n: int):
     # The transcript rides the boundary as a pytree; its squeeze cursor is
