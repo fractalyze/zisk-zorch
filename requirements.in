@@ -11,7 +11,7 @@ numpy
 pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260811204608/pyzorch-0.1.0.dev20260811204608-py3-none-any.whl
 frx==0.10.1.dev20260811100738
 zk-dtypes==0.0.10
-hash-frx==0.1.0.dev20260810004122
+hash-frx==0.1.0.dev20260812010420
 frxlib==0.10.1.dev20260811100738
 frx-cuda12-plugin==0.10.1.dev20260811100738
 frx-cuda12-pjrt==0.10.1.dev20260811100738

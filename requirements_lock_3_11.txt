@@ -140,8 +140,8 @@ frxlib==0.10.1.dev20260811100738 \
     #   -r requirements.in
     #   frx
     #   rw-constraints
-hash-frx==0.1.0.dev20260810004122 \
-    --hash=sha256:59d695174183af2268ed8e4d3ffdcb373c578e91fd3fe4828bb95c12bb7bd2e7
+hash-frx==0.1.0.dev20260812010420 \
+    --hash=sha256:c08e088dd42d4f5373e8e66669e26360617b1cce08dd0d77e36085a06d4e599c
     # via
     #   -r requirements.in
     #   pyzorch
