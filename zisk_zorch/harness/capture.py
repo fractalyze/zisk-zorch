@@ -231,7 +231,10 @@ class Capture:
         name = "trace_post" if self.path("trace_post").exists() else "trace"
         words = self.u64(name)
         assert words.size == self.n * self.n_cols, "trace size mismatch"
-        return fnp.array(words.astype(F).reshape(self.n, self.n_cols))
+        # `view`, not `astype`: u64() canonicalizes on read, and for
+        # canonical words the F reinterpret is bit-identical — `astype` was
+        # a full extra copy pass per witness (GBs at Main width, #144).
+        return fnp.array(words.view(F).reshape(self.n, self.n_cols))
 
     @cached_property
     def bufs(self) -> dict:

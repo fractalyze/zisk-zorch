@@ -19,6 +19,10 @@ instance's stage-1 commit feeds. proofman derives it in three steps
 
 from __future__ import annotations
 
+from functools import cache
+
+import frx
+import frx.numpy as fnp
 import numpy as np
 
 from zisk_zorch.harness.pil2 import MODULUS, to_field
@@ -63,13 +67,28 @@ def instance_contribution(
     )
     t = Transcript(W, hash_family)
     t.put(to_field(values))
-    out = np.zeros(lattice_size, dtype=np.uint64)
-    out[:W] = np.asarray(t.get_state())
+    chained = _lattice_chain(hash_family, lattice_size)(t.get_state())
+    return np.asarray(chained).reshape(-1).astype(np.uint64)
+
+
+@cache
+def _lattice_chain(hash_family: str, lattice_size: int):
+    """The seed-state -> full-lattice permutation chain as ONE compiled
+    kernel. The chain is sequential by construction, but running it eagerly
+    costs a dispatch + device->host sync per block (~22 round-trips per
+    instance at latticeSize 368) — a measured slice of the block composite's
+    per-instance commit leg (#144). Shape is (family, size)-fixed, so one
+    cache entry serves every instance of a key."""
     perm = _HASH_FAMILY_PERMS[hash_family](W)
-    for j in range(lattice_size // W - 1):
-        block = perm.permute(to_field(out[j * W : (j + 1) * W]))
-        out[(j + 1) * W : (j + 2) * W] = np.asarray(block)
-    return out
+    n_blocks = lattice_size // W - 1
+
+    def chain(state):
+        blocks = [state.reshape(W)]
+        for _ in range(n_blocks):
+            blocks.append(perm.permute(blocks[-1]))
+        return fnp.concatenate(blocks)
+
+    return frx.jit(chain)
 
 
 def aggregate_contributions(contributions: list[np.ndarray]) -> np.ndarray:
