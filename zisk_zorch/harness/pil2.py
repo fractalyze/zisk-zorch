@@ -18,8 +18,10 @@ instance data (publics, the trace, the global challenge) rides the claims in
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 
+import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
@@ -149,16 +151,34 @@ def stage_challenge_ids(challenges_map: list, stage: int) -> list[int]:
     return [i for i, c in enumerate(challenges_map) if c.get("stage") == stage]
 
 
+@functools.lru_cache(maxsize=None)
+def _squeeze_leg_jit(n: int):
+    # The transcript rides the boundary as a pytree; its squeeze cursor is
+    # static aux, so the flush-or-read branch inside get_field traces
+    # concretely and each cursor state compiles its own tiny zone.
+    def leg(t: Transcript) -> tuple[Transcript, Array]:
+        return t, fnp.stack([t.get_field() for _ in range(n)])
+
+    return frx.jit(leg)
+
+
 def squeeze_stage_challenges(
     transcript: Transcript, challenges_map: list, stage: int
 ) -> dict[int, Array]:
     """Squeeze `stage`'s challenges off the transcript — one cubic scalar per
     ``challengesMap`` entry of that stage, keyed by the entry's map index (the
-    id the SSA operands reference)."""
-    return {
-        i: join_coeffs(transcript.get_field().reshape(-1, 3), F3).reshape(())
-        for i in stage_challenge_ids(challenges_map, stage)
-    }
+    id the SSA operands reference). The whole leg runs as one jit zone; the
+    caller's transcript advances in place."""
+    ids = stage_challenge_ids(challenges_map, stage)
+    if not ids:
+        return {}
+    advanced, limbs = _squeeze_leg_jit(len(ids))(transcript)
+    transcript._state = advanced._state
+    transcript._out = advanced._out
+    transcript._pending = list(advanced._pending)
+    transcript._out_cursor = advanced._out_cursor
+    values = join_coeffs(limbs, F3)
+    return {ch: values[j].reshape(()) for j, ch in enumerate(ids)}
 
 
 def challenge_id(challenges_map: list, name: str) -> int:
