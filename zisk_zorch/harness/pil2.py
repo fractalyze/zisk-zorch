@@ -99,6 +99,25 @@ def publics_env(words: np.ndarray) -> dict[int, Array]:
     return {i: cubic_scalar([words[i], 0, 0]) for i in range(len(words))}
 
 
+def device_sections(key: Pil2Key, domain: str) -> tuple[Array, dict[int, Array]]:
+    """The key's `domain` ("base"/"ext") constant and custom sections as
+    device arrays, uploaded once per key and shared by every role holding
+    it — per-role copies double the resident footprint, which matters
+    beside a chunked-quotient working set that already fills the card."""
+    cache = getattr(key, "_device_sections", None)
+    if cache is None:
+        cache = {}
+        object.__setattr__(key, "_device_sections", cache)
+    if domain not in cache:
+        const = key.const_base if domain == "base" else key.const_ext
+        customs = key.custom_base if domain == "base" else key.custom_ext
+        cache[domain] = (
+            fnp.asarray(const),
+            {ci: fnp.asarray(buf) for ci, buf in customs.items()},
+        )
+    return cache[domain]
+
+
 def scalar_env(
     starkinfo: dict,
     *,

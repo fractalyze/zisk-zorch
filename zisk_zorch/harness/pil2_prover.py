@@ -53,6 +53,7 @@ from zisk_zorch.harness.pil2 import (
     const_env,
     custom_env,
     deep_two_challenge,
+    device_sections,
     hint_value,
     open_evmap_columns,
     scalar_env,
@@ -222,10 +223,18 @@ class LogUpWitnessProver(
             ((i, p) for i, p in enumerate(si["cmPolsMap"]) if p["stage"] == 2),
             key=lambda ip: ip[1]["stagePos"],
         )
+        self._n_cols1 = si["mapSectionsN"]["cm1"]
+        self._n_constants = si["nConstants"]
+        # Key sections live on device for the role's lifetime: eager
+        # per-column `fnp.asarray` slices of the host key re-upload the
+        # section on every prove and cost one dispatch per column.
+        self._const_base_dev, self._custom_base_dev = device_sections(key, "base")
         # Jitted once per role: the SSA blocks are key-fixed configuration,
         # and a per-prove `frx.jit` wrapper would retrace on every instance
-        # proved with the same key.
-        self._logup_jit = frx.jit(self._logup_columns)
+        # proved with the same key. The environment's column views are built
+        # inside the trace so they lower as fused slices, not per-column
+        # dispatches.
+        self._logup_jit = frx.jit(self._logup_env_columns)
         # Jitted for the same reasons as the opening role's commit: a dedicated
         # hash fusion only exists inside a jit region, and the eager LDE emits a
         # standalone `lax.ntt` pass fusion that can overrun ptxas's 48 KB static
@@ -241,6 +250,20 @@ class LogUpWitnessProver(
             hash_family=self._family,
         )
         return c.root, c.digest_layers, c.extended
+
+    def _logup_env_columns(self, trace, const_base, custom_base, scalars):
+        env = {
+            "cm": {i: trace[:, i] for i in range(self._n_cols1)},
+            "const": {i: const_base[:, i] for i in range(self._n_constants)},
+            "custom": {
+                (ci, j): buf[:, j]
+                for ci, buf in custom_base.items()
+                for j in range(buf.shape[1])
+            },
+            **scalars,
+            "zi": {},
+        }
+        return self._logup_columns(env)
 
     def _logup_columns(self, env):
         # The environment enters as an argument: a closure-captured array
@@ -337,33 +360,21 @@ class LogUpWitnessProver(
     ) -> ProveResult[LogUpBoundClaim, LogUpCommitment]:
         si = self._key.starkinfo
         challenges = squeeze_stage_challenges(transcript, si["challengesMap"], 2)
-        # The interpreter environment over the base domain. Absent classes
-        # (custom, zi, later-stage sections) stay empty so a stage-2 hint
-        # expression reaching for one fails loudly instead of silently
-        # reading the wrong domain.
-        env = {
-            "cm": {i: witness.trace[:, i] for i in range(claim.pil2.n_cols)},
-            "const": const_env({("const", 0): self._key.const_base}, si["nConstants"]),
-            # Rom's stage-2 hints read the `rom` custom commit here; a key
-            # without customs leaves the class empty so a stray operand
-            # still fails loudly.
-            "custom": {
-                (ci, j): fnp.asarray(buf[:, j])
-                for ci, buf in self._key.custom_base.items()
-                for j in range(buf.shape[1])
-            },
-            **scalar_env(
-                si,
-                publics=claim.pil2.publics,
-                airvalues=claim.pil2.airvalues,
-                proofvalues=claim.pil2.proofvalues,
-                challenges=challenges,
-                airgroupvalues={},
-            ),
-            "zi": {},
-        }
-
-        matrix, run_result = self._logup_jit(env)
+        # The base-domain interpreter environment is assembled inside the jit
+        # (`_logup_env_columns`); absent classes (custom, zi, later-stage
+        # sections) stay empty there so a stage-2 hint expression reaching
+        # for one fails loudly instead of silently reading the wrong domain.
+        scalars = scalar_env(
+            si,
+            publics=claim.pil2.publics,
+            airvalues=claim.pil2.airvalues,
+            proofvalues=claim.pil2.proofvalues,
+            challenges=challenges,
+            airgroupvalues={},
+        )
+        matrix, run_result = self._logup_jit(
+            witness.trace, self._const_base_dev, self._custom_base_dev, scalars
+        )
         airgroupvalues = (
             {}
             if run_result is None
@@ -425,29 +436,64 @@ class Pil2QuotientProver(
             for e in key.expressionsinfo["expressionsCode"]
             if e["expId"] == si["cExpId"]
         )["code"]
-        # Jitted once per role (key-fixed SSA); the environment enters as an
-        # argument — closure-captured arrays lower as in-graph constants,
-        # which crashes the compiler on the zerofier coset (#67).
+        # Key sections live on device for the role's lifetime, and the
+        # zerofier is key-static — recomputing/re-uploading them per prove
+        # costs one dispatch (or H2D copy) per column. Both still enter the
+        # jits as ARGUMENTS: closure-captured arrays lower as in-graph
+        # constants, which crashes the compiler on the zerofier coset (#67).
+        self._const_ext_dev, self._custom_ext_dev = device_sections(key, "ext")
+        self._zi = inv_zerofier(self._nb, self._blowup_bits)
+        # Jitted once per role (key-fixed SSA); the environment's column
+        # views are built inside the trace so they lower as fused slices.
         self._q_jit = frx.jit(
-            lambda env: run_block(self._code, env, 1 << self._blowup_bits)
+            lambda cm1, cm2, const, custom, scalars, zi: run_block(
+                self._code,
+                self._env(cm1, cm2, const, custom, scalars, zi),
+                1 << self._blowup_bits,
+            )
         )
         # Row-chunked evaluation for AIRs whose cExp working set exceeds
         # device memory (Keccakf's ~30 GB at 3023 cols, zz#138). Off by
         # default: the whole-domain graph fuses better.
         self._q_chunks = int(os.environ.get("ZISK_QUOTIENT_ROW_CHUNKS", "1"))
         self._q_chunk_jit = frx.jit(
-            lambda env, rows: run_block(
-                self._code, env, 1 << self._blowup_bits, rows=rows
+            lambda cm1, cm2, const, custom, scalars, zi, rows: run_block(
+                self._code,
+                self._env(cm1, cm2, const, custom, scalars, zi),
+                1 << self._blowup_bits,
+                rows=rows,
             )
         )
         q_deg = si["mapSectionsN"]["cm" + str(si["nStages"] + 1)] // 3
-        self._qsec_jit = frx.jit(
+        # The quotient section and its tree in one zone: the eager commit is
+        # ~log(n_ext) separately-dispatched level hashes otherwise.
+        qsec = (
             split_coeffs
             if q_deg == 1
-            else lambda q: compute_q(
-                split_coeffs(q), ss["nBits"], ss["nBitsExt"], q_deg
-            )
+            else lambda q: compute_q(split_coeffs(q), ss["nBits"], ss["nBitsExt"], q_deg)
         )
+
+        def _qsec_commit(q):
+            matrix = qsec(q)
+            root, layers = merkle_tree(self._arity, self._family).commit(matrix)
+            return matrix, root, layers
+
+        self._qsec_jit = frx.jit(_qsec_commit)
+
+    def _env(self, cm1, cm2, const, custom, scalars, zi):
+        bufs = {
+            ("cm", 1): cm1,
+            ("cm", 2): cm2,
+            ("const", 0): const,
+            **{("custom", ci): buf for ci, buf in custom.items()},
+        }
+        return {
+            "cm": cm_env(self._si["cmPolsMap"], bufs),
+            "const": const_env(bufs, self._si["nConstants"]),
+            "custom": custom_env(bufs, self._si.get("customCommits", [])),
+            **scalars,
+            "zi": {0: zi},
+        }
 
     def prove(
         self,
@@ -460,40 +506,34 @@ class Pil2QuotientProver(
         challenges.update(
             squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 1)
         )
-        bufs = {
-            ("cm", 1): witness.trace_commit.extended,
-            ("cm", 2): witness.logup.commitment.extended,
-            ("const", 0): self._key.const_ext,
-        }
-        for ci, buf in self._key.custom_ext.items():
-            bufs[("custom", ci)] = buf
-        env = {
-            "cm": cm_env(si["cmPolsMap"], bufs),
-            "const": const_env(bufs, si["nConstants"]),
-            "custom": custom_env(bufs, si.get("customCommits", [])),
-            **scalar_env(
-                si,
-                publics=claim.pil2.publics,
-                airvalues=claim.pil2.airvalues,
-                proofvalues=claim.pil2.proofvalues,
-                challenges=challenges,
-                airgroupvalues=claim.airgroupvalues,
-            ),
-            "zi": {0: inv_zerofier(self._nb, self._blowup_bits)},
-        }
+        scalars = scalar_env(
+            si,
+            publics=claim.pil2.publics,
+            airvalues=claim.pil2.airvalues,
+            proofvalues=claim.pil2.proofvalues,
+            challenges=challenges,
+            airgroupvalues=claim.airgroupvalues,
+        )
+        args = (
+            witness.trace_commit.extended,
+            witness.logup.commitment.extended,
+            self._const_ext_dev,
+            self._custom_ext_dev,
+            scalars,
+            self._zi,
+        )
         if self._q_chunks > 1:
             ne = 1 << (self._nb + self._blowup_bits)
             per = ne // self._q_chunks
             quotient = fnp.concatenate(
                 [
-                    self._q_chunk_jit(env, fnp.arange(k * per, (k + 1) * per))
+                    self._q_chunk_jit(*args, fnp.arange(k * per, (k + 1) * per))
                     for k in range(self._q_chunks)
                 ]
             )
         else:
-            quotient = self._q_jit(env)
-        matrix = self._qsec_jit(quotient)
-        root, layers = merkle_tree(self._arity, self._family).commit(matrix)
+            quotient = self._q_jit(*args)
+        matrix, root, layers = self._qsec_jit(quotient)
         transcript.put(root)
         return ProveResult(
             Pil2QuotientBoundClaim(
@@ -569,6 +609,9 @@ class Pil2OpeningProver(
         self._hash_commits = ss.get("hashCommits", False)
         self._emit_wire = emit_wire
         self._llv = ss.get("lastLevelVerification", 0)
+        # Key sections live on device for the role's lifetime: handing the
+        # host arrays to the stage jits re-uploads them on every prove.
+        self._const_ext_dev, self._custom_ext_dev = device_sections(key, "ext")
         # The constant/custom trees are key-fixed; committed lazily on the
         # first wire-emitting prove and reused for every instance of the key.
         self._fixed_trees: list[tuple[Array, list[Array]]] | None = None
@@ -656,9 +699,9 @@ class Pil2OpeningProver(
             ("cm", 1): witness.trace_commit.extended,
             ("cm", 2): witness.logup.commitment.extended,
             ("cm", si["nStages"] + 1): witness.quotient.matrix,
-            ("const", 0): self._key.const_ext,
+            ("const", 0): self._const_ext_dev,
         }
-        for ci, buf in self._key.custom_ext.items():
+        for ci, buf in self._custom_ext_dev.items():
             bufs[("custom", ci)] = buf
 
         # lev materialized before the openings (its trace inside the same
@@ -742,15 +785,13 @@ class Pil2OpeningProver(
         """Open every committed tree at the drawn positions, wire-shaped."""
         mt = merkle_tree(self._arity, self._family)
         if self._fixed_trees is None:
-            # Device copies: the key's sections arrive as host arrays, and
-            # `open_tree`'s vmapped opening cannot index host numpy.
-            self._fixed_trees = []
-            for buf in (
-                self._key.const_ext,
-                *(v for _, v in sorted(self._key.custom_ext.items())),
-            ):
-                dev = fnp.asarray(buf)
-                self._fixed_trees.append((dev, mt.commit(dev)[1]))
+            self._fixed_trees = [
+                (dev, mt.commit(dev)[1])
+                for dev in (
+                    self._const_ext_dev,
+                    *(v for _, v in sorted(self._custom_ext_dev.items())),
+                )
+            ]
         (const_buf, const_layers), *customs = self._fixed_trees
         pos = np.asarray(positions)
         ext = {"n_bits": self._nbe, "arity": self._arity, "llv": self._llv}
