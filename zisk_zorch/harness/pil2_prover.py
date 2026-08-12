@@ -814,6 +814,19 @@ class Pil2OpeningProver(
             grind_challenge, nonce_dev,
         ) = self._tail_jit(transcript, bufs, lev, xi, domain)
         challenges.update(tail_challenges)
+        return self._finish(
+            transcript, witness, evals, roots, final_pol, layer_pieces,
+            grind_challenge, nonce_dev,
+        )
+
+    def _finish(
+        self, transcript, witness, evals, roots, final_pol, layer_pieces,
+        grind_challenge, nonce_dev,
+    ) -> ProveResult[TrivialClaim, OpeningProof]:
+        """The host half after the fused tail: nonce validity, the query
+        draw, and every tree's openings — shared by the single-prove path
+        and a batched driver feeding per-lane slices, so both produce the
+        same bytes by construction."""
         fri = FriProof(roots=roots, final_pol=final_pol)
         fri_layers = [
             _Layer(
