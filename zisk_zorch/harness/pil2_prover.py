@@ -33,6 +33,7 @@ import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
+from zk_dtypes import goldilocks as F
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 from zorch.utils.field import split_coeffs
 
@@ -210,9 +211,13 @@ class LogUpWitnessProver(
         ei = key.expressionsinfo
         self._exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
         self._im_hints = [h for h in ei["hintsInfo"] if h["name"] == "im_col"]
-        gsums = [h for h in ei["hintsInfo"] if h["name"] == "gsum_col"]
-        assert len(gsums) == 1, f"expected one gsum_col hint, got {len(gsums)}"
-        self._gsum_hint = gsums[0]
+        runs = [h for h in ei["hintsInfo"] if h["name"] in ("gsum_col", "gprod_col")]
+        assert len(runs) == 1, f"expected one running-column hint, got {len(runs)}"
+        # The running column is a grand SUM for the LogUp bus (every ZisK
+        # basic AIR) and a grand PRODUCT for the plonk permutation argument
+        # (the circom-generated recursion AIRs) — same hint shape either way.
+        self._run_hint = runs[0]
+        self._run_is_sum = runs[0]["name"] == "gsum_col"
         self._logup_cols = sorted(
             ((i, p) for i, p in enumerate(si["cmPolsMap"]) if p["stage"] == 2),
             key=lambda ip: ip[1]["stagePos"],
@@ -246,22 +251,38 @@ class LogUpWitnessProver(
             num = _hint_column(hint_value(hint, "numerator"), env, self._exps, n)
             den = _hint_column(hint_value(hint, "denominator"), env, self._exps, n)
             env["cm"][hint_value(hint, "reference")["id"]] = num / den
-        gsum_num = _hint_column(
-            hint_value(self._gsum_hint, "numerator_air"), env, self._exps, n
+        run_num = _hint_column(
+            hint_value(self._run_hint, "numerator_air"), env, self._exps, n
         )
-        gsum_den = _hint_column(
-            hint_value(self._gsum_hint, "denominator_air"), env, self._exps, n
-        )
-        gsum = LogUpBus.grand_sum(gsum_num[None, :], gsum_den[None, :])
-        env["cm"][hint_value(self._gsum_hint, "reference")["id"]] = gsum
-        # pil2's single-row direct update: bus terms that never materialize
-        # an im column enter the airgroup export as one scalar added to the
-        # running sum's last entry — they are NOT part of the committed
-        # column (std_sum.pil; the dumped cm2 pins this).
-        direct = self._direct_term(env)
-        result = LogUpBus.gsum_result(gsum)
-        if direct is not None:
-            result = result + direct
+        if self._run_is_sum:
+            run_den = _hint_column(
+                hint_value(self._run_hint, "denominator_air"), env, self._exps, n
+            )
+            run = LogUpBus.grand_sum(run_num[None, :], run_den[None, :])
+            # pil2's single-row direct update: bus terms that never
+            # materialize an im column enter the airgroup export as one
+            # scalar added to the running sum's last entry — they are NOT
+            # part of the committed column (std_sum.pil; the dumped cm2
+            # pins this).
+            direct = self._direct_term(env)
+            result = LogUpBus.gsum_result(run)
+            if direct is not None:
+                result = result + direct
+        else:
+            den_v = hint_value(self._run_hint, "denominator_air")
+            term = run_num
+            if not (den_v["op"] == "number" and int(den_v["value"]) == 1):
+                term = term / _hint_column(den_v, env, self._exps, n)
+            run = fnp.cumprod(term)
+            # The permutation product telescopes to the boundary constant
+            # (result is the literal 1 on the recursion AIRs) — nothing is
+            # exported as an airgroup value, and a non-identity direct term
+            # has never been observed on a gprod hint.
+            direct_v = hint_value(self._run_hint, "numerator_direct")
+            if not (direct_v["op"] == "number" and int(direct_v["value"]) == 1):
+                raise NotImplementedError("gprod direct term")
+            result = None
+        env["cm"][hint_value(self._run_hint, "reference")["id"]] = run
         for i, p in self._logup_cols:
             if p.get("imPol"):
                 env["cm"][i] = run_block(self._exps[p["expId"]], env, 1)
@@ -289,11 +310,11 @@ class LogUpWitnessProver(
         """The gsum hint's direct contribution — a scalar expression (or the
         literal 0), divided by its denominator unless that is the literal 1
         (a dead cubic reciprocal otherwise)."""
-        num_v = hint_value(self._gsum_hint, "numerator_direct")
+        num_v = hint_value(self._run_hint, "numerator_direct")
         if num_v["op"] == "number" and int(num_v["value"]) == 0:
             return None
         num = self._direct_value(num_v, env)
-        den_v = hint_value(self._gsum_hint, "denominator_direct")
+        den_v = hint_value(self._run_hint, "denominator_direct")
         if not (den_v["op"] == "number" and int(den_v["value"]) == 1):
             num = num / self._direct_value(den_v, env)
         return num
@@ -342,8 +363,12 @@ class LogUpWitnessProver(
             "zi": {},
         }
 
-        matrix, gsum_result = self._logup_jit(env)
-        airgroupvalues = {hint_value(self._gsum_hint, "result")["id"]: gsum_result}
+        matrix, run_result = self._logup_jit(env)
+        airgroupvalues = (
+            {}
+            if run_result is None
+            else {hint_value(self._run_hint, "result")["id"]: run_result}
+        )
         assert matrix.shape[1] == si["mapSectionsN"]["cm2"], "cm2 width mismatch"
         root, digest_layers, extended = self._commit_jit(matrix)
         commitment = TraceCommitment(
@@ -788,10 +813,24 @@ class Pil2InnerProver:
     can return when something consumes one (the deferred serialize/FFI
     work)."""
 
-    def __init__(self, key: Pil2Key, *, emit_wire: bool = False) -> None:
+    def __init__(
+        self, key: Pil2Key, *, emit_wire: bool = False, recursive: bool = False
+    ) -> None:
         self.logup = LogUpWitnessProver(key)
         self.quotient = Pil2QuotientProver(key)
         self.opening = Pil2OpeningProver(key, emit_wire=emit_wire)
+        # The aggregation-stage schedule (`gen_proof.hpp` `recursive`):
+        # classic STARK transcript — the circuit's verkey (const-tree root),
+        # the hashed publics, then root1 — instead of the composite's
+        # global-challenge seed (which never absorbs root1).
+        self.recursive = recursive
+        self._hash_commits = key.starkinfo["starkStruct"].get("hashCommits", False)
+        if recursive:
+            ss = key.starkinfo["starkStruct"]
+            root, _ = merkle_tree(ss["merkleTreeArity"], key.hash_family).commit(
+                fnp.asarray(key.const_ext)
+            )
+            self._const_root = root
 
     def prove_stages(
         self,
@@ -809,7 +848,17 @@ class Pil2InnerProver:
         ), "claim's trace shape does not match the witness"
         commitment = self.opening.commit(witness)
         yield "trace_commit", commitment
-        absorb_words(transcript, claim.global_challenge)
+        if self.recursive:
+            transcript.put(self._const_root)
+            if claim.publics.size:
+                absorb_section(
+                    transcript,
+                    fnp.array(claim.publics.astype(F)),
+                    hashed=self._hash_commits,
+                )
+            transcript.put(commitment.root)
+        else:
+            absorb_words(transcript, claim.global_challenge)
         bound = Pil2TraceBoundClaim(pil2=claim, trace_root=commitment.root)
         logup = self.logup.prove(bound, witness, transcript)
         yield "logup_witness", logup
