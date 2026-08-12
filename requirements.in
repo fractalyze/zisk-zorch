@@ -8,12 +8,13 @@ numpy
 # pyzorch is zorch's PyPI distribution name (the import package stays `zorch`).
 # Direct wheel URL: the index rebuild has no /simple/pyzorch/ page yet; the
 # release asset remains.
-pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260806010523/pyzorch-0.1.0.dev20260806010523-py3-none-any.whl
-frx==0.10.1
+pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260811204608/pyzorch-0.1.0.dev20260811204608-py3-none-any.whl
+frx==0.10.1.dev20260811100738
 zk-dtypes==0.0.10
-frxlib==0.10.1
-frx-cuda12-plugin==0.10.1
-frx-cuda12-pjrt==0.10.1
+hash-frx==0.1.0.dev20260812010420
+frxlib==0.10.1.dev20260811100738
+frx-cuda12-plugin==0.10.1.dev20260811100738
+frx-cuda12-pjrt==0.10.1.dev20260811100738
 
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260804022415/rw_constraints-0.1.0.dev20260804022415-py3-none-any.whl
 
