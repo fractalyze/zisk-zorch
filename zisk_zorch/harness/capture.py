@@ -152,7 +152,12 @@ class Capture:
             if self.gpu_dump and name in self._matrix_shapes:
                 arr = untile_gpu(arr, *self._matrix_shapes[name]).reshape(-1)
             p = np.uint64(P)
-            self._sections[name] = np.where(arr >= p, arr - p, arr)
+            if arr.size and int(arr.max()) >= P:
+                arr = np.where(arr >= p, arr - p, arr)
+            # else: already canonical — skip the full-section copy pass
+            # (traces at block scale are GBs; the unconditional `where`
+            # was a measurable slice of the witness-ingest tax).
+            self._sections[name] = arr
         return self._sections[name]
 
     def _staged_root(self, name: str) -> np.ndarray:

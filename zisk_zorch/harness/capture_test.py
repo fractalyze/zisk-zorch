@@ -45,6 +45,20 @@ class CaptureReleaseTest(absltest.TestCase):
         np.save(dump / "inst_root1.npy", np.zeros(4, dtype=np.uint64))
         return Capture(dump, "inst", si), words
 
+    def test_u64_canonicalizes_residues_and_skips_clean_sections(self):
+        cap, words = self._capture()
+        # A +P residue must reduce; the canonical remainder stays put.
+        P = (1 << 64) - (1 << 32) + 1
+        dirty = words.copy()
+        dirty[0] = np.uint64(P + 5)
+        np.save(cap.dump / "inst_residue.npy", dirty)
+        out = cap.u64("residue")
+        self.assertEqual(int(out[0]), 5)
+        np.testing.assert_array_equal(out[1:], words[1:])
+        # An already-canonical section skips the copy pass entirely.
+        clean = cap.u64("trace")
+        self.assertLess(int(clean.max()), P)
+
     def test_release_drops_caches_and_rereads(self):
         cap, words = self._capture()
         first = cap.u64("trace")
