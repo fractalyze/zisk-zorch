@@ -46,6 +46,33 @@ class TreeOpening:
     last_level: np.ndarray  # (arity^llv * 4,) zero-padded digests
 
 
+def open_tree_dispatch(tree, matrix: Array, digest_layers: list[Array], idx: Array) -> Array:
+    """The device half of `open_tree`: the batched group proofs, no host
+    sync — so a caller opening several trees can dispatch them all before
+    the first device→host copy blocks."""
+    return frx.vmap(lambda i: group_proof(tree, matrix, digest_layers, i))(idx)
+
+
+def open_tree_convert(
+    flat_dev: Array,
+    digest_layers: list[Array],
+    width: int,
+    *,
+    n_bits: int,
+    arity: int,
+    llv: int,
+) -> TreeOpening:
+    """The host half of `open_tree`: copy the batched proofs over and shape
+    the pil2 wire pieces."""
+    flat = np.asarray(flat_dev).astype(np.uint64)
+    rows = flat[:, :width]
+    per_level = (arity - 1) * _DIGEST
+    path = flat[:, width:].reshape(flat.shape[0], -1, per_level)
+    n_sib = _n_siblings(n_bits, arity, llv)
+    last_level = _last_level(digest_layers, arity, llv)
+    return TreeOpening(rows=rows, paths=path[:, :n_sib], last_level=last_level)
+
+
 def open_tree(
     tree,
     matrix: Array,
@@ -57,17 +84,16 @@ def open_tree(
     llv: int,
 ) -> TreeOpening:
     """Open `matrix`'s tree at `positions` and shape the pil2 wire pieces."""
-    width = int(matrix.shape[1])
     idx = frx.numpy.asarray(np.asarray(positions, dtype=np.uint64))
-    flat = np.asarray(
-        frx.vmap(lambda i: group_proof(tree, matrix, digest_layers, i))(idx)
-    ).astype(np.uint64)
-    rows = flat[:, :width]
-    per_level = (arity - 1) * _DIGEST
-    path = flat[:, width:].reshape(len(positions), -1, per_level)
-    n_sib = _n_siblings(n_bits, arity, llv)
-    last_level = _last_level(digest_layers, arity, llv)
-    return TreeOpening(rows=rows, paths=path[:, :n_sib], last_level=last_level)
+    flat_dev = open_tree_dispatch(tree, matrix, digest_layers, idx)
+    return open_tree_convert(
+        flat_dev,
+        digest_layers,
+        int(matrix.shape[1]),
+        n_bits=n_bits,
+        arity=arity,
+        llv=llv,
+    )
 
 
 def _last_level(digest_layers: list[Array], arity: int, llv: int) -> np.ndarray:

@@ -109,13 +109,14 @@ def prove_queries(
     dispatches thousands of eager device ops — ~80 ms per Main-width prove —
     for values that only ever cross to the host (serializer, verifier)."""
     qi = fnp.asarray(np.asarray(query_indices))
-    per_layer = [
-        np.asarray(
-            frx.vmap(
-                partial(group_proof, layer.tree, layer.matrix, layer.digest_layers)
-            )(qi % (1 << layer.leaf_bits))
+    # Dispatch every layer before the first device→host copy blocks —
+    # converting inside one loop serializes a round trip per layer.
+    per_layer_dev = [
+        frx.vmap(partial(group_proof, layer.tree, layer.matrix, layer.digest_layers))(
+            qi % (1 << layer.leaf_bits)
         )
         for layer in layers
     ]
+    per_layer = [np.asarray(x) for x in per_layer_dev]
     n_q = int(qi.shape[0])
     return [[per_layer[li][q] for li in range(len(layers))] for q in range(n_q)]

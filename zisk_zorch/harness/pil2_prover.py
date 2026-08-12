@@ -59,7 +59,11 @@ from zisk_zorch.harness.pil2 import (
     scalar_env,
     squeeze_stage_challenges,
 )
-from zisk_zorch.harness.proof_serializer import TreeOpening, open_tree
+from zisk_zorch.harness.proof_serializer import (
+    TreeOpening,
+    open_tree_convert,
+    open_tree_dispatch,
+)
 from zisk_zorch.logup.bus import LogUpBus
 from zisk_zorch.quotient.cexp_ref import run_block
 from zisk_zorch.quotient.compute_q import compute_q
@@ -794,41 +798,47 @@ class Pil2OpeningProver(
             ]
         (const_buf, const_layers), *customs = self._fixed_trees
         pos = np.asarray(positions)
-        ext = {"n_bits": self._nbe, "arity": self._arity, "llv": self._llv}
-        return WireOpenings(
-            const=open_tree(mt, const_buf, const_layers, pos, **ext),
-            customs=[open_tree(mt, b, la, pos, **ext) for b, la in customs],
-            stages=[
-                open_tree(
-                    mt,
-                    witness.trace_commit.extended,
-                    witness.trace_commit.digest_layers,
-                    pos,
-                    **ext,
-                ),
-                open_tree(
-                    mt,
-                    witness.logup.commitment.extended,
-                    witness.logup.commitment.digest_layers,
-                    pos,
-                    **ext,
-                ),
-                open_tree(
-                    mt, witness.quotient.matrix, witness.quotient.layers, pos, **ext
-                ),
-            ],
-            fri=[
-                open_tree(
-                    mt,
+        idx = fnp.asarray(pos.astype(np.uint64))
+        # Dispatch every tree's batched openings before the first convert:
+        # `open_tree`'s own device→host copy blocks, which serializes ~10
+        # dispatch/transfer round trips otherwise.
+        specs = [
+            (const_buf, const_layers, idx, self._nbe),
+            *((b, la, idx, self._nbe) for b, la in customs),
+            (witness.trace_commit.extended, witness.trace_commit.digest_layers, idx, self._nbe),
+            (
+                witness.logup.commitment.extended,
+                witness.logup.commitment.digest_layers,
+                idx,
+                self._nbe,
+            ),
+            (witness.quotient.matrix, witness.quotient.layers, idx, self._nbe),
+            *(
+                (
                     layer.matrix,
                     layer.digest_layers,
-                    pos % (1 << layer.leaf_bits),
-                    n_bits=layer.leaf_bits,
-                    arity=self._arity,
-                    llv=self._llv,
+                    fnp.asarray((pos % (1 << layer.leaf_bits)).astype(np.uint64)),
+                    layer.leaf_bits,
                 )
                 for layer in fri_layers
-            ],
+            ),
+        ]
+        flats = [
+            (open_tree_dispatch(mt, m, la, i), la, int(m.shape[1]), nb)
+            for m, la, i, nb in specs
+        ]
+        opened = [
+            open_tree_convert(
+                f, la, w, n_bits=nb, arity=self._arity, llv=self._llv
+            )
+            for f, la, w, nb in flats
+        ]
+        n_custom = len(customs)
+        return WireOpenings(
+            const=opened[0],
+            customs=opened[1 : 1 + n_custom],
+            stages=opened[1 + n_custom : 4 + n_custom],
+            fri=opened[4 + n_custom :],
         )
 
 
