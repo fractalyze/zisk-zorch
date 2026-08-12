@@ -11,7 +11,7 @@ import numpy as np
 from absl.testing import absltest
 
 from zisk_zorch.golden import load, u64
-from zisk_zorch.transcript.transcript import Transcript
+from zisk_zorch.transcript.transcript import DIGEST, Transcript, transcript_hash
 
 _GOLDEN = pathlib.Path(__file__).parent / "testdata" / "golden" / "transcript.json"
 
@@ -55,6 +55,27 @@ class TranscriptTest(absltest.TestCase):
                     )
                 else:
                     self.fail(f"unknown golden op {op}")
+
+    def test_transcript_hash_matches_eager_transcript(self) -> None:
+        # The scan-jit path must reproduce the eager put/get_state discipline
+        # at every block-boundary shape: empty, mid-block, exact multiples,
+        # one past a multiple, and a section-sized buffer.
+        rng = np.random.default_rng(7)
+        for width in (12, 16):
+            rate = width - 4
+            for family in ("Poseidon2", "Poseidon1"):
+                for n in (0, 1, rate - 1, rate, rate + 1, 3 * rate, 462):
+                    values = u64(
+                        rng.integers(0, (1 << 64) - (1 << 32), n, dtype=np.uint64)
+                    )
+                    t = Transcript(width, family)
+                    t.put(values)
+                    expected = t.get_state()[:DIGEST]
+                    got = transcript_hash(values, width, family)
+                    self.assertTrue(
+                        bool(fnp.array_equal(got, expected)),
+                        msg=f"width {width} {family} n={n}",
+                    )
 
 
 if __name__ == "__main__":

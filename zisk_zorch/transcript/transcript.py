@@ -16,6 +16,8 @@ byte-match requires pil2's exact buffer discipline).
 
 from __future__ import annotations
 
+import functools
+
 import frx
 import frx.numpy as fnp
 import numpy as np
@@ -130,14 +132,43 @@ class Transcript:
         return out
 
 
+@functools.lru_cache(maxsize=None)
+def _linear_hash_jit(n_blocks: int, width: int, hash_family: str):
+    perm = _HASH_FAMILY_PERMS[hash_family](width)
+
+    def run(blocks: Array) -> Array:
+        def step(state: Array, block: Array) -> tuple[Array, None]:
+            return perm.permute(fnp.concatenate([block, state[:4]])), None
+
+        state, _ = lax.scan(step, fnp.zeros((width,), F), blocks)
+        return state
+
+    return frx.jit(run)
+
+
 def transcript_hash(
     values: Array, width: int = 12, hash_family: str = DEFAULT_HASH_FAMILY
 ) -> Array:
     """pil2 ``calculateHash``: a fresh transcript absorbs the buffer and its
-    flushed state's first four elements are the digest."""
-    t = Transcript(width, hash_family)
-    t.put(values)
-    return t.get_state()[:DIGEST]
+    flushed state's first four elements are the digest.
+
+    Runs as ONE compiled scan over the sponge's rate-wide blocks instead of
+    the eager transcript's per-block permute dispatch — a 462-element section
+    is ~58 sequential permutes, which dominate an aggregation prove's
+    transcript legs when launched eagerly. The block discipline is the
+    eager path's exactly: `ceil(n / rate)` permutes, zero-padded tail,
+    running state's first four lanes in the last input slots."""
+    values = fnp.asarray(values)
+    n = values.shape[0]
+    if n == 0:
+        return fnp.zeros((DIGEST,), F)
+    rate = width - 4
+    pad = -n % rate
+    if pad:
+        values = fnp.concatenate([values, fnp.zeros((pad,), values.dtype)])
+    blocks = values.reshape(-1, rate)
+    state = _linear_hash_jit(blocks.shape[0], width, hash_family)(blocks)
+    return state[:DIGEST]
 
 
 def absorb_section(transcript: Transcript, values: Array, *, hashed: bool) -> None:
