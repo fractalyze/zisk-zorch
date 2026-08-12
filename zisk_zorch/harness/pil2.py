@@ -65,7 +65,11 @@ class Pil2Key:
 
 
 def to_field(words) -> Array:
-    """u64 words -> a base-field device array."""
+    """u64 words -> a base-field device array. Field-typed input (including
+    a tracer inside a fused stage zone) passes through — the numpy
+    conversion below cannot run under a trace."""
+    if getattr(words, "dtype", None) == F:
+        return words
     return fnp.array(np.asarray(words, dtype=np.uint64).astype(F))
 
 

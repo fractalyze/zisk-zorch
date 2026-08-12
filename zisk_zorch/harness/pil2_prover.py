@@ -69,6 +69,7 @@ from zisk_zorch.harness.pil2 import (
     scalar_env,
     squeeze_stage_challenges,
     squeeze_stage_challenges_traced,
+    to_field,
 )
 from zisk_zorch.harness.proof_serializer import (
     TreeOpening,
@@ -407,7 +408,8 @@ class LogUpWitnessProver(
         transcript, challenges, matrix, run_result, root, digest_layers, extended = (
             self._stage_jit(
                 transcript, witness.trace, self._const_base_dev,
-                self._custom_base_dev, scalars_static, claim.pil2.airvalues,
+                self._custom_base_dev, scalars_static,
+                to_field(claim.pil2.airvalues),
             )
         )
         airgroupvalues = (
