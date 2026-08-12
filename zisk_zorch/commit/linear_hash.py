@@ -17,8 +17,8 @@ builds exactly pil2's tree.
 from __future__ import annotations
 
 from frx import Array
-from zorch.hash.poseidon2.poseidon2 import Poseidon2
-from zorch.hash.sponge import Sponge, SpongeParams, SpongeType
+from hash_frx.poseidon2.poseidon2 import Poseidon2
+from hash_frx.sponge import Sponge, SpongeParams, SpongeType
 
 # pil2 digests are always 4 Goldilocks elements (HASH_SIZE == CAPACITY).
 DIGEST_ELEMS = 4
