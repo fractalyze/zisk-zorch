@@ -14,6 +14,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
+        requirement("hash-frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
         requirement("pyzorch"),

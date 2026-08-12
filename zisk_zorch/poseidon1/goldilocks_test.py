@@ -37,12 +37,13 @@ class GoldilocksPoseidon1Test(absltest.TestCase):
                 )
         self.assertCountEqual(widths_seen, WIDTHS)
 
-    def test_generic_fused_region_routing(self) -> None:
-        # No dedicated zorch.poseidon1 emitter: the dense full-field matrices ride
-        # as closed-over field arrays (an int64 literal would overflow), so every
-        # width stays on the generic fused region.
+    def test_dedicated_fused_region_routing(self) -> None:
+        # Every width routes onto the dedicated wide-attr sparse-Poseidon
+        # marker (hash-frx#114 + the frx emitter arm of fractalyze/xla#440);
+        # falling back to the generic fused region silently forfeits the
+        # fused Poseidon1 kernel the commit path is sized around.
         for width in WIDTHS:
-            self.assertFalse(
+            self.assertTrue(
                 goldilocks_perm(width).has_dedicated_fusion, msg=f"width {width}"
             )
 

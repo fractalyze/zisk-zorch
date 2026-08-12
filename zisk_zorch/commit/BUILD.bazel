@@ -11,6 +11,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
+        requirement("hash-frx"),
         requirement("pyzorch"),
     ],
 )
@@ -22,6 +23,7 @@ py_library(
     srcs = ["trace_commit.py"],
     visibility = ["//visibility:public"],
     deps = [
+        requirement("hash-frx"),
         ":linear_hash",
         "//zisk_zorch:types",
         "//zisk_zorch/poseidon1:goldilocks",
