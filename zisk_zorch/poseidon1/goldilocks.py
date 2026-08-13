@@ -25,9 +25,9 @@ import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
-from zk_dtypes import goldilocks as F
 from hash_frx.poseidon.params import SparsePoseidonParams
 from hash_frx.poseidon.sparse import SparsePoseidon
+from zk_dtypes import goldilocks as F
 
 WIDTHS = (8, 12, 16)
 CAPACITY = 4

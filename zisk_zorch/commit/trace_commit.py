@@ -20,10 +20,10 @@ import functools
 import frx.numpy as fnp
 import numpy as np
 from frx import Array, lax
+from hash_frx.compression import Compression, CompressionParams
 from zk_dtypes import goldilocks as F
 from zorch.coding.reed_solomon import ReedSolomon
 from zorch.commit.merkle import MerkleTree
-from hash_frx.compression import Compression, CompressionParams
 
 from zisk_zorch.commit.linear_hash import DIGEST_ELEMS, LinearHash
 from zisk_zorch.poseidon1.goldilocks import goldilocks_perm as _poseidon1_perm
