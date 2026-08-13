@@ -12,7 +12,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("frx"),
-        requirement("hash-frx"),
+        requirement("hash_frx"),
         requirement("numpy"),
         requirement("zk_dtypes"),
         requirement("pyzorch"),
