@@ -65,11 +65,7 @@ class Pil2Key:
 
 
 def to_field(words) -> Array:
-    """u64 words -> a base-field device array. Field-typed input (including
-    a tracer inside a fused stage zone) passes through — the numpy
-    conversion below cannot run under a trace."""
-    if getattr(words, "dtype", None) == F:
-        return words
+    """u64 words -> a base-field device array."""
     return fnp.array(np.asarray(words, dtype=np.uint64).astype(F))
 
 
@@ -172,20 +168,6 @@ def stage_challenge_ids(challenges_map: list, stage: int) -> list[int]:
     """The ``challengesMap`` indices squeezed at `stage`'s boundary, in map
     (= transcript) order."""
     return [i for i, c in enumerate(challenges_map) if c.get("stage") == stage]
-
-
-def squeeze_stage_challenges_traced(
-    transcript: Transcript, challenges_map: list, stage: int
-) -> dict[int, Array]:
-    """The squeeze leg's pure body — advances `transcript` in place and is
-    safe to call under an ambient trace (a stage-fusion zone squeezes its
-    challenges inline instead of paying a dispatch per challenge)."""
-    ids = stage_challenge_ids(challenges_map, stage)
-    if not ids:
-        return {}
-    limbs = fnp.stack([transcript.get_field() for _ in range(len(ids))])
-    values = join_coeffs(limbs, F3)
-    return {ch: values[j].reshape(()) for j, ch in enumerate(ids)}
 
 
 @functools.lru_cache(maxsize=None)

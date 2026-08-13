@@ -37,21 +37,11 @@ from zk_dtypes import goldilocks as F
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 from zorch.utils.field import split_coeffs
 
-from zorch.pcs.fold import FoldState, PreFoldKGroupCommitRound
-from zorch.prove import fold_rounds
-
 from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
 from zisk_zorch.evals.lev import compute_lev
-from zisk_zorch.fri.prover import _Layer, prove, prove_queries
-from zisk_zorch.fri.queries import (
-    _grind_search_jit,
-    grind_is_valid,
-    grinding_seed_challenge,
-    query_positions_for,
-    sample_query_positions,
-)
-from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
+from zisk_zorch.fri.prover import prove, prove_queries
+from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.golden import embed
 from zisk_zorch.harness.pil2 import (
     Pil2Key,
@@ -68,8 +58,6 @@ from zisk_zorch.harness.pil2 import (
     open_evmap_columns,
     scalar_env,
     squeeze_stage_challenges,
-    squeeze_stage_challenges_traced,
-    to_field,
 )
 from zisk_zorch.harness.proof_serializer import (
     TreeOpening,
@@ -82,7 +70,6 @@ from zisk_zorch.quotient.compute_q import compute_q
 from zisk_zorch.quotient.zerofier import _coset_points, inv_zerofier
 from zisk_zorch.transcript.transcript import Transcript, absorb_section
 from zisk_zorch.types import (
-    FriProof,
     InnerWitness,
     OpeningProof,
     QuotientCommitment,
@@ -250,11 +237,8 @@ class LogUpWitnessProver(
         # and a per-prove `frx.jit` wrapper would retrace on every instance
         # proved with the same key. The environment's column views are built
         # inside the trace so they lower as fused slices, not per-column
-        # dispatches. The whole stage — squeeze, columns, commit, absorbs —
-        # is one zone, so the transcript legs and stage glue pay one
-        # dispatch instead of one per op.
+        # dispatches.
         self._logup_jit = frx.jit(self._logup_env_columns)
-        self._stage_jit = frx.jit(self._fused_stage)
         # Jitted for the same reasons as the opening role's commit: a dedicated
         # hash fusion only exists inside a jit region, and the eager LDE emits a
         # standalone `lax.ntt` pass fusion that can overrun ptxas's 48 KB static
@@ -270,19 +254,6 @@ class LogUpWitnessProver(
             hash_family=self._family,
         )
         return c.root, c.digest_layers, c.extended
-
-    def _fused_stage(self, t, trace, const_base, custom_base, scalars_static, airvalues):
-        challenges = squeeze_stage_challenges_traced(
-            t, self._key.starkinfo["challengesMap"], 2
-        )
-        matrix, run_result = self._logup_env_columns(
-            trace, const_base, custom_base,
-            {**scalars_static, "challenges": challenges},
-        )
-        root, digest_layers, extended = self._commit_fn(matrix)
-        t.put(root)
-        absorb_stage2_airvalues(t, airvalues, self._key.starkinfo["airValuesMap"])
-        return t, challenges, matrix, run_result, root, digest_layers, extended
 
     def _logup_env_columns(self, trace, const_base, custom_base, scalars):
         env = {
@@ -392,25 +363,21 @@ class LogUpWitnessProver(
         transcript: Transcript,
     ) -> ProveResult[LogUpBoundClaim, LogUpCommitment]:
         si = self._key.starkinfo
-        # The whole stage runs as one jit zone (`_fused_stage`): squeeze,
-        # environment (assembled inside the trace — absent classes stay
-        # empty so a stray stage-2 operand fails loudly), columns, commit,
-        # and the root/airvalue absorbs. Non-challenge scalar sections are
-        # packed eagerly and enter as arguments.
-        scalars_static = scalar_env(
+        challenges = squeeze_stage_challenges(transcript, si["challengesMap"], 2)
+        # The base-domain interpreter environment is assembled inside the jit
+        # (`_logup_env_columns`); absent classes (custom, zi, later-stage
+        # sections) stay empty there so a stage-2 hint expression reaching
+        # for one fails loudly instead of silently reading the wrong domain.
+        scalars = scalar_env(
             si,
             publics=claim.pil2.publics,
             airvalues=claim.pil2.airvalues,
             proofvalues=claim.pil2.proofvalues,
-            challenges={},
+            challenges=challenges,
             airgroupvalues={},
         )
-        transcript, challenges, matrix, run_result, root, digest_layers, extended = (
-            self._stage_jit(
-                transcript, witness.trace, self._const_base_dev,
-                self._custom_base_dev, scalars_static,
-                to_field(claim.pil2.airvalues),
-            )
+        matrix, run_result = self._logup_jit(
+            witness.trace, self._const_base_dev, self._custom_base_dev, scalars
         )
         airgroupvalues = (
             {}
@@ -418,9 +385,12 @@ class LogUpWitnessProver(
             else {hint_value(self._run_hint, "result")["id"]: run_result}
         )
         assert matrix.shape[1] == si["mapSectionsN"]["cm2"], "cm2 width mismatch"
+        root, digest_layers, extended = self._commit_jit(matrix)
         commitment = TraceCommitment(
             root=root, digest_layers=digest_layers, extended=extended
         )
+        transcript.put(commitment.root)
+        absorb_stage2_airvalues(transcript, claim.pil2.airvalues, si["airValuesMap"])
         return ProveResult(
             LogUpBoundClaim(
                 pil2=claim.pil2,
@@ -513,26 +483,6 @@ class Pil2QuotientProver(
             return matrix, root, layers
 
         self._qsec_jit = frx.jit(_qsec_commit)
-        self._qsec_commit = _qsec_commit
-
-        def _fused_stage(t, cm1, cm2, const, custom, scalars_static, prior, zi):
-            challenges = {
-                **prior,
-                **squeeze_stage_challenges_traced(
-                    t, si["challengesMap"], si["nStages"] + 1
-                ),
-            }
-            scalars = {**scalars_static, "challenges": challenges}
-            quotient = run_block(
-                self._code,
-                self._env(cm1, cm2, const, custom, scalars, zi),
-                1 << self._blowup_bits,
-            )
-            matrix, root, layers = self._qsec_commit(quotient)
-            t.put(root)
-            return t, challenges, quotient, matrix, root, layers
-
-        self._stage_jit = frx.jit(_fused_stage)
 
     def _env(self, cm1, cm2, const, custom, scalars, zi):
         bufs = {
@@ -556,33 +506,27 @@ class Pil2QuotientProver(
         transcript: Transcript,
     ) -> ProveResult[Pil2QuotientBoundClaim, QuotientCommitment]:
         si = self._si
-        scalars_static = scalar_env(
+        challenges = dict(claim.challenges)
+        challenges.update(
+            squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 1)
+        )
+        scalars = scalar_env(
             si,
             publics=claim.pil2.publics,
             airvalues=claim.pil2.airvalues,
             proofvalues=claim.pil2.proofvalues,
-            challenges={},
+            challenges=challenges,
             airgroupvalues=claim.airgroupvalues,
         )
+        args = (
+            witness.trace_commit.extended,
+            witness.logup.commitment.extended,
+            self._const_ext_dev,
+            self._custom_ext_dev,
+            scalars,
+            self._zi,
+        )
         if self._q_chunks > 1:
-            # The chunked path (Keccakf-class working sets) keeps the staged
-            # zones: its whole point is never materializing the one-shot
-            # graph, fused or not.
-            challenges = dict(claim.challenges)
-            challenges.update(
-                squeeze_stage_challenges(
-                    transcript, si["challengesMap"], si["nStages"] + 1
-                )
-            )
-            scalars = {**scalars_static, "challenges": challenges}
-            args = (
-                witness.trace_commit.extended,
-                witness.logup.commitment.extended,
-                self._const_ext_dev,
-                self._custom_ext_dev,
-                scalars,
-                self._zi,
-            )
             ne = 1 << (self._nb + self._blowup_bits)
             per = ne // self._q_chunks
             quotient = fnp.concatenate(
@@ -591,19 +535,10 @@ class Pil2QuotientProver(
                     for k in range(self._q_chunks)
                 ]
             )
-            matrix, root, layers = self._qsec_jit(quotient)
-            transcript.put(root)
         else:
-            transcript, challenges, quotient, matrix, root, layers = self._stage_jit(
-                transcript,
-                witness.trace_commit.extended,
-                witness.logup.commitment.extended,
-                self._const_ext_dev,
-                self._custom_ext_dev,
-                scalars_static,
-                dict(claim.challenges),
-                self._zi,
-            )
+            quotient = self._q_jit(*args)
+        matrix, root, layers = self._qsec_jit(quotient)
+        transcript.put(root)
         return ProveResult(
             Pil2QuotientBoundClaim(
                 pil2=claim.pil2,
@@ -702,39 +637,6 @@ class Pil2OpeningProver(
         # device's dynamic budget -- a hard `uses too much shared data` build
         # error at ZisK Main width on sm_120.
         self._commit_jit = frx.jit(self._commit_fn)
-        # Everything from the evals through the grinding search — absorbs,
-        # squeezes, DEEP, the FRI fold/commit rounds — as one zone; lev
-        # stays materialized OUTSIDE it (its trace inside the openings zone
-        # regresses their fusion — zisk-zorch@lev-must-be-materialized).
-        self._tail_jit = frx.jit(self._fused_tail)
-
-    def _fused_tail(self, t, bufs, lev, xi, domain):
-        si = self._si
-        evals = self._evals_fn(bufs, lev)
-        absorb_section(
-            t, split_coeffs(evals).reshape(-1), hashed=self._hash_commits
-        )
-        tail_challenges = squeeze_stage_challenges_traced(
-            t, si["challengesMap"], si["nStages"] + 3
-        )
-        vf1 = tail_challenges[challenge_id(si["challengesMap"], "std_vf1")]
-        vf2 = tail_challenges[challenge_id(si["challengesMap"], "std_vf2")]
-        fri_pol = self._deep_fn(bufs, evals, domain, xi, vf1, vf2)
-        state, _, roots = fold_rounds(
-            PreFoldKGroupCommitRound(
-                Pil2FriCode(tuple(self._steps)),
-                merkle_tree(self._arity, self._family),
-            ),
-            FoldState(fri_pol),
-            Pil2SeamTranscript(t),
-            len(self._steps) - 1,
-        )
-        challenge = grinding_seed_challenge(
-            t, state.codeword, hash_commits=self._hash_commits
-        )
-        nonce = _grind_search_jit(self._family, self._pow_bits)(challenge)
-        layers = [(layer.leaves, layer.digest_layers) for layer in state.layers]
-        return t, evals, tail_challenges, roots, state.codeword, layers, challenge, nonce
 
     def _columns(self, bufs: dict) -> list:
         return [
@@ -810,45 +712,34 @@ class Pil2OpeningProver(
         # zone regresses the openings' fusion — see
         # zisk-zorch@lev-must-be-materialized).
         lev = compute_lev(xi, list(opening_points), self._nb)
-        domain = _coset_points(self._nb, self._nbe - self._nb)
-        (
-            transcript, evals, tail_challenges, roots, final_pol, layer_pieces,
-            grind_challenge, nonce_dev,
-        ) = self._tail_jit(transcript, bufs, lev, xi, domain)
-        challenges.update(tail_challenges)
-        return self._finish(
-            transcript, witness, evals, roots, final_pol, layer_pieces,
-            grind_challenge, nonce_dev,
+        evals = self._evals_jit(bufs, lev)
+        absorb_section(
+            transcript, split_coeffs(evals).reshape(-1), hashed=self._hash_commits
         )
 
-    def _finish(
-        self, transcript, witness, evals, roots, final_pol, layer_pieces,
-        grind_challenge, nonce_dev,
-    ) -> ProveResult[TrivialClaim, OpeningProof]:
-        """The host half after the fused tail: nonce validity, the query
-        draw, and every tree's openings — shared by the single-prove path
-        and a batched driver feeding per-lane slices, so both produce the
-        same bytes by construction."""
-        fri = FriProof(roots=roots, final_pol=final_pol)
-        fri_layers = [
-            _Layer(
-                merkle_tree(self._arity, self._family), leaves, digs,
-                self._steps[i + 1],
-            )
-            for i, (leaves, digs) in enumerate(layer_pieces)
-        ]
-        nonce = int(nonce_dev)
-        if not grind_is_valid(grind_challenge, nonce, self._pow_bits, self._family):
-            raise RuntimeError(
-                f"grinding: no nonce in the search space for pow_bits={self._pow_bits}"
-            )
-        positions = query_positions_for(
-            grind_challenge,
-            transcript.width,
-            nonce,
+        challenges.update(
+            squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 3)
+        )
+        vf1 = challenges[challenge_id(si["challengesMap"], "std_vf1")]
+        vf2 = challenges[challenge_id(si["challengesMap"], "std_vf2")]
+
+        domain = _coset_points(self._nb, self._nbe - self._nb)
+        fri_pol = self._deep_jit(bufs, evals, domain, xi, vf1, vf2)
+
+        fri, fri_layers = prove(
+            fri_pol,
+            self._steps,
+            arity=self._arity,
+            transcript=transcript,
+            hash_family=self._family,
+        )
+        positions, nonce = sample_query_positions(
+            transcript,
+            fri.final_pol,
+            pow_bits=self._pow_bits,
             n_queries=self._n_queries,
             n_bits_ext=self._steps[0],
-            hash_family=self._family,
+            hash_commits=self._hash_commits,
         )
         idx_ext = fnp.asarray(np.asarray(positions))
         trace_batched = frx.vmap(
