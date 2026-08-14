@@ -22,6 +22,7 @@ import numpy as np
 from frx import Array, lax
 from hash_frx.compression import Compression, CompressionParams
 from zk_dtypes import goldilocks as F
+from zk_dtypes import pfinfo
 from zorch.coding.reed_solomon import ReedSolomon
 from zorch.commit.merkle import MerkleTree
 
@@ -60,7 +61,7 @@ _HASH_FAMILY_PERMS = {
 DEFAULT_HASH_FAMILY = "Poseidon2"
 
 
-_GOLDILOCKS_P = 0xFFFFFFFF00000001
+_GOLDILOCKS_P = int(pfinfo(F).modulus)
 
 
 @functools.cache

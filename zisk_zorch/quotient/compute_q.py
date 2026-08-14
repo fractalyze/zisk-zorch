@@ -21,10 +21,11 @@ import frx.numpy as fnp
 import numpy as np
 from frx import lax
 from zk_dtypes import goldilocks as F
+from zk_dtypes import pfinfo
 
 from zisk_zorch.quotient.zerofier import _PIL2_GENERATOR
 
-_P = 0xFFFFFFFF00000001
+_P = int(pfinfo(F).modulus)
 _SHIFT = 7
 
 

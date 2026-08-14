@@ -30,10 +30,11 @@ import frx.numpy as fnp
 import numpy as np
 from frx import Array, lax
 from zk_dtypes import goldilocks as F
+from zk_dtypes import pfinfo
 from zorch.coding.reed_solomon import fri_fold_k
 
 # Goldilocks field modulus and the LDE coset generator (`Goldilocks::SHIFT`).
-_GOLDILOCKS_P = 0xFFFFFFFF00000001
+_GOLDILOCKS_P = int(pfinfo(F).modulus)
 _COSET_SHIFT = 7
 
 # pil2-stark's two-adic generator `Goldilocks::W[32]` (order 2^32); `W[bits]`,
