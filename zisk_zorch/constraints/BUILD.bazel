@@ -32,6 +32,32 @@ py_library(
     ],
 )
 
+# Main's cross-segment continuation predicate — the 96 direct bus updates
+# main.pil frees per segment as air values, absent from the rw manifest.
+py_library(
+    name = "continuation",
+    srcs = ["continuation.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//zisk_zorch:golden",
+        requirement("frx"),
+    ],
+)
+
+py_test(
+    name = "continuation_test",
+    size = "small",
+    srcs = ["continuation_test.py"],
+    data = ["testdata/golden/main_continuation.json"],
+    deps = [
+        ":continuation",
+        "//zisk_zorch:golden",
+        requirement("absl_py"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 # Builds the `.const` payload the reader parses, so no blob is committed.
 py_library(
     name = "const_fixture",
