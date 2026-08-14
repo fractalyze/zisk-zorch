@@ -79,7 +79,9 @@ class CircomCalc:
         exec_words = np.fromfile(str(base) + ".exec", dtype=np.uint64)
         self.n_adds, self.n_smap = int(exec_words[0]), int(exec_words[1])
         self.adds = exec_words[2 : 2 + self.n_adds * 4].reshape(-1, 4)
-        self.smap_flat = exec_words[2 + self.n_adds * 4 :]
+        # int64 up front: the sMap is ~n_smap x n_cols and re-converting it
+        # per prove dominated committed_pols for the wide recursion circuits.
+        self.smap_flat = exec_words[2 + self.n_adds * 4 :].astype(np.int64)
 
     def witness(self, zkin: np.ndarray) -> np.ndarray:
         buf = np.zeros(self.size_witness + self.n_adds, dtype=np.uint64)
@@ -112,10 +114,16 @@ class CircomCalc:
                 i1, i2, c1, c2 = (int(x) for x in self.adds[i])
                 w[self.size_witness + i] = (int(w[i1]) * c1 + int(w[i2]) * c2) % P
         smap = self.smap_flat.reshape(self.n_smap, n_cols)
-        out = np.zeros((n, n_cols), dtype=np.uint64)
-        gathered = w[smap.astype(np.int64)]
-        gathered[smap == 0] = 0
-        out[: self.n_smap] = gathered
+        # Index 0 = unmapped cell, forced zero: zeroing w[0] (w is a local
+        # copy, and the adds above are already computed) makes the gather
+        # itself produce the zeros — no separate mask pass over the trace.
+        w[0] = 0
+        if n == self.n_smap:
+            out = np.empty((n, n_cols), dtype=np.uint64)
+            np.take(w, smap, out=out)
+        else:
+            out = np.zeros((n, n_cols), dtype=np.uint64)
+            np.take(w, smap, out=out[: self.n_smap])
         return out
 
 
