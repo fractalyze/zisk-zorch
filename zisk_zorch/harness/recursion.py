@@ -23,13 +23,16 @@ import ctypes
 import json
 import pathlib
 
+import frx
 import frx.numpy as fnp
 import numpy as np
+from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import extend
-from zisk_zorch.harness.pil2 import MODULUS as P
 from zisk_zorch.harness.pil2 import Pil2Key
+
+P = 0xFFFFFFFF00000001
 
 
 def circuit_base(key: pathlib.Path, gi: dict, ty: str, air_idx: int) -> pathlib.Path:
@@ -54,6 +57,39 @@ def recursion_starkinfo(base: pathlib.Path) -> pathlib.Path:
     if si.exists():
         return si
     return base.parent.parent.parent.parent / "recursive2" / "recursive2.starkinfo.json"
+
+
+def _add_waves(adds: np.ndarray, size_witness: int) -> list[np.ndarray]:
+    """The exec adds' rows grouped by dependency depth: wave `k` reads only
+    witness cells and slots settled by waves below it, so a wave evaluates as
+    one vectorized batch.
+
+    An add's operands are always earlier slots, so the depth relaxation
+    converges in `max(depth) + 1` passes — five on the recursion circuits.
+    Key-fixed, hence computed once per calculator."""
+    n = len(adds)
+    if not n:
+        return []
+    dep = adds[:, :2].astype(np.int64) - size_witness
+    level = np.zeros(n, dtype=np.int64)
+    for _ in range(n):
+        nxt = np.zeros((n, 2), dtype=np.int64)
+        for k in (0, 1):
+            reads_add = dep[:, k] >= 0
+            nxt[reads_add, k] = level[dep[reads_add, k]] + 1
+        nxt = nxt.max(axis=1)
+        if np.array_equal(nxt, level):
+            break
+        level = nxt
+    else:
+        raise AssertionError("exec adds do not form an acyclic chain")
+    return [np.flatnonzero(level == lv) for lv in range(int(level.max()) + 1)]
+
+
+@frx.jit
+def _gather_rows(w: Array, smap: Array) -> Array:
+    """The sMap placement gather — `committed_trace`'s device half."""
+    return w[smap]
 
 
 class CircomCalc:
@@ -81,6 +117,8 @@ class CircomCalc:
         # int64 up front: the sMap is ~n_smap x n_cols and re-converting it
         # per prove dominated committed_pols for the wide recursion circuits.
         self.smap_flat = exec_words[2 + self.n_adds * 4 :].astype(np.int64)
+        self._add_waves = _add_waves(self.adds, self.size_witness)
+        self._smap_dev: Array | None = None
 
     def witness(self, zkin: np.ndarray) -> np.ndarray:
         buf = np.zeros(self.size_witness + self.n_adds, dtype=np.uint64)
@@ -95,28 +133,40 @@ class CircomCalc:
         assert rc == 0, f"getWitness rc={rc}"
         return buf
 
-    def committed_pols(self, w: np.ndarray, n: int, n_cols: int) -> np.ndarray:
-        """proofman's ``get_committed_pols``: exec adds appended to the
-        witness, then the sMap gather places values into trace columns
-        (index 0 = unmapped cell, forced zero)."""
+    def _settled(self, w: np.ndarray) -> np.ndarray:
+        """The witness with its exec adds appended and every cell canonical —
+        what the sMap gathers from.
+
+        The adds run one vectorized batch per `_add_waves` level: a row may
+        read an earlier row's output, but only five levels deep on the
+        recursion circuits, so the Python-level multiply-add per row the
+        dependency used to force (23004 rows, ~18 ms a prove on recursive2)
+        collapses to five array ops.
+
+        Canonicalizing HERE rather than on the caller's trace reduces a 41 MB
+        witness instead of the 65 MB the gather repeats it into, and the
+        residues are sparse (292 cells of 5 M), so it is a scan plus a
+        scatter."""
         w = w.copy()
-        idx = self.adds[:, :2].astype(np.int64)
-        # An add may read an earlier add's slot; vectorize only when none do.
-        if self.n_adds and idx.max() < self.size_witness:
-            c = (w[idx[:, 0]].astype(object) * self.adds[:, 2].astype(object)) % P
-            d = (w[idx[:, 1]].astype(object) * self.adds[:, 3].astype(object)) % P
-            w[self.size_witness : self.size_witness + self.n_adds] = (
-                (c + d) % P
-            ).astype(np.uint64)
-        else:
-            for i in range(self.n_adds):
-                i1, i2, c1, c2 = (int(x) for x in self.adds[i])
-                w[self.size_witness + i] = (int(w[i1]) * c1 + int(w[i2]) * c2) % P
-        smap = self.smap_flat.reshape(self.n_smap, n_cols)
+        for sel in self._add_waves:
+            a = w[self.adds[sel, 0]].astype(object) * self.adds[sel, 2].astype(object)
+            b = w[self.adds[sel, 1]].astype(object) * self.adds[sel, 3].astype(object)
+            w[self.size_witness + sel] = ((a + b) % P).astype(np.uint64)
         # Index 0 = unmapped cell, forced zero: zeroing w[0] (w is a local
         # copy, and the adds above are already computed) makes the gather
         # itself produce the zeros — no separate mask pass over the trace.
         w[0] = 0
+        residues = np.flatnonzero(w >= np.uint64(P))
+        if residues.size:
+            w[residues] -= np.uint64(P)
+        return w
+
+    def committed_pols(self, w: np.ndarray, n: int, n_cols: int) -> np.ndarray:
+        """proofman's ``get_committed_pols``: exec adds appended to the
+        witness, then the sMap gather places values into trace columns
+        (index 0 = unmapped cell, forced zero). Canonical on return."""
+        w = self._settled(w)
+        smap = self.smap_flat.reshape(self.n_smap, n_cols)
         if n == self.n_smap:
             out = np.empty((n, n_cols), dtype=np.uint64)
             np.take(w, smap, out=out)
@@ -124,6 +174,25 @@ class CircomCalc:
             out = np.zeros((n, n_cols), dtype=np.uint64)
             np.take(w, smap, out=out[: self.n_smap])
         return out
+
+    def committed_trace(self, w: np.ndarray, n: int, n_cols: int) -> Array:
+        """`committed_pols` with the placement gather on the device — the
+        field-typed, canonical trace an `InnerWitness` takes.
+
+        The gather is ~8 M scattered reads producing a 65 MB trace from a
+        41 MB witness: ~17 ms of host memory latency, and the prover then
+        uploads the larger of the two. Moving it behind the upload sends the
+        witness instead and leaves the trace where the commit wants it. The
+        sMap is key-fixed, so it is uploaded once per calculator no matter
+        how many instances the circuit proves."""
+        if self._smap_dev is None:
+            self._smap_dev = fnp.asarray(
+                self.smap_flat.reshape(self.n_smap, n_cols).astype(np.int32)
+            )
+        rows = _gather_rows(fnp.array(self._settled(w).view(F)), self._smap_dev)
+        if n == self.n_smap:
+            return rows
+        return fnp.concatenate([rows, fnp.zeros((n - self.n_smap, n_cols), F)])
 
 
 def recursion_pil2_key(base: pathlib.Path, hash_family: str) -> tuple[Pil2Key, dict]:
