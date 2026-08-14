@@ -114,10 +114,16 @@ def stage_checks(cap: Capture, width: int) -> dict[str, Callable[[object], bool]
             cap.u64("cm2_base"),
         )
         ok &= _match("root2", _as_u64(claim.root2), cap.u64("root2"))
+        # A gprod AIR exports no airgroup value — compare the empty section
+        # rather than crash `np.concatenate` on an empty dict.
         agv = claim.airgroupvalues
         return ok & _match(
             "airgroup values (gsum result)",
-            np.concatenate([limbs(agv[i]) for i in sorted(agv)]),
+            (
+                np.concatenate([limbs(agv[i]) for i in sorted(agv)])
+                if agv
+                else np.zeros(0, dtype=np.uint64)
+            ),
             cap.u64("airgroupvalues"),
         )
 

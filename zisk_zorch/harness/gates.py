@@ -31,7 +31,11 @@ from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
 from zisk_zorch.harness.capture import Capture, cubic, limbs
-from zisk_zorch.harness.pil2 import deep_two_challenge, open_evmap_columns
+from zisk_zorch.harness.pil2 import (
+    deep_two_challenge,
+    hint_value,
+    open_evmap_columns,
+)
 from zisk_zorch.harness.schedule import replay_challenges
 from zisk_zorch.logup.bus import LogUpBus
 from zisk_zorch.quotient.cexp_ref import run_block
@@ -106,15 +110,36 @@ def verify_logup_witness(cap: Capture) -> bool | None:
     got = _on_cpu(logup_cols, cap.base_env)
     assert cap.path("cm2_base").exists(), "stage-2 hint gate needs the cm2_base dump"
     cm2 = cap.u64("cm2_base").reshape(cap.n, cap.cm2_cols)
+
+    # Resolve each column's cm2 slice from cmPolsMap exactly as the prover
+    # lays the section down (stagePos order, dim-1 columns one limb wide) —
+    # a hardcoded offset silently gates the wrong slice on any AIR whose
+    # stage-2 ordering differs from the fixture's.
+    hints = {h["name"]: h for h in cap.expressionsinfo["hintsInfo"]}
+    offsets, off = {}, 0
+    for i, p in sorted(
+        ((i, p) for i, p in enumerate(cap.cmp_map) if p["stage"] == 2),
+        key=lambda ip: ip[1]["stagePos"],
+    ):
+        width = 3 if p["dim"] == 3 else 1
+        offsets[i] = (off, width)
+        off += width
+    gsum_id = hint_value(hints["gsum_col"], "reference")["id"]
+    im_id = hint_value(hints["im_col"], "reference")["id"]
+    impol_id = next(
+        i for i, p in enumerate(cap.cmp_map) if p["stage"] == 2 and p.get("imPol")
+    )
     ok = True
-    for name, col, lo in [
-        ("gsum", got[0], 0),
-        ("im_single", got[1], 3),
-        ("ImPol", got[2], 6),
+    for name, col, cm_id in [
+        ("gsum", got[0], gsum_id),
+        ("im_single", got[1], im_id),
+        ("ImPol", got[2], impol_id),
     ]:
-        want = np.ascontiguousarray(cm2[:, lo : lo + 3]).reshape(-1)
+        lo, width = offsets[cm_id]
+        want = np.ascontiguousarray(cm2[:, lo : lo + width]).reshape(-1)
+        got_limbs = limbs(col).reshape(cap.n, -1)[:, :width].reshape(-1)
         ok &= _check(
-            np.array_equal(limbs(col), want),
+            np.array_equal(got_limbs, want),
             f"stage-2 witness column {name} (hint expressions)",
         )
     return ok

@@ -39,11 +39,18 @@ def _region_report(got: np.ndarray, want: np.ndarray, layout: list[tuple[str, in
     off = 0
     for name, size in layout:
         g, w = got[off : off + size], want[off : off + size]
-        ok = np.array_equal(g, w)
-        ok_all &= ok
-        if not ok:
+        if len(g) != len(w):
+            # A truncated slice pair would crash the elementwise compare
+            # with a broadcast error, not a verdict.
+            print(
+                f"MISMATCH {name} (serialized holds {len(g)}, native "
+                f"{len(w)} of {size} words)"
+            )
+            ok_all = False
+        elif not np.array_equal(g, w):
             first = int(np.nonzero(g != w)[0][0])
             print(f"MISMATCH {name} (+{first} of {size})")
+            ok_all = False
         else:
             print(f"OK       {name} ({size} words)")
         off += size

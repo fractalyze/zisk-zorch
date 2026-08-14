@@ -118,6 +118,15 @@ def device_sections(key: Pil2Key, domain: str) -> tuple[Array, dict[int, Array]]
     return cache[domain]
 
 
+def release_device_sections(key: Pil2Key) -> None:
+    """Drop `key`'s uploaded sections. The cache rides the key, and the key
+    outlives the roles (`Capture.release` keeps it), so dropping a family's
+    prover frees its device residency only through this."""
+    cache = getattr(key, "_device_sections", None)
+    if cache is not None:
+        cache.clear()
+
+
 def scalar_env(
     starkinfo: dict,
     *,
@@ -303,6 +312,13 @@ def deep_two_challenge(
                 continue
             term = columns[i] - evals[i]
             acc = term if acc is None else acc * vf2 + term
+        if acc is None:
+            # An opening point no evMap entry references is a zero group;
+            # pil2 accumulates from zero, so the Horner step still scales
+            # the running sum by vf1.
+            if fri is not None:
+                fri = fri * vf1
+            continue
         shift = fnp.array(np.uint64(pow(g, prime % n, MODULUS)).astype(F))
         group = acc / (domain - xi * shift)
         fri = group if fri is None else fri * vf1 + group

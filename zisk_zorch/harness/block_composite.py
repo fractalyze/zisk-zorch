@@ -38,7 +38,11 @@ from zisk_zorch.harness.global_constraints import (
     aggregate_airgroupvalues,
     check_global_constraints,
 )
-from zisk_zorch.harness.pil2 import stage_challenge_ids, transcript_width
+from zisk_zorch.harness.pil2 import (
+    release_device_sections,
+    stage_challenge_ids,
+    transcript_width,
+)
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.harness.proof_serializer import serialize_proof
 from zisk_zorch.transcript.transcript import Transcript
@@ -141,13 +145,20 @@ def prove_block(
     # per-instance may survive its iteration.
     contribs = []
     publics = proofvalues = None
-    for fam, cap, vk in captures:
+    for i, (fam, cap, vk) in enumerate(captures):
         prover = prover_for(fam, cap)
         trace_dev = fnp.asarray(cap.trace)
         commitment = prover.opening.commit(InnerWitness(trace_dev))
         root1 = np.asarray(commitment.root).astype(np.uint64)
-        del commitment, trace_dev
+        del commitment, trace_dev, prover
         cap.release()
+        # Same family-boundary release as phase 3: keeping every family's
+        # prover (and its uploaded key sections) resident through phases
+        # 1-2 is exactly the residency this module exists to bound.
+        if release_provers and (i + 1 == len(captures) or captures[i + 1][0] != fam):
+            dropped = provers.pop(fam, None)
+            if dropped is not None:
+                release_device_sections(dropped.key)
         gc.collect()
         av1 = (
             stage1_values(cap.u64("airvalues"), cap.si["airValuesMap"])
@@ -224,7 +235,12 @@ def prove_block(
         # prove (an ungrouped manifest stays correct — `prover_for` just
         # recompiles). A caller-owned `provers` cache opts out.
         if release_provers and (i + 1 == len(captures) or captures[i + 1][0] != fam):
-            provers.pop(fam, None)
+            dropped = provers.pop(fam, None)
+            if dropped is not None:
+                # The key outlives the prover (its capture's `pil2_key`
+                # survives release), so the uploaded sections must be
+                # dropped explicitly.
+                release_device_sections(dropped.key)
         gc.collect()
 
     # Phase 4: the block binding over OUR airgroup values.

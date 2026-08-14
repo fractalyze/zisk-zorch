@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import functools
 
+import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
@@ -636,6 +637,10 @@ def goldilocks_perm(width: int) -> Poseidon2:
     transcript and every Merkle tree call this per `prove` — both repeats that
     host work and plants a `np.asarray`-on-tracer barrier that blocks jitting
     the FRI fold loop. One concrete instance, reused, keeps the fold loop
-    traceable as a single compiled function.
+    traceable as a single compiled function. Construction is forced eager so
+    a cache miss under an ambient trace stores concrete constants, not that
+    trace's tracers (the block composite's phase-1 commit traces
+    `merkle_tree` before anything else has warmed the cache).
     """
-    return Poseidon2(goldilocks_params(width))
+    with frx.ensure_compile_time_eval():
+        return Poseidon2(goldilocks_params(width))

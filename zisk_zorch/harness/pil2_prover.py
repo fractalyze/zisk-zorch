@@ -528,11 +528,16 @@ class Pil2QuotientProver(
         )
         if self._q_chunks > 1:
             ne = 1 << (self._nb + self._blowup_bits)
-            per = ne // self._q_chunks
+            # Ceil-divide with a clipped tail: a chunk count that does not
+            # divide `ne` must not drop the remainder rows.
+            per = -(ne // -self._q_chunks)
             quotient = fnp.concatenate(
                 [
-                    self._q_chunk_jit(*args, fnp.arange(k * per, (k + 1) * per))
+                    self._q_chunk_jit(
+                        *args, fnp.arange(k * per, min((k + 1) * per, ne))
+                    )
                     for k in range(self._q_chunks)
+                    if k * per < ne
                 ]
             )
         else:
@@ -867,6 +872,9 @@ class Pil2InnerProver:
     def __init__(
         self, key: Pil2Key, *, emit_wire: bool = False, recursive: bool = False
     ) -> None:
+        # Kept so a dropped prover's uploaded key sections can be released
+        # (`release_device_sections`) — the key outlives the roles.
+        self.key = key
         self.logup = LogUpWitnessProver(key)
         self.quotient = Pil2QuotientProver(key)
         self.opening = Pil2OpeningProver(key, emit_wire=emit_wire)

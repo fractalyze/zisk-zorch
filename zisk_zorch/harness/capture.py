@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sys
 from functools import cached_property
 
 import frx.numpy as fnp
@@ -123,12 +124,28 @@ class Capture:
     def hash_family(self) -> str:
         """The key's Poseidon family — `pilout.globalInfo.json` (at the key
         root above the starkinfo) says `"hash": "Poseidon1"` on the ziskup
-        key; the example keys are Poseidon2."""
+        key; the example keys ship no globalInfo and are Poseidon2.
+
+        The family decides every tree, transcript, and grind, so a wrong
+        guess byte-mismatches the whole prove with nothing pointing here:
+        an unrecognized value raises, and the no-globalInfo fallback (a
+        starkinfo copied outside its key tree looks identical to an example
+        key) announces itself on stderr."""
         for parent in self.starkinfo_path.parents:
             gi = parent / "pilout.globalInfo.json"
             if gi.exists():
                 fam = json.loads(gi.read_text()).get("hash")
-                return fam if fam in ("Poseidon1", "Poseidon2") else "Poseidon2"
+                if fam not in ("Poseidon1", "Poseidon2"):
+                    raise ValueError(
+                        f"{gi}: unknown hash family {fam!r} — expected "
+                        "'Poseidon1' or 'Poseidon2'"
+                    )
+                return fam
+        print(
+            f"capture {self.instance}: no pilout.globalInfo.json above "
+            f"{self.starkinfo_path}; assuming Poseidon2",
+            file=sys.stderr,
+        )
         return "Poseidon2"
 
     # -- dumped sections ----------------------------------------------------
@@ -270,6 +287,7 @@ class Capture:
             "bufs",
             "opened_columns",
             "const_base",
+            "base_env",
             "challenges",
             "cexp_env",
             "_scalar_env",

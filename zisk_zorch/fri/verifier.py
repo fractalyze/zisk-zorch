@@ -43,7 +43,7 @@ from zorch.pcs.fold import verify_group_fold_chain
 from zorch.utils.field import join_coeffs
 
 from zisk_zorch.commit.openings import verify_group_proof
-from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.commit.trace_commit import DEFAULT_HASH_FAMILY, merkle_tree
 from zisk_zorch.fri.queries import (
     grind_is_valid,
     grinding_seed_challenge,
@@ -64,6 +64,7 @@ def verify(
     pow_bits: int,
     nonce: int,
     n_bits: int,
+    hash_family: str = DEFAULT_HASH_FAMILY,
 ) -> bool:
     """Check the FRI fold consistency, Merkle openings, and final low-degree test.
 
@@ -93,8 +94,11 @@ def verify(
     # grind check binds the prover's nonce: recompute the challenge, reject a
     # nonce that does not hash to `pow_bits` leading zeros (pil2 stark_verify.hpp
     # L195-L200), then read one position per opened group off challenge++nonce.
+    # `sample_query_positions` grinds and reseeds with the transcript's own
+    # family; checking with any other rejects valid family-1 proofs.
+    family = transcript._hash_family
     challenge = grinding_seed_challenge(transcript, final_pol)
-    if not grind_is_valid(challenge, nonce, pow_bits):
+    if not grind_is_valid(challenge, nonce, pow_bits, family):
         return False
     query_indices = query_positions_for(
         challenge,
@@ -102,6 +106,7 @@ def verify(
         nonce,
         n_queries=len(query_openings),
         n_bits_ext=steps[0],
+        hash_family=family,
     )
     return verify_query_layers(
         roots,
@@ -112,6 +117,7 @@ def verify(
         steps=steps,
         arity=arity,
         n_bits=n_bits,
+        hash_family=hash_family,
     )
 
 
@@ -125,6 +131,7 @@ def verify_query_layers(
     steps: list[int],
     arity: int,
     n_bits: int,
+    hash_family: str = DEFAULT_HASH_FAMILY,
 ) -> bool:
     """The query-phase core, given re-derived positions and betas: every
     layer's opened group hashes to its layer root, folds onto the next layer's
@@ -136,7 +143,7 @@ def verify_query_layers(
     DEEP head), but the layer checks must not drift, so both call this one
     definition."""
     code = Pil2FriCode(tuple(steps))
-    tree = merkle_tree(arity)
+    tree = merkle_tree(arity, hash_family)
     num_rounds = len(steps) - 1
 
     # Query indices stay on the host for the Merkle loop — indexing a JAX array
