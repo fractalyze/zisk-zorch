@@ -29,8 +29,8 @@ import numpy as np
 from frx import Array
 
 from zisk_zorch.commit.openings import group_proof
-
-_DIGEST = 4
+from zisk_zorch.harness.pil2 import value_offsets
+from zisk_zorch.transcript.transcript import DIGEST
 
 
 def _n_siblings(n_bits: int, arity: int, llv: int) -> int:
@@ -46,7 +46,9 @@ class TreeOpening:
     last_level: np.ndarray  # (arity^llv * 4,) zero-padded digests
 
 
-def open_tree_dispatch(tree, matrix: Array, digest_layers: list[Array], idx: Array) -> Array:
+def open_tree_dispatch(
+    tree, matrix: Array, digest_layers: list[Array], idx: Array
+) -> Array:
     """The device half of `open_tree`: the batched group proofs, no host
     sync — so a caller opening several trees can dispatch them all before
     the first device→host copy blocks."""
@@ -66,7 +68,7 @@ def open_tree_convert(
     the pil2 wire pieces."""
     flat = np.asarray(flat_dev).astype(np.uint64)
     rows = flat[:, :width]
-    per_level = (arity - 1) * _DIGEST
+    per_level = (arity - 1) * DIGEST
     path = flat[:, width:].reshape(flat.shape[0], -1, per_level)
     n_sib = _n_siblings(n_bits, arity, llv)
     last_level = _last_level(digest_layers, arity, llv)
@@ -108,22 +110,18 @@ def _last_level(digest_layers: list[Array], arity: int, llv: int) -> np.ndarray:
         n = (n + arity - 1) // arity
         level += 1
     nodes = np.asarray(digest_layers[level]).astype(np.uint64)[:n]
-    out = np.zeros((cap, _DIGEST), dtype=np.uint64)
+    out = np.zeros((cap, DIGEST), dtype=np.uint64)
     out[: nodes.shape[0]] = nodes
     return out.reshape(-1)
 
 
 def _values3(words: np.ndarray, vmap: list) -> np.ndarray:
     """Dumped value packing (stage-1 one word, else three) -> wire 3-per."""
-    out, off = np.zeros((len(vmap), 3), dtype=np.uint64), 0
-    for i, v in enumerate(vmap):
-        if v["stage"] == 1:
-            out[i, 0] = words[off]
-            off += 1
-        else:
-            out[i] = words[off : off + 3]
-            off += 3
-    assert off == len(words), (off, len(words))
+    out = np.zeros((len(vmap), 3), dtype=np.uint64)
+    off = width = 0
+    for i, off, width in value_offsets(vmap):
+        out[i, :width] = words[off : off + width]
+    assert off + width == len(words), (off + width, len(words))
     return out.reshape(-1)
 
 

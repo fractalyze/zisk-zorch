@@ -28,9 +28,8 @@ import numpy as np
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import extend
+from zisk_zorch.harness.pil2 import MODULUS as P
 from zisk_zorch.harness.pil2 import Pil2Key
-
-P = 0xFFFFFFFF00000001
 
 
 def circuit_base(key: pathlib.Path, gi: dict, ty: str, air_idx: int) -> pathlib.Path:

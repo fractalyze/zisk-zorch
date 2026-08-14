@@ -24,8 +24,9 @@ from zorch.pcs.fold import to_base_field
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.queries import _grind, grind_is_valid, query_positions_for
 from zisk_zorch.fri.seam import Pil2FriCode
-from zisk_zorch.harness.capture import Capture, cubic
-from zisk_zorch.harness.pil2 import transcript_width
+from zisk_zorch.harness.capture import Capture
+from zisk_zorch.harness.pil2 import canon_u64 as _canon
+from zisk_zorch.harness.pil2 import cubic, transcript_width
 from zisk_zorch.harness.proof_serializer import (
     TreeOpening,
     open_tree,
@@ -228,11 +229,6 @@ def main() -> int:
     ok = _region_report(got, native, layout)
     print("flat-proof serialization: " + ("BYTE-MATCH" if ok else "FAILED"))
     return 0 if ok else 1
-
-
-def _canon(a: np.ndarray) -> np.ndarray:
-    p = np.uint64(0xFFFFFFFF00000001)
-    return np.where(a >= p, a - p, a)
 
 
 if __name__ == "__main__":

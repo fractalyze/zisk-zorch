@@ -16,16 +16,17 @@ from functools import cached_property
 import frx.numpy as fnp
 import numpy as np
 from zk_dtypes import goldilocks as F
-from zk_dtypes import goldilocksx3 as F3
-from zk_dtypes import pfinfo
-from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.trace_commit import unextend
+from zisk_zorch.harness.pil2 import (
+    MODULUS as P,
+)
 from zisk_zorch.harness.pil2 import (
     Pil2Key,
     cm_env,
     committed_column,
     const_env,
+    cubic,
     custom_env,
     hint_value,
     scalar_env,
@@ -34,24 +35,12 @@ from zisk_zorch.harness.pil2 import (
 from zisk_zorch.harness.pil2_prover import Pil2Claim
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
-P = int(pfinfo(F).modulus)
-
 # One definition of the host-bundle convention (env var + tools/pil2-dump's
 # default instance): the runnable and gates_test must resolve the SAME
 # bundle or their verdicts describe different proves.
 CAPTURE_ENV = "ZISK_PIL2_CAPTURE"
 FIXTURE_INSTANCE = "ag0_air2_inst5"
 FIXTURE_STARKINFO = "SpecifiedRanges.starkinfo.json"
-
-
-def cubic(words: np.ndarray):
-    """Contiguous gl64 limb triples -> a 1-D cubic device array."""
-    return join_coeffs(fnp.array(words.astype(F).reshape(-1, 3)), F3)
-
-
-def limbs(x) -> np.ndarray:
-    """A field array flattened to its dumped form: contiguous u64 limbs."""
-    return np.asarray(split_coeffs(x)).reshape(-1)
 
 
 def untile_gpu(flat: np.ndarray, rows: int, cols: int) -> np.ndarray:

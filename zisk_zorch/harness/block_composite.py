@@ -25,9 +25,8 @@ from dataclasses import dataclass, replace
 
 import frx.numpy as fnp
 import numpy as np
-from zorch.utils.field import split_coeffs
 
-from zisk_zorch.harness.capture import Capture, limbs
+from zisk_zorch.harness.capture import Capture
 from zisk_zorch.harness.contributions import (
     aggregate_contributions,
     global_challenge,
@@ -39,6 +38,7 @@ from zisk_zorch.harness.global_constraints import (
     check_global_constraints,
 )
 from zisk_zorch.harness.pil2 import (
+    limbs,
     release_device_sections,
     stage_challenge_ids,
     transcript_width,
@@ -64,7 +64,7 @@ class InstanceResult:
 
 def _airgroupvalue_words(logup_claim) -> np.ndarray:
     (value,) = logup_claim.airgroupvalues.values()
-    return np.asarray(split_coeffs(value)).reshape(-1).astype(np.uint64)
+    return limbs(value).astype(np.uint64)
 
 
 def _dumped_airgroupvalues(claim) -> np.ndarray:

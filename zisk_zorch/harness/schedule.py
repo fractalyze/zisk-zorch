@@ -22,10 +22,10 @@ from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode
-from zisk_zorch.harness.capture import cubic
 from zisk_zorch.harness.pil2 import (
     absorb_stage2_airvalues,
     absorb_words,
+    cubic,
     stage_challenge_ids,
     transcript_width,
 )

@@ -29,7 +29,7 @@ from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
 from zorch.pcs.deep import open_columns
-from zorch.utils.field import join_coeffs
+from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.evals.lev import _TWO_ADIC_ROOT
 from zisk_zorch.transcript.transcript import DIGEST, Transcript
@@ -64,6 +64,17 @@ class Pil2Key:
     custom_base: dict[int, np.ndarray] = field(default_factory=dict)
 
 
+def canon_u64(a: np.ndarray) -> np.ndarray:
+    """Reduce host u64 words to their canonical residue.
+
+    Dumps and wire buffers carry values in `[0, 2p)` — one conditional
+    subtraction is the whole reduction. `Capture.u64` keeps a `max()`-guarded
+    variant of this to skip the copy pass on already-canonical block-scale
+    sections; every other caller wants this form."""
+    p = np.uint64(MODULUS)
+    return np.where(a >= p, a - p, a)
+
+
 def to_field(words) -> Array:
     """u64 words -> a base-field device array."""
     return fnp.array(np.asarray(words, dtype=np.uint64).astype(F))
@@ -74,23 +85,44 @@ def absorb_words(transcript: Transcript, words) -> None:
     transcript.put(to_field(words))
 
 
+def cubic(words: np.ndarray):
+    """Contiguous gl64 limb triples -> a 1-D cubic device array."""
+    return join_coeffs(fnp.array(words.astype(F).reshape(-1, 3)), F3)
+
+
+def limbs(x) -> np.ndarray:
+    """A field array flattened to its dumped form: contiguous u64 limbs."""
+    return np.asarray(split_coeffs(x)).reshape(-1)
+
+
 def cubic_scalar(words) -> Array:
     """3 u64 limbs -> a cubic scalar."""
     return join_coeffs(to_field(words).reshape(3), F3).reshape(())
 
 
-def values_env(words: np.ndarray, vmap: list) -> dict[int, Array]:
-    """A dumped value section as the SSA interpreter's scalar environment:
-    pil2 packs stage-1 values as one word, stage>=2 as three."""
-    out, off = {}, 0
-    for i, v in enumerate(vmap):
-        if v["stage"] == 1:
-            out[i] = cubic_scalar([words[off], 0, 0])
-            off += 1
-        else:
-            out[i] = cubic_scalar(words[off : off + 3])
-            off += 3
+def value_offsets(values_map: list) -> list[tuple[int, int, int]]:
+    """Where each entry of a packed value section starts: ``(index, offset,
+    width)`` in map order, pil2 packing stage-1 values as one Goldilocks word
+    and stage>=2 as three.
+
+    Every reader of a value section (the SSA environments, the transcript
+    absorbs, the wire triples, the stage-1 contributions) walks this same
+    table, so it is derived once here — a packing change lands in all of
+    them together."""
+    out, off = [], 0
+    for i, v in enumerate(values_map):
+        width = 1 if v["stage"] == 1 else 3
+        out.append((i, off, width))
+        off += width
     return out
+
+
+def values_env(words: np.ndarray, vmap: list) -> dict[int, Array]:
+    """A dumped value section as the SSA interpreter's scalar environment."""
+    return {
+        i: cubic_scalar([words[off], 0, 0] if w == 1 else words[off : off + 3])
+        for i, off, w in value_offsets(vmap)
+    }
 
 
 def publics_env(words: np.ndarray) -> dict[int, Array]:
@@ -152,15 +184,10 @@ def absorb_stage2_airvalues(
     transcript: Transcript, words: np.ndarray, values_map: list
 ) -> None:
     """Absorb the stage-2 air values off the packed section: the schedule
-    absorbs only the stage-2 triples, walking past one word per stage-1
-    entry (`values_env`'s packing)."""
-    off = 0
-    for v in values_map:
-        if v["stage"] == 1:
-            off += 1
-        elif v["stage"] == 2:
+    absorbs only the stage-2 triples."""
+    for i, off, _ in value_offsets(values_map):
+        if values_map[i]["stage"] == 2:
             absorb_words(transcript, words[off : off + 3])
-            off += 3
 
 
 def hint_value(hint: dict, name: str) -> dict:

@@ -15,11 +15,11 @@ only the aggregation and the scalar environment live here.
 from __future__ import annotations
 
 import numpy as np
-from zorch.utils.field import split_coeffs
 
 from zisk_zorch.harness.pil2 import (
     MODULUS,
     cubic_scalar,
+    limbs,
     publics_env,
     values_env,
 )
@@ -70,5 +70,5 @@ def check_global_constraints(
     results = []
     for c in constraints:
         value = run_block(c["code"], env, 1)
-        results.append(np.asarray(split_coeffs(value)).reshape(-1).astype(np.uint64))
+        results.append(limbs(value).astype(np.uint64))
     return results

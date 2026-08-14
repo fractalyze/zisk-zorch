@@ -25,7 +25,7 @@ import frx
 import frx.numpy as fnp
 import numpy as np
 
-from zisk_zorch.harness.pil2 import MODULUS, to_field
+from zisk_zorch.harness.pil2 import MODULUS, to_field, value_offsets
 from zisk_zorch.transcript.transcript import _HASH_FAMILY_PERMS, Transcript
 
 # The contribution hashes run the width-16 permutation for both families
@@ -37,14 +37,10 @@ W = 16
 def stage1_values(packed: np.ndarray, values_map: list) -> np.ndarray:
     """The stage-1 entries of a packed value section, in map order (pil2
     packs stage-1 values as one word, stage>=2 as three)."""
-    out, off = [], 0
-    for v in values_map:
-        if v["stage"] == 1:
-            out.append(packed[off])
-            off += 1
-        else:
-            off += 3
-    return np.array(out, dtype=np.uint64)
+    return np.array(
+        [packed[off] for _, off, w in value_offsets(values_map) if w == 1],
+        dtype=np.uint64,
+    )
 
 
 def instance_contribution(

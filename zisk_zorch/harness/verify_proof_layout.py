@@ -30,19 +30,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import pathlib
 import re
 import sys
 
 import numpy as np
 
-P = 0xFFFFFFFF00000001
-_HASH = 4
-
-
-def _canon(a: np.ndarray) -> np.ndarray:
-    return np.where(a >= np.uint64(P), a - np.uint64(P), a)
+from zisk_zorch.harness.pil2 import canon_u64 as _canon
+from zisk_zorch.harness.proof_serializer import _n_siblings
+from zisk_zorch.harness.recursion import circuit_base, recursion_starkinfo
+from zisk_zorch.transcript.transcript import DIGEST as _HASH
 
 
 def parse_proof(si: dict, buf: np.ndarray) -> dict:
@@ -55,8 +52,7 @@ def parse_proof(si: dict, buf: np.ndarray) -> dict:
     last_levels = (arity**llv) * _HASH if llv else 0
 
     def tree(width: int, n_bits: int) -> int:
-        n_sib = math.ceil(n_bits / math.log2(arity)) - llv
-        return nq * width + nq * n_sib * sib_per + last_levels
+        return nq * width + nq * _n_siblings(n_bits, arity, llv) * sib_per + last_levels
 
     p = 0
     out = {}
@@ -86,25 +82,25 @@ def parse_proof(si: dict, buf: np.ndarray) -> dict:
     return out
 
 
-def _starkinfo_for(key: pathlib.Path, gi: dict, inst: str) -> pathlib.Path:
+def starkinfo_for(key: pathlib.Path, gi: dict, inst: str) -> pathlib.Path:
+    """The starkinfo for a dumped instance name. Recursion circuits resolve
+    through `recursion.circuit_base` so the key-tree layout has one home;
+    the basic-AIR case below is this tool's own (the recursion module never
+    needs it)."""
+    air_idx = lambda: int(re.search(r"_air(\d+)_", inst).group(1))
+    for prefix, ty in (
+        ("compressor_", "compressor"),
+        (("recursive1_", "recursive2_"), "recursive2"),
+        ("vadcop_final_", "vadcop_final"),
+    ):
+        if inst.startswith(prefix):
+            base = circuit_base(key, gi, ty, air_idx() if ty == "compressor" else 0)
+            if ty == "vadcop_final" and not base.parent.is_dir():
+                base = key / "build" / "vadcop_final" / "vadcop_final"
+            return recursion_starkinfo(base)
     group0 = gi["air_groups"][0]
-    airs = [a["name"] for a in gi["airs"][0]]
-    # ziskup layout first, example-build layout as the fallback.
-    roots = [key / "zisk", key / "build"]
-    root = next((r for r in roots if r.is_dir()), roots[0])
-    vadcop = (
-        root / "vadcop_final"
-        if (root / "vadcop_final").is_dir()
-        else key / "build" / "vadcop_final"
-    )
-    if inst.startswith("compressor_"):
-        air = airs[int(re.search(r"_air(\d+)_", inst).group(1))]
-        return root / group0 / "airs" / air / "compressor" / "compressor.starkinfo.json"
-    if inst.startswith(("recursive1_", "recursive2_")):
-        return root / group0 / "recursive2" / "recursive2.starkinfo.json"
-    if inst.startswith("vadcop_final_"):
-        return vadcop / "vadcop_final.starkinfo.json"
-    air = airs[int(re.search(r"_air(\d+)_", inst).group(1))]
+    air = [a["name"] for a in gi["airs"][0]][air_idx()]
+    root = key / "zisk" if (key / "zisk").is_dir() else key / "build"
     return root / group0 / "airs" / air / "air" / f"{air}.starkinfo.json"
 
 
@@ -130,7 +126,7 @@ def main() -> int:
         return 0
     for f in proofs:
         inst = re.sub(r"_proof\.npy$", "", f.name)
-        si = json.loads(_starkinfo_for(args.key, gi, inst).read_text())
+        si = json.loads(starkinfo_for(args.key, gi, inst).read_text())
         buf = np.load(f)
         o = parse_proof(si, buf)
         this = o["consumed"] == len(buf)

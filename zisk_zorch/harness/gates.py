@@ -30,10 +30,12 @@ from zk_dtypes import goldilocks as F
 from zisk_zorch.commit.trace_commit import commit_trace
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.fold import fold
-from zisk_zorch.harness.capture import Capture, cubic, limbs
+from zisk_zorch.harness.capture import Capture
 from zisk_zorch.harness.pil2 import (
+    cubic,
     deep_two_challenge,
     hint_value,
+    limbs,
     open_evmap_columns,
 )
 from zisk_zorch.harness.schedule import replay_challenges

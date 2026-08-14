@@ -45,10 +45,9 @@ from zisk_zorch.harness.capture import (
     FIXTURE_INSTANCE,
     FIXTURE_STARKINFO,
     Capture,
-    limbs,
 )
 from zisk_zorch.harness.gates import _check, _match
-from zisk_zorch.harness.pil2 import transcript_width
+from zisk_zorch.harness.pil2 import limbs, transcript_width
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.harness.schedule import _fri_layer_root
 from zisk_zorch.transcript.transcript import Transcript

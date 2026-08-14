@@ -25,7 +25,9 @@ py_library(
     name = "proof_serializer",
     srcs = ["proof_serializer.py"],
     deps = [
+        ":pil2",
         "//zisk_zorch/commit:openings",
+        "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("numpy"),
     ],
@@ -174,3 +176,4 @@ py_test(
         requirement("absl_py"),
     ],
 )
+

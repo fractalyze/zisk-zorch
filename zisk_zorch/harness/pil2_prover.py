@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from functools import partial
 
 import frx
 import frx.numpy as fnp
@@ -37,7 +36,6 @@ from zk_dtypes import goldilocks as F
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 from zorch.utils.field import split_coeffs
 
-from zisk_zorch.commit.openings import group_proof
 from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
 from zisk_zorch.evals.lev import compute_lev
 from zisk_zorch.fri.prover import prove, prove_queries
@@ -474,7 +472,9 @@ class Pil2QuotientProver(
         qsec = (
             split_coeffs
             if q_deg == 1
-            else lambda q: compute_q(split_coeffs(q), ss["nBits"], ss["nBitsExt"], q_deg)
+            else lambda q: compute_q(
+                split_coeffs(q), ss["nBits"], ss["nBitsExt"], q_deg
+            )
         )
 
         def _qsec_commit(q):
@@ -747,22 +747,16 @@ class Pil2OpeningProver(
             hash_commits=self._hash_commits,
         )
         idx_ext = fnp.asarray(np.asarray(positions))
-        trace_batched = frx.vmap(
-            partial(
-                group_proof,
-                merkle_tree(self._arity, self._family),
-                witness.trace_commit.extended,
-                witness.trace_commit.digest_layers,
-            )
-        )(idx_ext)
-        quotient_batched = frx.vmap(
-            partial(
-                group_proof,
-                merkle_tree(self._arity, self._family),
-                witness.quotient.matrix,
-                witness.quotient.layers,
-            )
-        )(idx_ext)
+        mt = merkle_tree(self._arity, self._family)
+        trace_batched = open_tree_dispatch(
+            mt,
+            witness.trace_commit.extended,
+            witness.trace_commit.digest_layers,
+            idx_ext,
+        )
+        quotient_batched = open_tree_dispatch(
+            mt, witness.quotient.matrix, witness.quotient.layers, idx_ext
+        )
         # One device→host copy per tree, then host row views — a per-query
         # device slice here is thousands of eager dispatches (see
         # `prove_queries`).
@@ -810,7 +804,12 @@ class Pil2OpeningProver(
         specs = [
             (const_buf, const_layers, idx, self._nbe),
             *((b, la, idx, self._nbe) for b, la in customs),
-            (witness.trace_commit.extended, witness.trace_commit.digest_layers, idx, self._nbe),
+            (
+                witness.trace_commit.extended,
+                witness.trace_commit.digest_layers,
+                idx,
+                self._nbe,
+            ),
             (
                 witness.logup.commitment.extended,
                 witness.logup.commitment.digest_layers,
@@ -833,9 +832,7 @@ class Pil2OpeningProver(
             for m, la, i, nb in specs
         ]
         opened = [
-            open_tree_convert(
-                f, la, w, n_bits=nb, arity=self._arity, llv=self._llv
-            )
+            open_tree_convert(f, la, w, n_bits=nb, arity=self._arity, llv=self._llv)
             for f, la, w, nb in flats
         ]
         n_custom = len(customs)
