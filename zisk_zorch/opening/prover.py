@@ -207,8 +207,8 @@ class OpeningProver(
                 witness.quotient.layers,
             )
         )(idx_ext)
-        trace_openings = [[trace_batched[q]] for q in range(len(positions))]
-        quotient_openings = [[quotient_batched[q]] for q in range(len(positions))]
+        trace_openings = [[row] for row in np.asarray(trace_batched)]
+        quotient_openings = [[row] for row in np.asarray(quotient_batched)]
         fri_openings = prove_queries(fri_layers, positions)
         return ProveResult(
             TrivialClaim(),

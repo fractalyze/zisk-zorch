@@ -1,0 +1,936 @@
+"""The pil2-mode prover — the byte-match harness's composite, not a
+production role.
+
+Everything here exists to reproduce a real pil2-proofman ``genProof``
+byte-for-byte so `verify_inner_proof` can seal the composition against a
+capture; the production protocol is the wired `InnerProver` family, which
+is why these roles and their claim types live beside the byte-match tools
+rather than in the stage packages and `types.py`. The split keeps the
+production wire surface free of pil2-conformance shapes — nothing outside
+this harness may import them.
+
+Same composite discipline as the production side: three `ProverStage`
+roles — witness-STD, cExp quotient, pil2 opening — exchange claims both
+sides could derive, configured once per proving key (`pil2.Pil2Key`),
+with the statement on `Pil2Claim` and the trace on `InnerWitness`. The
+schedule differences pil2 dictates: the transcript seeds with the
+contributions-phase global challenge (``root1`` is never absorbed — it
+rides inside the seed), the stage-2 witness role runs between the commit
+and the quotient, and section absorbs are ``calculateHash`` digests under
+a ``hashCommits`` stark struct.
+
+Schedule source: ``gen_proof.hpp`` on the pinned pil2-proofman fork
+(https://github.com/fractalyze/pil2-proofman/blob/11999a69/pil2-stark/src/starkpil/gen_proof.hpp).
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+import frx
+import frx.numpy as fnp
+import numpy as np
+from frx import Array
+from zk_dtypes import goldilocks as F
+from zorch.stage import ProveResult, ProverStage, TrivialClaim
+from zorch.utils.field import split_coeffs
+
+from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
+from zisk_zorch.evals.lev import compute_lev
+from zisk_zorch.fri.prover import prove, prove_queries
+from zisk_zorch.fri.queries import sample_query_positions
+from zisk_zorch.golden import embed
+from zisk_zorch.harness.pil2 import (
+    Pil2Key,
+    absorb_stage2_airvalues,
+    absorb_words,
+    challenge_id,
+    cm_env,
+    committed_column,
+    const_env,
+    custom_env,
+    deep_two_challenge,
+    device_sections,
+    hint_value,
+    open_evmap_columns,
+    scalar_env,
+    squeeze_stage_challenges,
+)
+from zisk_zorch.harness.proof_serializer import (
+    TreeOpening,
+    open_tree_convert,
+    open_tree_dispatch,
+)
+from zisk_zorch.logup.bus import LogUpBus
+from zisk_zorch.quotient.cexp_ref import run_block
+from zisk_zorch.quotient.compute_q import compute_q
+from zisk_zorch.quotient.zerofier import _coset_points, inv_zerofier
+from zisk_zorch.transcript.transcript import Transcript, absorb_section
+from zisk_zorch.types import (
+    InnerWitness,
+    OpeningProof,
+    QuotientCommitment,
+    TraceCommitment,
+)
+
+# -- the harness's claim / witness / proof types ------------------------------
+
+
+@dataclass(frozen=True, kw_only=True)
+class Pil2Claim:
+    """A pil2 genProof instance's statement: some trace of this shape,
+    together with these scalar sections, satisfies the proving key's AIR.
+
+    The pil2-mode claims mirror the wired family above but condition on the
+    proving key (the roles' `Pil2Key` configuration) instead of an `eval_fn`.
+    The scalar sections ride as the dumped u64 word layouts (`pil2.values_env`
+    owns the packing) because both roles read them that way: the prover packs
+    them into interpreter environments and transcript absorbs, the verifier
+    reads the same words off the wire. `global_challenge` is the
+    contributions-phase seed — the transcript arrives already bound to every
+    instance's stage-1 root through it, which is why no pil2 claim carries a
+    bound trace root the way `TraceBoundClaim` does: the composite still
+    commits the trace, but the schedule never absorbs `root1`."""
+
+    n_bits: int
+    n_cols: int
+    publics: np.ndarray
+    airvalues: np.ndarray
+    proofvalues: np.ndarray
+    global_challenge: np.ndarray
+
+
+@dataclass(frozen=True, kw_only=True)
+class Pil2TraceBoundClaim:
+    """`Pil2Claim` after the commit half runs: one concrete trace is named by
+    `trace_root`. The root is claim data for the wire even though the
+    non-recursive schedule never absorbs it (see `Pil2Claim`)."""
+
+    pil2: Pil2Claim
+    trace_root: Array
+
+
+@dataclass(frozen=True, kw_only=True)
+class LogUpBoundClaim:
+    """The stage-2 witness-STD columns committed under `root2` chain from the
+    trace committed under `trace_root` via the key's hint expressions.
+
+    `challenges` carries every challenge squeezed so far, keyed by its
+    ``challengesMap`` index — the id the later stages' SSA operands reference.
+    Both roles derive them from the transcript, so they are claim data, like
+    `alpha` on `QuotientBoundClaim`. `airgroupvalues` is the stage's other
+    product (the grand-sum result the last gsum row settles), transmitted on
+    the wire and read back by the quotient's SSA."""
+
+    pil2: Pil2Claim
+    trace_root: Array
+    root2: Array
+    challenges: dict[int, Array]
+    airgroupvalues: dict[int, Array]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Pil2QuotientBoundClaim:
+    """The codeword committed under `quotient_root` is the key's composite
+    cExp over the committed sections, divided by the zerofier — the pil2
+    analogue of `QuotientBoundClaim`, with the fold already baked into the
+    key's pre-folded expression instead of an `alpha` power vector."""
+
+    pil2: Pil2Claim
+    trace_root: Array
+    root2: Array
+    quotient_root: Array
+    challenges: dict[int, Array]
+    airgroupvalues: dict[int, Array]
+
+
+@dataclass(frozen=True)
+class LogUpCommitment:
+    """The stage-2 role's reduction proof: the base-domain witness-STD
+    columns (the byte-gates compare them against pil2's ``cm2`` section) and
+    their extend-and-merkelize commitment."""
+
+    matrix: Array
+    commitment: TraceCommitment
+
+
+@dataclass(frozen=True)
+class Pil2QuotientWitness:
+    """What the pil2 quotient stage's SSA reads: both committed sections so
+    far — the extended trace and the extended stage-2 columns."""
+
+    trace_commit: TraceCommitment
+    logup: LogUpCommitment
+
+
+@dataclass(frozen=True)
+class Pil2OpeningWitness:
+    """What discharging a `Pil2QuotientBoundClaim` takes: every committed
+    tree's prover data — the extended sections the evals and DEEP batch read,
+    and the digest layers the query phase opens."""
+
+    trace_commit: TraceCommitment
+    logup: LogUpCommitment
+    quotient: QuotientCommitment
+
+
+# -- the three pil2 stage roles ----------------------------------------------
+
+
+def _hint_column(v: dict, env: dict, exps: dict, n: int) -> Array:
+    """A hint-field value as an `(n,)` column over `env` — a committed
+    column, an SSA expression, or a literal broadcast."""
+    if v.get("rowOffset", 0):
+        raise NotImplementedError(f"hint value with a row offset: {v}")
+    if v["op"] == "cm":
+        return env["cm"][v["id"]]
+    if v["op"] == "tmp":
+        return run_block(exps[v["id"]], env, 1)
+    if v["op"] == "number":
+        return fnp.broadcast_to(embed([v["value"]]).reshape(()), (n,))
+    raise NotImplementedError(f"unhandled hint value op {v['op']!r}")
+
+
+class LogUpWitnessProver(
+    ProverStage[Pil2TraceBoundClaim, InnerWitness, LogUpBoundClaim, LogUpCommitment]
+):
+    """One claim reduction: squeeze the stage-2 challenges, materialize the
+    witness-STD columns from the key's hints, commit them, absorb the root
+    and the stage-2 air values.
+
+    The proving key (`Pil2Key`) is configuration — fixed for every instance
+    of the AIR — while the scalar sections the hint expressions read arrive
+    on the claim. The witness is the settled stage-1 trace: the hints
+    evaluate over the base domain, unlike the quotient's coset run."""
+
+    def __init__(self, key: Pil2Key) -> None:
+        si, ss = key.starkinfo, key.starkinfo["starkStruct"]
+        self._key = key
+        self._family = key.hash_family
+        self._n = 1 << ss["nBits"]
+        self._blowup = 1 << (ss["nBitsExt"] - ss["nBits"])
+        self._arity = ss["merkleTreeArity"]
+        ei = key.expressionsinfo
+        self._exps = {e["expId"]: e["code"] for e in ei["expressionsCode"]}
+        self._im_hints = [h for h in ei["hintsInfo"] if h["name"] == "im_col"]
+        runs = [h for h in ei["hintsInfo"] if h["name"] in ("gsum_col", "gprod_col")]
+        assert len(runs) == 1, f"expected one running-column hint, got {len(runs)}"
+        # The running column is a grand SUM for the LogUp bus (every ZisK
+        # basic AIR) and a grand PRODUCT for the plonk permutation argument
+        # (the circom-generated recursion AIRs) — same hint shape either way.
+        self._run_hint = runs[0]
+        self._run_is_sum = runs[0]["name"] == "gsum_col"
+        self._logup_cols = sorted(
+            ((i, p) for i, p in enumerate(si["cmPolsMap"]) if p["stage"] == 2),
+            key=lambda ip: ip[1]["stagePos"],
+        )
+        self._n_cols1 = si["mapSectionsN"]["cm1"]
+        self._n_constants = si["nConstants"]
+        # Key sections live on device for the role's lifetime: eager
+        # per-column `fnp.asarray` slices of the host key re-upload the
+        # section on every prove and cost one dispatch per column.
+        self._const_base_dev, self._custom_base_dev = device_sections(key, "base")
+        # Jitted once per role: the SSA blocks are key-fixed configuration,
+        # and a per-prove `frx.jit` wrapper would retrace on every instance
+        # proved with the same key. The environment's column views are built
+        # inside the trace so they lower as fused slices, not per-column
+        # dispatches.
+        self._logup_jit = frx.jit(self._logup_env_columns)
+        # Jitted for the same reasons as the opening role's commit: a dedicated
+        # hash fusion only exists inside a jit region, and the eager LDE emits a
+        # standalone `lax.ntt` pass fusion that can overrun ptxas's 48 KB static
+        # shared-memory cap at ZisK Main width.
+        self._commit_jit = frx.jit(self._commit_fn)
+
+    def _commit_fn(self, matrix):
+        # Components, not the dataclass: `TraceCommitment` is not a pytree.
+        c = commit_trace(
+            matrix,
+            blowup=self._blowup,
+            arity=self._arity,
+            hash_family=self._family,
+        )
+        return c.root, c.digest_layers, c.extended
+
+    def _logup_env_columns(self, trace, const_base, custom_base, scalars):
+        env = {
+            "cm": {i: trace[:, i] for i in range(self._n_cols1)},
+            "const": {i: const_base[:, i] for i in range(self._n_constants)},
+            "custom": {
+                (ci, j): buf[:, j]
+                for ci, buf in custom_base.items()
+                for j in range(buf.shape[1])
+            },
+            **scalars,
+            "zi": {},
+        }
+        return self._logup_columns(env)
+
+    def _logup_columns(self, env):
+        # The environment enters as an argument: a closure-captured array
+        # lowers as an in-graph constant, which crashes the compiler on
+        # large cases (#67).
+        n = self._n
+        for hint in self._im_hints:
+            num = _hint_column(hint_value(hint, "numerator"), env, self._exps, n)
+            den = _hint_column(hint_value(hint, "denominator"), env, self._exps, n)
+            env["cm"][hint_value(hint, "reference")["id"]] = num / den
+        run_num = _hint_column(
+            hint_value(self._run_hint, "numerator_air"), env, self._exps, n
+        )
+        if self._run_is_sum:
+            run_den = _hint_column(
+                hint_value(self._run_hint, "denominator_air"), env, self._exps, n
+            )
+            run = LogUpBus.grand_sum(run_num[None, :], run_den[None, :])
+            # pil2's single-row direct update: bus terms that never
+            # materialize an im column enter the airgroup export as one
+            # scalar added to the running sum's last entry — they are NOT
+            # part of the committed column (std_sum.pil; the dumped cm2
+            # pins this).
+            direct = self._direct_term(env)
+            result = LogUpBus.gsum_result(run)
+            if direct is not None:
+                result = result + direct
+        else:
+            den_v = hint_value(self._run_hint, "denominator_air")
+            term = run_num
+            if not (den_v["op"] == "number" and int(den_v["value"]) == 1):
+                term = term / _hint_column(den_v, env, self._exps, n)
+            run = fnp.cumprod(term)
+            # The permutation product telescopes to the boundary constant
+            # (result is the literal 1 on the recursion AIRs) — nothing is
+            # exported as an airgroup value, and a non-identity direct term
+            # has never been observed on a gprod hint.
+            direct_v = hint_value(self._run_hint, "numerator_direct")
+            if not (direct_v["op"] == "number" and int(direct_v["value"]) == 1):
+                raise NotImplementedError("gprod direct term")
+            result = None
+        env["cm"][hint_value(self._run_hint, "reference")["id"]] = run
+        for i, p in self._logup_cols:
+            if p.get("imPol"):
+                env["cm"][i] = run_block(self._exps[p["expId"]], env, 1)
+        # A stage-2 column may be base-field (dim 1, e.g. Keccakf.ImPol):
+        # it contributes one limb column where a cubic contributes three.
+        # The interpreter can hand a dim-1 im pol back cubic-typed (a
+        # challenge touched the expression); pil2 stores the base limb, so
+        # keep the first coefficient — the gates pin the higher limbs at 0.
+        return (
+            fnp.concatenate(
+                [
+                    (
+                        split_coeffs(env["cm"][i])
+                        if p["dim"] == 3
+                        else split_coeffs(env["cm"][i]).reshape(n, -1)[:, :1]
+                    )
+                    for i, p in self._logup_cols
+                ],
+                axis=1,
+            ),
+            result,
+        )
+
+    def _direct_term(self, env):
+        """The gsum hint's direct contribution — a scalar expression (or the
+        literal 0), divided by its denominator unless that is the literal 1
+        (a dead cubic reciprocal otherwise)."""
+        num_v = hint_value(self._run_hint, "numerator_direct")
+        if num_v["op"] == "number" and int(num_v["value"]) == 0:
+            return None
+        num = self._direct_value(num_v, env)
+        den_v = hint_value(self._run_hint, "denominator_direct")
+        if not (den_v["op"] == "number" and int(den_v["value"]) == 1):
+            num = num / self._direct_value(den_v, env)
+        return num
+
+    def _direct_value(self, v, env):
+        """A direct-term operand: pil2 emits either an expression reference
+        (``tmp`` — Main, Mem) or a scalar operand class directly (Binary's
+        numerator_direct is an ``airvalue``)."""
+        if v["op"] == "tmp":
+            return run_block(self._exps[v["id"]], env, 1)
+        if v["op"] == "airvalue":
+            return env["airvalues"][v["id"]]
+        raise NotImplementedError(f"direct-term operand kind {v['op']!r}")
+
+    def prove(
+        self,
+        claim: Pil2TraceBoundClaim,
+        witness: InnerWitness,
+        transcript: Transcript,
+    ) -> ProveResult[LogUpBoundClaim, LogUpCommitment]:
+        si = self._key.starkinfo
+        challenges = squeeze_stage_challenges(transcript, si["challengesMap"], 2)
+        # The base-domain interpreter environment is assembled inside the jit
+        # (`_logup_env_columns`); absent classes (custom, zi, later-stage
+        # sections) stay empty there so a stage-2 hint expression reaching
+        # for one fails loudly instead of silently reading the wrong domain.
+        scalars = scalar_env(
+            si,
+            publics=claim.pil2.publics,
+            airvalues=claim.pil2.airvalues,
+            proofvalues=claim.pil2.proofvalues,
+            challenges=challenges,
+            airgroupvalues={},
+        )
+        matrix, run_result = self._logup_jit(
+            witness.trace, self._const_base_dev, self._custom_base_dev, scalars
+        )
+        airgroupvalues = (
+            {}
+            if run_result is None
+            else {hint_value(self._run_hint, "result")["id"]: run_result}
+        )
+        assert matrix.shape[1] == si["mapSectionsN"]["cm2"], "cm2 width mismatch"
+        root, digest_layers, extended = self._commit_jit(matrix)
+        commitment = TraceCommitment(
+            root=root, digest_layers=digest_layers, extended=extended
+        )
+        transcript.put(commitment.root)
+        absorb_stage2_airvalues(transcript, claim.pil2.airvalues, si["airValuesMap"])
+        return ProveResult(
+            LogUpBoundClaim(
+                pil2=claim.pil2,
+                trace_root=claim.trace_root,
+                root2=commitment.root,
+                challenges=challenges,
+                airgroupvalues=airgroupvalues,
+            ),
+            LogUpCommitment(matrix=matrix, commitment=commitment),
+            transcript,
+        )
+
+
+class Pil2QuotientProver(
+    ProverStage[
+        LogUpBoundClaim,
+        Pil2QuotientWitness,
+        Pil2QuotientBoundClaim,
+        QuotientCommitment,
+    ]
+):
+    """pil2's CALCULATE_QUOTIENT as a claim reduction: squeeze the stage
+    ``nStages + 1`` challenges, interpret the key's composite cExp over the
+    committed extended sections, and commit ``q = cExp / Z_H``.
+
+    No alpha fold happens here — the key's composite expression arrives
+    pre-folded (its own quotient challenge is one of the squeezed stage
+    challenges the SSA reads by id), so the reduction is a straight
+    interpreter run. The environment mixes the witness's committed sections
+    (extended trace, extended stage-2 columns) with the key's extended
+    constant/custom sections and the claim's scalar sections; the inverse
+    zerofier rides as the ``Zi`` operand. The committed section is pil2's
+    ``computeQ`` of the evaluations — the identity (3 contiguous base limbs,
+    `QuotientProver`'s shape) only when ``qDeg == 1``; a real AIR like ZisK's
+    Main has qDeg 2, committing ``3·qDeg`` lanes per row."""
+
+    def __init__(self, key: Pil2Key) -> None:
+        si, ss = key.starkinfo, key.starkinfo["starkStruct"]
+        self._key = key
+        self._family = key.hash_family
+        self._si = si
+        self._nb = ss["nBits"]
+        self._blowup_bits = ss["nBitsExt"] - ss["nBits"]
+        self._arity = ss["merkleTreeArity"]
+        self._code = next(
+            e
+            for e in key.expressionsinfo["expressionsCode"]
+            if e["expId"] == si["cExpId"]
+        )["code"]
+        # Key sections live on device for the role's lifetime, and the
+        # zerofier is key-static — recomputing/re-uploading them per prove
+        # costs one dispatch (or H2D copy) per column. Both still enter the
+        # jits as ARGUMENTS: closure-captured arrays lower as in-graph
+        # constants, which crashes the compiler on the zerofier coset (#67).
+        self._const_ext_dev, self._custom_ext_dev = device_sections(key, "ext")
+        self._zi = inv_zerofier(self._nb, self._blowup_bits)
+        # Jitted once per role (key-fixed SSA); the environment's column
+        # views are built inside the trace so they lower as fused slices.
+        self._q_jit = frx.jit(
+            lambda cm1, cm2, const, custom, scalars, zi: run_block(
+                self._code,
+                self._env(cm1, cm2, const, custom, scalars, zi),
+                1 << self._blowup_bits,
+            )
+        )
+        # Row-chunked evaluation for AIRs whose cExp working set exceeds
+        # device memory (Keccakf's ~30 GB at 3023 cols, zz#138). Off by
+        # default: the whole-domain graph fuses better.
+        self._q_chunks = int(os.environ.get("ZISK_QUOTIENT_ROW_CHUNKS", "1"))
+        self._q_chunk_jit = frx.jit(
+            lambda cm1, cm2, const, custom, scalars, zi, rows: run_block(
+                self._code,
+                self._env(cm1, cm2, const, custom, scalars, zi),
+                1 << self._blowup_bits,
+                rows=rows,
+            )
+        )
+        q_deg = si["mapSectionsN"]["cm" + str(si["nStages"] + 1)] // 3
+        # The quotient section and its tree in one zone: the eager commit is
+        # ~log(n_ext) separately-dispatched level hashes otherwise.
+        qsec = (
+            split_coeffs
+            if q_deg == 1
+            else lambda q: compute_q(
+                split_coeffs(q), ss["nBits"], ss["nBitsExt"], q_deg
+            )
+        )
+
+        def _qsec_commit(q):
+            matrix = qsec(q)
+            root, layers = merkle_tree(self._arity, self._family).commit(matrix)
+            return matrix, root, layers
+
+        self._qsec_jit = frx.jit(_qsec_commit)
+
+    def _env(self, cm1, cm2, const, custom, scalars, zi):
+        bufs = {
+            ("cm", 1): cm1,
+            ("cm", 2): cm2,
+            ("const", 0): const,
+            **{("custom", ci): buf for ci, buf in custom.items()},
+        }
+        return {
+            "cm": cm_env(self._si["cmPolsMap"], bufs),
+            "const": const_env(bufs, self._si["nConstants"]),
+            "custom": custom_env(bufs, self._si.get("customCommits", [])),
+            **scalars,
+            "zi": {0: zi},
+        }
+
+    def prove(
+        self,
+        claim: LogUpBoundClaim,
+        witness: Pil2QuotientWitness,
+        transcript: Transcript,
+    ) -> ProveResult[Pil2QuotientBoundClaim, QuotientCommitment]:
+        si = self._si
+        challenges = dict(claim.challenges)
+        challenges.update(
+            squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 1)
+        )
+        scalars = scalar_env(
+            si,
+            publics=claim.pil2.publics,
+            airvalues=claim.pil2.airvalues,
+            proofvalues=claim.pil2.proofvalues,
+            challenges=challenges,
+            airgroupvalues=claim.airgroupvalues,
+        )
+        args = (
+            witness.trace_commit.extended,
+            witness.logup.commitment.extended,
+            self._const_ext_dev,
+            self._custom_ext_dev,
+            scalars,
+            self._zi,
+        )
+        if self._q_chunks > 1:
+            ne = 1 << (self._nb + self._blowup_bits)
+            # Ceil-divide with a clipped tail: a chunk count that does not
+            # divide `ne` must not drop the remainder rows.
+            per = -(ne // -self._q_chunks)
+            quotient = fnp.concatenate(
+                [
+                    self._q_chunk_jit(
+                        *args, fnp.arange(k * per, min((k + 1) * per, ne))
+                    )
+                    for k in range(self._q_chunks)
+                    if k * per < ne
+                ]
+            )
+        else:
+            quotient = self._q_jit(*args)
+        matrix, root, layers = self._qsec_jit(quotient)
+        transcript.put(root)
+        return ProveResult(
+            Pil2QuotientBoundClaim(
+                pil2=claim.pil2,
+                trace_root=claim.trace_root,
+                root2=claim.root2,
+                quotient_root=root,
+                challenges=challenges,
+                airgroupvalues=claim.airgroupvalues,
+            ),
+            QuotientCommitment(
+                codeword=quotient, root=root, matrix=matrix, layers=layers
+            ),
+            transcript,
+        )
+
+
+@dataclass(frozen=True)
+class WireOpenings:
+    """Every committed tree's pil2 wire-shaped query openings — what
+    `serialize_proof` takes beyond the claim-side values."""
+
+    const: TreeOpening
+    customs: list[TreeOpening]
+    stages: list[TreeOpening]  # cm1, cm2, cmQ in stage order
+    fri: list[TreeOpening]  # one per committed fold layer
+
+
+@dataclass(frozen=True)
+class Pil2OpeningProof(OpeningProof):
+    """`OpeningProof` plus the wire-shaped tree openings, produced when the
+    prover is constructed with ``emit_wire`` (the serializer's inputs cost
+    query-sized work per tree, so they are opt-in)."""
+
+    wire: WireOpenings | None = None
+
+
+class Pil2OpeningProver(
+    ProverStage[Pil2QuotientBoundClaim, Pil2OpeningWitness, TrivialClaim, OpeningProof]
+):
+    """pil2's opening phase — STEP_EVALS through the query draw — as the
+    terminal stage discharging a `Pil2QuotientBoundClaim`.
+
+    Same three-step shape as `OpeningProver` (DEEP, FRI, queries), with the
+    pil2 protocol differences the key dictates:
+
+    - the out-of-domain openings run over the key's ``evMap`` (every
+      committed, constant, and custom column it names, at every
+      ``openingPoints`` shift) via `compute_lev`'s weight matrix;
+    - the evals absorb is `calculateHash` of the section under a
+      ``hashCommits`` stark struct, as is the final polynomial's;
+    - the DEEP batch is pil2's two-challenge form — vf2-Horner within an
+      opening group, one reciprocal per group, vf1-Horner across groups —
+      which zorch's one-challenge `deep_composition` cannot express.
+
+    The query phase opens the trace, quotient, and FRI-layer trees. Under
+    ``emit_wire`` it additionally opens the stage-2, constant, and custom
+    trees per query and returns every tree's `WireOpenings` on a
+    `Pil2OpeningProof`, ready for `serialize_proof`; without it those
+    openings are skipped (the byte-gates compare the positions and nonce,
+    which pin the whole draw)."""
+
+    def __init__(self, key: Pil2Key, *, emit_wire: bool = False) -> None:
+        si, ss = key.starkinfo, key.starkinfo["starkStruct"]
+        self._key = key
+        self._family = key.hash_family
+        self._si = si
+        self._nb, self._nbe = ss["nBits"], ss["nBitsExt"]
+        self._steps = [s["nBits"] for s in ss["steps"]]
+        self._arity = ss["merkleTreeArity"]
+        self._pow_bits = ss["powBits"]
+        self._n_queries = ss["nQueries"]
+        self._hash_commits = ss.get("hashCommits", False)
+        self._emit_wire = emit_wire
+        self._llv = ss.get("lastLevelVerification", 0)
+        # Key sections live on device for the role's lifetime: handing the
+        # host arrays to the stage jits re-uploads them on every prove.
+        self._const_ext_dev, self._custom_ext_dev = device_sections(key, "ext")
+        # The constant/custom trees are key-fixed; committed lazily on the
+        # first wire-emitting prove and reused for every instance of the key.
+        self._fixed_trees: list[tuple[Array, list[Array]]] | None = None
+        # Jitted once per role; evals/coset enter as arguments (the in-trace
+        # coset feeding the cubic reciprocal is #67's crash trigger). The
+        # evMap COLUMNS are built inside each trace from the section
+        # buffers: an eager per-entry `committed_column` list materializes
+        # |evMap| full cubic columns on device, which exceeds device memory
+        # at ZisK Main width (183 entries x 2^23) — inside the jit they are
+        # fused slices that never exist whole.
+        self._evals_jit = frx.jit(self._evals_fn)
+        self._deep_jit = frx.jit(self._deep_fn)
+        # The commit is jitted for the same reason, plus two of its own. A
+        # dedicated hash fusion only exists INSIDE a jit region, so an eager
+        # commit silently gives up the fused Poseidon kernel; and the eager
+        # LDE dispatches `lax.ntt` as a standalone pass fusion, whose config
+        # is assembled outside the NTT rewriter and can request more STATIC
+        # shared memory than ptxas allows (48 KB) even though it fits the
+        # device's dynamic budget -- a hard `uses too much shared data` build
+        # error at ZisK Main width on sm_120.
+        self._commit_jit = frx.jit(self._commit_fn)
+
+    def _columns(self, bufs: dict) -> list:
+        return [
+            committed_column(e, self._si["cmPolsMap"], bufs) for e in self._si["evMap"]
+        ]
+
+    def _evals_fn(self, bufs: dict, lev):
+        return open_evmap_columns(
+            self._columns(bufs),
+            self._si["evMap"],
+            lev,
+            stride=1 << (self._nbe - self._nb),
+        )
+
+    def _deep_fn(self, bufs: dict, evals, domain, xi, vf1, vf2):
+        return deep_two_challenge(
+            self._columns(bufs),
+            evals,
+            domain,
+            xi,
+            vf1,
+            vf2,
+            ev_map=self._si["evMap"],
+            openings=self._si["openingPoints"],
+            n_bits=self._nb,
+        )
+
+    def _commit_fn(self, trace):
+        # `TraceCommitment` is a plain dataclass, not a registered pytree, so
+        # the traced function hands back its components and `commit` rebuilds
+        # it outside the trace.
+        c = commit_trace(
+            trace,
+            blowup=1 << (self._nbe - self._nb),
+            arity=self._arity,
+            hash_family=self._family,
+        )
+        return c.root, c.digest_layers, c.extended
+
+    def commit(self, witness: InnerWitness) -> TraceCommitment:
+        """The scheme's commit half — identical to `OpeningProver.commit`;
+        the pil2 composite absorbs no root for it (the global challenge
+        arrives already bound to it)."""
+        root, digest_layers, extended = self._commit_jit(witness.trace)
+        return TraceCommitment(
+            root=root, digest_layers=digest_layers, extended=extended
+        )
+
+    def prove(
+        self,
+        claim: Pil2QuotientBoundClaim,
+        witness: Pil2OpeningWitness,
+        transcript: Transcript,
+    ) -> ProveResult[TrivialClaim, OpeningProof]:
+        si = self._si
+        opening_points = si["openingPoints"]
+        challenges = dict(claim.challenges)
+        challenges.update(
+            squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 2)
+        )
+        xi = challenges[challenge_id(si["challengesMap"], "std_xi")]
+
+        bufs = {
+            ("cm", 1): witness.trace_commit.extended,
+            ("cm", 2): witness.logup.commitment.extended,
+            ("cm", si["nStages"] + 1): witness.quotient.matrix,
+            ("const", 0): self._const_ext_dev,
+        }
+        for ci, buf in self._custom_ext_dev.items():
+            bufs[("custom", ci)] = buf
+
+        # lev materialized before the openings (its trace inside the same
+        # zone regresses the openings' fusion — see
+        # zisk-zorch@lev-must-be-materialized).
+        lev = compute_lev(xi, list(opening_points), self._nb)
+        evals = self._evals_jit(bufs, lev)
+        absorb_section(
+            transcript, split_coeffs(evals).reshape(-1), hashed=self._hash_commits
+        )
+
+        challenges.update(
+            squeeze_stage_challenges(transcript, si["challengesMap"], si["nStages"] + 3)
+        )
+        vf1 = challenges[challenge_id(si["challengesMap"], "std_vf1")]
+        vf2 = challenges[challenge_id(si["challengesMap"], "std_vf2")]
+
+        domain = _coset_points(self._nb, self._nbe - self._nb)
+        fri_pol = self._deep_jit(bufs, evals, domain, xi, vf1, vf2)
+
+        fri, fri_layers = prove(
+            fri_pol,
+            self._steps,
+            arity=self._arity,
+            transcript=transcript,
+            hash_family=self._family,
+        )
+        positions, nonce = sample_query_positions(
+            transcript,
+            fri.final_pol,
+            pow_bits=self._pow_bits,
+            n_queries=self._n_queries,
+            n_bits_ext=self._steps[0],
+            hash_commits=self._hash_commits,
+        )
+        idx_ext = fnp.asarray(np.asarray(positions))
+        mt = merkle_tree(self._arity, self._family)
+        trace_batched = open_tree_dispatch(
+            mt,
+            witness.trace_commit.extended,
+            witness.trace_commit.digest_layers,
+            idx_ext,
+        )
+        quotient_batched = open_tree_dispatch(
+            mt, witness.quotient.matrix, witness.quotient.layers, idx_ext
+        )
+        # One device→host copy per tree, then host row views — a per-query
+        # device slice here is thousands of eager dispatches (see
+        # `prove_queries`).
+        trace_rows, quotient_rows = np.asarray(trace_batched), np.asarray(
+            quotient_batched
+        )
+        return ProveResult(
+            TrivialClaim(),
+            Pil2OpeningProof(
+                evals=evals,
+                fri=fri,
+                nonce=nonce,
+                positions=positions,
+                trace_openings=[[row] for row in trace_rows],
+                quotient_openings=[[row] for row in quotient_rows],
+                fri_openings=prove_queries(fri_layers, positions),
+                wire=(
+                    self._wire_openings(witness, fri_layers, positions)
+                    if self._emit_wire
+                    else None
+                ),
+            ),
+            transcript,
+        )
+
+    def _wire_openings(
+        self, witness: Pil2OpeningWitness, fri_layers, positions
+    ) -> WireOpenings:
+        """Open every committed tree at the drawn positions, wire-shaped."""
+        mt = merkle_tree(self._arity, self._family)
+        if self._fixed_trees is None:
+            self._fixed_trees = [
+                (dev, mt.commit(dev)[1])
+                for dev in (
+                    self._const_ext_dev,
+                    *(v for _, v in sorted(self._custom_ext_dev.items())),
+                )
+            ]
+        (const_buf, const_layers), *customs = self._fixed_trees
+        pos = np.asarray(positions)
+        idx = fnp.asarray(pos.astype(np.uint64))
+        # Dispatch every tree's batched openings before the first convert:
+        # `open_tree`'s own device→host copy blocks, which serializes ~10
+        # dispatch/transfer round trips otherwise.
+        specs = [
+            (const_buf, const_layers, idx, self._nbe),
+            *((b, la, idx, self._nbe) for b, la in customs),
+            (
+                witness.trace_commit.extended,
+                witness.trace_commit.digest_layers,
+                idx,
+                self._nbe,
+            ),
+            (
+                witness.logup.commitment.extended,
+                witness.logup.commitment.digest_layers,
+                idx,
+                self._nbe,
+            ),
+            (witness.quotient.matrix, witness.quotient.layers, idx, self._nbe),
+            *(
+                (
+                    layer.matrix,
+                    layer.digest_layers,
+                    fnp.asarray((pos % (1 << layer.leaf_bits)).astype(np.uint64)),
+                    layer.leaf_bits,
+                )
+                for layer in fri_layers
+            ),
+        ]
+        flats = [
+            (open_tree_dispatch(mt, m, la, i), la, int(m.shape[1]), nb)
+            for m, la, i, nb in specs
+        ]
+        opened = [
+            open_tree_convert(f, la, w, n_bits=nb, arity=self._arity, llv=self._llv)
+            for f, la, w, nb in flats
+        ]
+        n_custom = len(customs)
+        return WireOpenings(
+            const=opened[0],
+            customs=opened[1 : 1 + n_custom],
+            stages=opened[1 + n_custom : 4 + n_custom],
+            fri=opened[4 + n_custom :],
+        )
+
+
+# -- the composite -----------------------------------------------------------
+
+
+class Pil2InnerProver:
+    """The pil2-mode composite: genProof's non-recursive schedule over the
+    three pil2 roles — witness-STD, cExp quotient, pil2 opening.
+
+    Same composite shape as `InnerProver` with the two schedule differences
+    the protocol dictates: the transcript seeds with the claim's
+    contributions-phase global challenge instead of absorbing the trace root
+    (`root1` never enters the non-recursive schedule — it rides inside the
+    seed), and the stage-2 witness role runs between the commit and the
+    quotient. The roles configure themselves from one `Pil2Key`, so a
+    prover exists per proving key, claims per instance.
+
+    `prove_stages` is the whole API and the byte-gate seam: it yields each
+    stage's result as the stage finishes, so `verify_inner_proof`'s composed
+    gate can check every reduction the moment it lands and stop before the
+    later stages pay their compute on a mismatch. A wire-proof assembler
+    can return when something consumes one (the deferred serialize/FFI
+    work)."""
+
+    def __init__(
+        self, key: Pil2Key, *, emit_wire: bool = False, recursive: bool = False
+    ) -> None:
+        # Kept so a dropped prover's uploaded key sections can be released
+        # (`release_device_sections`) — the key outlives the roles.
+        self.key = key
+        self.logup = LogUpWitnessProver(key)
+        self.quotient = Pil2QuotientProver(key)
+        self.opening = Pil2OpeningProver(key, emit_wire=emit_wire)
+        # The aggregation-stage schedule (`gen_proof.hpp` `recursive`):
+        # classic STARK transcript — the circuit's verkey (const-tree root),
+        # the hashed publics, then root1 — instead of the composite's
+        # global-challenge seed (which never absorbs root1).
+        self.recursive = recursive
+        self._hash_commits = key.starkinfo["starkStruct"].get("hashCommits", False)
+        if recursive:
+            ss = key.starkinfo["starkStruct"]
+            root, _ = merkle_tree(ss["merkleTreeArity"], key.hash_family).commit(
+                fnp.asarray(key.const_ext)
+            )
+            self._const_root = root
+
+    def prove_stages(
+        self,
+        claim: Pil2Claim,
+        witness: InnerWitness,
+        transcript: Transcript,
+    ):
+        """Run the schedule, yielding ``(stage_name, result)`` as each stage
+        finishes — ``trace_commit`` yields the `TraceCommitment`; the Stage
+        roles (``logup_witness``, ``quotient``, ``opening``) their
+        `ProveResult`s, prover data included."""
+        assert witness.trace.shape == (
+            1 << claim.n_bits,
+            claim.n_cols,
+        ), "claim's trace shape does not match the witness"
+        commitment = self.opening.commit(witness)
+        yield "trace_commit", commitment
+        if self.recursive:
+            transcript.put(self._const_root)
+            if claim.publics.size:
+                absorb_section(
+                    transcript,
+                    fnp.array(claim.publics.astype(F)),
+                    hashed=self._hash_commits,
+                )
+            transcript.put(commitment.root)
+        else:
+            absorb_words(transcript, claim.global_challenge)
+        bound = Pil2TraceBoundClaim(pil2=claim, trace_root=commitment.root)
+        logup = self.logup.prove(bound, witness, transcript)
+        yield "logup_witness", logup
+        quotient = self.quotient.prove(
+            logup.reduced_claim,
+            Pil2QuotientWitness(commitment, logup.reduction_proof),
+            logup.transcript,
+        )
+        yield "quotient", quotient
+        yield (
+            "opening",
+            self.opening.prove(
+                quotient.reduced_claim,
+                Pil2OpeningWitness(
+                    commitment, logup.reduction_proof, quotient.reduction_proof
+                ),
+                quotient.transcript,
+            ),
+        )

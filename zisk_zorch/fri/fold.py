@@ -24,14 +24,17 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
+import functools
+
 import frx.numpy as fnp
 import numpy as np
 from frx import Array, lax
 from zk_dtypes import goldilocks as F
+from zk_dtypes import pfinfo
 from zorch.coding.reed_solomon import fri_fold_k
 
 # Goldilocks field modulus and the LDE coset generator (`Goldilocks::SHIFT`).
-_GOLDILOCKS_P = 0xFFFFFFFF00000001
+_GOLDILOCKS_P = int(pfinfo(F).modulus)
 _COSET_SHIFT = 7
 
 # pil2-stark's two-adic generator `Goldilocks::W[32]` (order 2^32); `W[bits]`,
@@ -74,6 +77,21 @@ def _coset_domain(n_bits_ext: int, prev_bits: int, current_bits: int) -> Array:
     return fnp.array(canonical.astype(np.uint64), dtype=F)
 
 
+@functools.cache
+def _coset_inv_table(n_bits_ext: int, prev_bits: int, current_bits: int) -> np.ndarray:
+    """The per-group inverse coset scales `s_g^-1 = shift_eff^-1 * w^-g` for
+    `g` in `[0, 2^current_bits)`, canonical u64. Fixed by the static bit
+    sizes, and the object-int power loop is ~200 ms at `2^19` groups — cached
+    host-side so a prove pays it once per layer shape, not once per fold."""
+    shift_eff = pow(_COSET_SHIFT, 1 << (n_bits_ext - prev_bits), _GOLDILOCKS_P)
+    w = pow(_TWO_ADIC_ROOT, 1 << (32 - prev_bits), _GOLDILOCKS_P)
+    s_inv = (
+        pow(shift_eff, -1, _GOLDILOCKS_P)
+        * _powers(pow(w, -1, _GOLDILOCKS_P), 1 << current_bits)
+    ) % _GOLDILOCKS_P
+    return s_inv.astype(np.uint64)
+
+
 def fold(
     pol: Array, challenge: Array, n_bits_ext: int, prev_bits: int, current_bits: int
 ) -> Array:
@@ -102,13 +120,9 @@ def fold(
     # `W[prev_bits - current_bits]`, reached through `_PIL2_GENERATOR`; only
     # the per-group `s_g^-1` varies.
     group = pol.reshape(-1, cur_n).T
-    shift_eff = pow(_COSET_SHIFT, 1 << (n_bits_ext - prev_bits), _GOLDILOCKS_P)
-    w = pow(_TWO_ADIC_ROOT, 1 << (32 - prev_bits), _GOLDILOCKS_P)
-    # s_g^-1 = (shift_eff * w^g)^-1 = shift_eff^-1 * w^-g.
-    s_inv = (
-        pow(shift_eff, -1, _GOLDILOCKS_P) * _powers(pow(w, -1, _GOLDILOCKS_P), cur_n)
-    ) % _GOLDILOCKS_P
-    coset_inv = fnp.array(s_inv.astype(np.uint64), dtype=F)
+    coset_inv = fnp.array(
+        _coset_inv_table(n_bits_ext, prev_bits, current_bits), dtype=F
+    )
     return fri_fold_k(group, challenge, coset=(coset_inv, _PIL2_GENERATOR))
 
 

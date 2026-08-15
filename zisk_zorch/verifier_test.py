@@ -135,15 +135,19 @@ class InnerVerifierTest(absltest.TestCase):
         """Breaks that row's Merkle path against the stage-1 root."""
         proof = _prove()
         openings = [list(o) for o in proof.opening.trace_openings]
-        first = openings[0][0]
-        openings[0][0] = first.at[0].set(_bump(first[0]))
+        # Opening rows are host arrays (see `OpeningProof`) — copy before the
+        # in-place bump so the shared batched base stays honest.
+        first = np.array(openings[0][0])
+        first[0] = np.asarray(_bump(first[0]))
+        openings[0][0] = first
         self.assertFalse(_accepts(_tamper(proof, trace_openings=openings)))
 
     def test_rejects_a_tampered_quotient_opening(self) -> None:
         proof = _prove()
         openings = [list(o) for o in proof.opening.quotient_openings]
-        first = openings[0][0]
-        openings[0][0] = first.at[0].set(_bump(first[0]))
+        first = np.array(openings[0][0])
+        first[0] = np.asarray(_bump(first[0]))
+        openings[0][0] = first
         self.assertFalse(_accepts(_tamper(proof, quotient_openings=openings)))
 
     def test_rejects_tampered_evals(self) -> None:

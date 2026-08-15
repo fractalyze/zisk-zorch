@@ -2,8 +2,8 @@
 
 After the fold loop, pil2's query phase (`gen_proof.hpp`) absorbs the final
 polynomial into the running transcript and squeezes a cubic challenge, then runs
-proof-of-work: search a `nonce` such that the width-4 Poseidon2 permutation of
-`challenge ++ nonce` has `powBits` leading zero bits. It then seeds a FRESH
+proof-of-work: search a `nonce` such that the width-8 permutation of the key's
+hash family applied to `challenge ++ nonce` has `powBits` leading zero bits. It then seeds a FRESH
 transcript with `challenge ++ nonce` and reads the query positions off it via
 `getPermutations` (`nQueries` indices of `nBitsExt` bits each), and transmits
 `nonce` in the proof so the verifier can re-check the grind.
@@ -20,25 +20,69 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
+import functools
+
 import frx
 import frx.numpy as fnp
 import numpy as np
-from frx import Array
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zk_dtypes import pfinfo
+from zorch.grind import grind_search
 from zorch.utils.field import split_coeffs
 
-from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
-from zisk_zorch.transcript.transcript import Transcript, _canonical
+from zisk_zorch.transcript.transcript import (
+    _HASH_FAMILY_PERMS,
+    DEFAULT_HASH_FAMILY,
+    Transcript,
+    _canonical,
+    absorb_section,
+)
 
-# Grinding is the width-4 Poseidon2 compression (`Poseidon2GoldilocksGrinding =
-# Poseidon2Goldilocks<4>`), independent of the transcript width.
-_GRIND_WIDTH = 4
-_GRIND_PERM = goldilocks_perm(_GRIND_WIDTH)
-# Batched search stride: scan candidate nonces a chunk at a time so the per-call
-# permutation runs once over the whole chunk, mirroring pil2's chunked OMP scan.
-_GRIND_CHUNK = 256
+# Grinding is the WIDTH-8 permutation of the key's hash family
+# (`Poseidon2GoldilocksGrinding = Poseidon2Goldilocks<8>`,
+# `poseidon2_goldilocks.hpp` L377 at v1.0.0-alpha; family 1 routes to
+# `PoseidonGoldilocks<8>`): state `[challenge(3), nonce, 0-pad]`, image =
+# output lane 0. Independent of the transcript width. Pinned against a real
+# CPU prove's nonce — the width-4 form this module used to model does not
+# reproduce it.
+_GRIND_WIDTH = 8
 _GOLDILOCKS_ORDER = int(pfinfo(F).modulus)
+
+
+@functools.cache
+def _grind_perm(hash_family: str):
+    """The width-8 grinding permutation of `hash_family`."""
+    return _HASH_FAMILY_PERMS[hash_family](_GRIND_WIDTH)
+
+
+@functools.cache
+def _grind_search_jit(hash_family: str, pow_bits: int):
+    """The jitted grind search for `(hash_family, pow_bits)`, taking the
+    challenge as an argument — a fresh closure per challenge would bake it
+    into the trace as a constant and recompile the search every prove.
+
+    The predicate stays traceable by comparing the image's u32 halves
+    instead of decoding to a host u64: the level is a power of two, so
+    `image < 2^(64-b)` is a plain half comparison."""
+    perm = _grind_perm(hash_family)
+
+    def check_batch(challenge: Array, counters: Array) -> Array:
+        nonce_fe = counters.astype(F)  # canonical < 2^32 -> value-encodes
+        chal = fnp.broadcast_to(challenge, (counters.shape[0], 3))
+        pad = fnp.zeros((counters.shape[0], _GRIND_WIDTH - 4), F)
+        states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)
+        out0 = frx.vmap(perm.permute)(states)[:, 0]
+        halves = lax.bitcast_convert_type(out0.astype(F), fnp.uint32)
+        lo, hi = halves[..., 0], halves[..., 1]
+        if pow_bits <= 32:
+            return hi < fnp.uint32(1 << (32 - pow_bits))
+        return fnp.logical_and(hi == 0, lo < fnp.uint32(1 << (64 - pow_bits)))
+
+    def search(challenge: Array) -> Array:
+        return grind_search(functools.partial(check_batch, challenge), bound=1 << 32)
+
+    return frx.jit(search)
 
 
 def _grind_level(pow_bits: int) -> int:
@@ -47,64 +91,89 @@ def _grind_level(pow_bits: int) -> int:
     return 1 << (64 - pow_bits)
 
 
-def _grind_images(challenge: Array, nonces: np.ndarray) -> np.ndarray:
-    """Canonical u64 of the first lane of the width-4 Poseidon2 permutation of
-    `challenge ++ nonce` for each nonce — pil2's grinding image (`state[0]`).
+def _grind_images(
+    challenge: Array, nonces: np.ndarray, hash_family: str = DEFAULT_HASH_FAMILY
+) -> np.ndarray:
+    """Canonical u64 of the first lane of the width-8 grind permutation of
+    `[challenge, nonce, 0-pad]` for each nonce — pil2's grinding image
+    (`state[0]`).
 
-    `nonce` rides the last input slot as `Goldilocks::fromU64(nonce)`; the value
-    cast to `F` reduces mod p, so callers must pass canonical nonces."""
+    `nonce` rides slot 3 as `Goldilocks::fromU64(nonce)`; the value cast to
+    `F` reduces mod p, so callers must pass canonical nonces."""
     nonce_fe = fnp.asarray(nonces, dtype=F)  # (C,) canonical -> plain field
-    chal = fnp.broadcast_to(challenge, (nonce_fe.shape[0], _GRIND_WIDTH - 1))
-    states = fnp.concatenate([chal, nonce_fe[:, None]], axis=1)  # (C, 4)
-    out0 = frx.vmap(_GRIND_PERM.permute)(states)[:, 0]
+    chal = fnp.broadcast_to(challenge, (nonce_fe.shape[0], 3))
+    pad = fnp.zeros((nonce_fe.shape[0], _GRIND_WIDTH - 4), F)
+    states = fnp.concatenate([chal, nonce_fe[:, None], pad], axis=1)  # (C, 8)
+    out0 = frx.vmap(_grind_perm(hash_family).permute)(states)[:, 0]
     return _canonical(out0)  # decode to canonical u64 (transcript's path)
 
 
-def _grind(challenge: Array, pow_bits: int) -> int:
+def _grind(
+    challenge: Array, pow_bits: int, hash_family: str = DEFAULT_HASH_FAMILY
+) -> int:
     """The smallest nonce whose grinding image has `pow_bits` leading zero bits,
-    i.e. image `< 2^(64 - pow_bits)`. Ascending scan matching pil2's
-    `Poseidon2GoldilocksGrinding::grinding` (its OMP chunking only parallelizes
-    the scan; any valid nonce verifies, so the smallest is the deterministic
-    choice the verifier reproduces via its O(1) check)."""
-    level = _grind_level(pow_bits)
-    base = 0
-    while base < _GOLDILOCKS_ORDER:
-        nonces = np.arange(base, base + _GRIND_CHUNK, dtype=np.uint64)
-        hits = np.nonzero(_grind_images(challenge, nonces) < np.uint64(level))[0]
-        if hits.size:
-            return base + int(hits[0])
-        base += _GRIND_CHUNK
-    raise RuntimeError(
-        f"grinding: no nonce below the field order for pow_bits={pow_bits}"
-    )
+    i.e. image `< 2^(64 - pow_bits)` — pil2's ascending
+    `Poseidon2GoldilocksGrinding::grinding` scan, run on zorch's windowed
+    `grind_search` engine (its lowest-hit contract is exactly pil2's
+    deterministic smallest-nonce choice; the verifier reproduces it via the
+    O(1) grind check).
+
+    The search covers the uint32 counter space — astronomically more than
+    any real difficulty needs (expected work is `2^pow_bits`) — and
+    `grind_search` returns an unchecked 0 on exhaustion, so the hit is
+    re-validated before use."""
+    nonce = int(_grind_search_jit(hash_family, pow_bits)(challenge))
+    if not grind_is_valid(challenge, nonce, pow_bits, hash_family):
+        raise RuntimeError(
+            f"grinding: no nonce in the search space for pow_bits={pow_bits}"
+        )
+    return nonce
 
 
-def grind_is_valid(challenge: Array, nonce: int, pow_bits: int) -> bool:
+def grind_is_valid(
+    challenge: Array,
+    nonce: int,
+    pow_bits: int,
+    hash_family: str = DEFAULT_HASH_FAMILY,
+) -> bool:
     """Whether `nonce` satisfies the grind: it is a canonical Goldilocks element
     and its image has `pow_bits` leading zero bits. The verifier's O(1) check on
     the proof-supplied nonce (pil2 `stark_verify.hpp` L195-L200)."""
     if not 0 <= nonce < _GOLDILOCKS_ORDER:
         return False
-    image = int(_grind_images(challenge, np.array([nonce], dtype=np.uint64))[0])
+    image = int(
+        _grind_images(challenge, np.array([nonce], dtype=np.uint64), hash_family)[0]
+    )
     return image < _grind_level(pow_bits)
 
 
-def grinding_seed_challenge(transcript: Transcript, final_pol: Array) -> Array:
+def grinding_seed_challenge(
+    transcript: Transcript, final_pol: Array, *, hash_commits: bool = False
+) -> Array:
     """Absorb `final_pol` into the running transcript and squeeze the cubic
     grinding-seed challenge (3 base limbs) — pil2's pre-grinding discipline.
-    Mutates `transcript`."""
-    transcript.put(
-        split_coeffs(final_pol).reshape(-1)
-    )  # addTranscriptGL(friPol, len*3)
+    Mutates `transcript`.
+
+    Under a ``hashCommits`` stark struct pil2 absorbs `calculateHash` of the
+    polynomial instead of its raw limbs (gen_proof.hpp's last-step branch), so
+    `hash_commits` must match the key or every later squeeze diverges."""
+    limbs = split_coeffs(final_pol).reshape(-1)  # addTranscriptGL(friPol, len*3)
+    absorb_section(transcript, limbs, hashed=hash_commits)
     return transcript.get_field()  # cubic grinding seed (3 base limbs)
 
 
 def query_positions_for(
-    challenge: Array, width: int, nonce: int, *, n_queries: int, n_bits_ext: int
+    challenge: Array,
+    width: int,
+    nonce: int,
+    *,
+    n_queries: int,
+    n_bits_ext: int,
+    hash_family: str = DEFAULT_HASH_FAMILY,
 ) -> np.ndarray:
     """Seed a fresh transcript with `challenge ++ nonce` and read the query
     positions — pil2's `getPermutations` off the grinding-seeded transcript."""
-    permutation = Transcript(width)
+    permutation = Transcript(width, hash_family)
     permutation.put(challenge)  # addTranscriptGL(challenge, FIELD_EXTENSION)
     nonce_fe = fnp.array(np.array([nonce], dtype=np.uint64), dtype=F)
     permutation.put(nonce_fe)  # addTranscriptGL((Goldilocks::Element *)&nonce, 1)
@@ -118,6 +187,7 @@ def sample_query_positions(
     pow_bits: int,
     n_queries: int,
     n_bits_ext: int,
+    hash_commits: bool = False,
 ) -> tuple[np.ndarray, int]:
     """Derive the `n_queries` FRI query positions (each `n_bits_ext` bits wide)
     from the post-fold `transcript`, self-generating the grinding nonce.
@@ -138,9 +208,17 @@ def sample_query_positions(
     if not 0 < pow_bits < 64:
         raise ValueError(f"pow_bits must be in (0, 64), got {pow_bits}")
 
-    challenge = grinding_seed_challenge(transcript, final_pol)
-    nonce = _grind(challenge, pow_bits)
+    family = transcript._hash_family
+    challenge = grinding_seed_challenge(
+        transcript, final_pol, hash_commits=hash_commits
+    )
+    nonce = _grind(challenge, pow_bits, family)
     positions = query_positions_for(
-        challenge, transcript.width, nonce, n_queries=n_queries, n_bits_ext=n_bits_ext
+        challenge,
+        transcript.width,
+        nonce,
+        n_queries=n_queries,
+        n_bits_ext=n_bits_ext,
+        hash_family=family,
     )
     return positions, nonce

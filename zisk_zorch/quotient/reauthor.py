@@ -26,14 +26,16 @@ from __future__ import annotations
 
 import frx.numpy as fnp
 from frx import Array
+from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
+from zk_dtypes import pfinfo
 
 from zisk_zorch.golden import base_trace, embed, u64x3
 from zisk_zorch.logup.bus import LogUpBus
-from zisk_zorch.quotient.cexp_ref import _load_inputs, _run_block
+from zisk_zorch.quotient.cexp_ref import _load_inputs, run_block
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
-_GOLDILOCKS_P = 0xFFFFFFFF00000001
+_GOLDILOCKS_P = int(pfinfo(F).modulus)
 
 # Binary AIR layout (proving-key cmPolsMap): 39 stage-1 base cols, then the
 # stage-2 witness cubic cols gsum / im_cluster×4, then the stage-3 quotient.
@@ -201,7 +203,7 @@ def reauthor_arith_quotient(
     m = [_signed_multiplicity(it, trace) for it in bus.interactions]
 
     cols = [
-        _run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)
+        run_block(row_local_constraints[i]["code"], env, extend) for i in range(49)
     ]
     for ci in range(49, 63):
         slot, group = _ARITH_IM[ci]

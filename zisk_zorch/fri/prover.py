@@ -99,15 +99,24 @@ def prove(
 
 def prove_queries(
     layers: list[_Layer], query_indices: np.ndarray | list[int]
-) -> list[list[Array]]:
+) -> list[list[np.ndarray]]:
     """`FRI::proveFRIQueries`: open every committed layer at each query. Layer
-    `s` opens at `query_index mod 2^(leaf_bits)`, the regrouped height."""
+    `s` opens at `query_index mod 2^(leaf_bits)`, the regrouped height.
+
+    The per-query rows come back as host arrays: one device→host copy per
+    layer, then the list-of-lists shape the proof contract wants is built from
+    host row views. Slicing the batched device array per (query, layer) instead
+    dispatches thousands of eager device ops — ~80 ms per Main-width prove —
+    for values that only ever cross to the host (serializer, verifier)."""
     qi = fnp.asarray(np.asarray(query_indices))
-    per_layer = [
+    # Dispatch every layer before the first device→host copy blocks —
+    # converting inside one loop serializes a round trip per layer.
+    per_layer_dev = [
         frx.vmap(partial(group_proof, layer.tree, layer.matrix, layer.digest_layers))(
             qi % (1 << layer.leaf_bits)
         )
         for layer in layers
     ]
+    per_layer = [np.asarray(x) for x in per_layer_dev]
     n_q = int(qi.shape[0])
     return [[per_layer[li][q] for li in range(len(layers))] for q in range(n_q)]

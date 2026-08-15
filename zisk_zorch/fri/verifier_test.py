@@ -145,17 +145,65 @@ class FriVerifierTest(absltest.TestCase):
                 )
 
                 # Tamper an opened value: breaks that layer's Merkle opening.
+                # Rows are host arrays (see `prove_queries`) — copy before the
+                # in-place bump so the shared batched base stays honest.
                 bad_openings = [list(per_q) for per_q in openings]
-                first = bad_openings[0][0]
-                bad_openings[0][0] = first.at[0].set(
-                    first[0] + fnp.ones((), first.dtype)
-                )
+                first = np.array(bad_openings[0][0])
+                first[0] = np.asarray(first[0] + fnp.ones((), first.dtype))
+                bad_openings[0][0] = first
                 self.assertFalse(
                     self._verify(
                         case, proof.roots, proof.final_pol, bad_openings, nonce
                     ),
                     msg="accepted a tampered Merkle opening",
                 )
+
+    def test_family1_round_trip(self) -> None:
+        """A Poseidon1-family prove verifies only if the verifier's grind,
+        query redraw, and Merkle hashing run the same family — the composed
+        prover's ziskup shape (the prover derives it from the transcript;
+        the verifier must not fall back to Poseidon2)."""
+        n_bits, n_bits_ext = 4, 6
+        steps = [6, 4, 2]
+        arity = 4
+        seed = u64(["1", "2", "3", "4"])
+
+        fri_pol = _low_degree_codeword(n_bits, n_bits_ext, seed=0xF2)
+        transcript = Transcript(12, "Poseidon1")
+        transcript.put(seed)
+        proof, layers = prove(
+            fri_pol,
+            steps,
+            arity=arity,
+            transcript=transcript,
+            hash_family="Poseidon1",
+        )
+        indices, nonce = sample_query_positions(
+            transcript,
+            proof.final_pol,
+            pow_bits=_POW_BITS,
+            n_queries=4,
+            n_bits_ext=steps[0],
+        )
+        openings = prove_queries(layers, indices)
+
+        t = Transcript(12, "Poseidon1")
+        t.put(seed)
+        self.assertTrue(
+            verify(
+                proof.roots,
+                proof.final_pol,
+                openings,
+                steps=steps,
+                arity=arity,
+                transcript=t,
+                pow_bits=_POW_BITS,
+                nonce=nonce,
+                n_bits=n_bits,
+                hash_family="Poseidon1",
+            ),
+            msg="family-1 proof rejected",
+        )
 
     def test_low_degree_final_pol(self) -> None:
         """A real low-degree `f` verifies; over-claiming the degree bound rejects.

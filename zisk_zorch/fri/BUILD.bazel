@@ -65,7 +65,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":seam",
-        "//zisk_zorch/poseidon2:goldilocks",
         "//zisk_zorch/transcript",
         requirement("frx"),
         requirement("numpy"),

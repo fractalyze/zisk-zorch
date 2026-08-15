@@ -153,9 +153,9 @@ class OpeningProof:
     fri: FriProof
     nonce: int
     positions: np.ndarray
-    trace_openings: list[list[Array]]
-    quotient_openings: list[list[Array]]
-    fri_openings: list[list[Array]]
+    trace_openings: list[list[np.ndarray]]
+    quotient_openings: list[list[np.ndarray]]
+    fri_openings: list[list[np.ndarray]]
 
 
 @dataclass(frozen=True)

@@ -972,19 +972,20 @@ fn query_sample_case<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize
     })
 }
 
-/// pil2-stark's FRI grinding / proof-of-work (`Poseidon2GoldilocksGrinding::grinding`):
-/// the smallest `nonce` whose width-4 Poseidon2 permutation of `challenge ++ nonce`
-/// has `pow_bits` leading zero bits — its first output lane's canonical u64 is
-/// `< 1 << (64 - pow_bits)`. The C++ search parallelizes the scan over OMP chunks;
-/// any valid nonce passes the verifier, so the smallest (ascending) nonce is the
-/// deterministic one the prover commits and the verifier re-checks.
+/// pil2-stark's FRI grinding / proof-of-work: `Poseidon2GoldilocksGrinding` is
+/// `Poseidon2Goldilocks<8>` at v1.0.0-alpha (`poseidon2_goldilocks.hpp` L377) —
+/// state `[challenge(3), nonce, 0, 0, 0, 0]` through the WIDTH-8 permutation,
+/// smallest `nonce` whose first output lane is `< 1 << (64 - pow_bits)`. The C++
+/// search parallelizes the scan over OMP chunks; any valid nonce passes the
+/// verifier, so the smallest (ascending) nonce is the deterministic one the
+/// prover commits and the verifier re-checks. Pinned against a real CPU prove:
+/// the width-8 form reproduces a native proof's nonce exactly; the width-4 form
+/// this golden used to model does not.
 ///
-/// Grinding is not in the `fields` crate (it ships only the verify-side predicate),
-/// so this standalone case is the golden the Python port byte-matches. The
-/// permutation is `poseidon2_hash::<_, Poseidon2_4, 4>` — the same width-4 permutation
-/// `permutation.json` already pins. `image` is the predicate value (output lane 0),
-/// cross-checked so a wrong permutation can't pass on the nonce alone.
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/goldilocks/src/poseidon2_goldilocks.cpp#L177-L232
+/// Grinding is not in the `fields` crate (it ships only the verify-side
+/// predicate), so this standalone case is the golden the Python port
+/// byte-matches. `image` is the predicate value (output lane 0), cross-checked
+/// so a wrong permutation can't pass on the nonce alone.
 fn grinding_case(pow_bits: u32, seed: u64) -> Value {
     let mut state = seed;
     let challenge = [rand_fe(&mut state), rand_fe(&mut state), rand_fe(&mut state)];
@@ -992,8 +993,17 @@ fn grinding_case(pow_bits: u32, seed: u64) -> Value {
 
     let mut nonce = 0u64;
     let image = loop {
-        let input = [challenge[0], challenge[1], challenge[2], Goldilocks::new(nonce)];
-        let img = poseidon2_hash::<Goldilocks, Poseidon2_4, 4>(&input)[0].as_canonical_u64();
+        let input = [
+            challenge[0],
+            challenge[1],
+            challenge[2],
+            Goldilocks::new(nonce),
+            Goldilocks::ZERO,
+            Goldilocks::ZERO,
+            Goldilocks::ZERO,
+            Goldilocks::ZERO,
+        ];
+        let img = poseidon2_hash::<Goldilocks, Poseidon2_8, 8>(&input)[0].as_canonical_u64();
         if img < level {
             break img;
         }

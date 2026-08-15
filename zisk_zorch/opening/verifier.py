@@ -14,7 +14,7 @@ from zorch.stage import TrivialClaim, VerifierStage, VerifyResult
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.openings import verify_group_proof
-from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.commit.trace_commit import DEFAULT_HASH_FAMILY, merkle_tree
 from zisk_zorch.deep.fri_polynomial import _ood_points
 from zisk_zorch.fri.queries import (
     grind_is_valid,
@@ -50,6 +50,7 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
         arity: int,
         pow_bits: int,
         opening_points: Sequence[int] = (0,),
+        hash_family: str = DEFAULT_HASH_FAMILY,
     ) -> None:
         self._eval_fn = eval_fn
         self._blowup_bits = blowup_bits
@@ -57,6 +58,7 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
         self._arity = arity
         self._pow_bits = pow_bits
         self._opening_points = opening_points
+        self._hash_family = hash_family
 
     def verify(
         self,
@@ -94,9 +96,11 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
             betas.append(beta)
 
         # The grind binds the nonce before any position is read, so a prover
-        # cannot search for query positions that miss its lie.
+        # cannot search for query positions that miss its lie. It runs the
+        # transcript's own family — `sample_query_positions`' discipline.
+        family = t._hash_family
         challenge = grinding_seed_challenge(t, proof.fri.final_pol)
-        if not grind_is_valid(challenge, proof.nonce, self._pow_bits):
+        if not grind_is_valid(challenge, proof.nonce, self._pow_bits, family):
             return VerifyResult(TrivialClaim(), t, fnp.asarray(False))
         positions = query_positions_for(
             challenge,
@@ -104,6 +108,7 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
             proof.nonce,
             n_queries=len(proof.fri_openings),
             n_bits_ext=self._steps[0],
+            hash_family=family,
         )
 
         evals = proof.evals
@@ -152,8 +157,8 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
         n_cols = claim.inner.n_cols
         steps = self._steps
         ext_mask = (1 << steps[0]) - 1
-        trace_tree = merkle_tree(self._arity)
-        quotient_tree = merkle_tree(self._arity)
+        trace_tree = merkle_tree(self._arity, self._hash_family)
+        quotient_tree = merkle_tree(self._arity, self._hash_family)
         x = _coset_points(n_bits, self._blowup_bits)
         xis = _ood_points(z, self._opening_points, n_bits)
         # Every column opens at `z`; wrapped openings are AIR-specific,
@@ -210,4 +215,5 @@ class OpeningVerifier(VerifierStage[QuotientBoundClaim, TrivialClaim, OpeningPro
             steps=self._steps,
             arity=self._arity,
             n_bits=n_bits,
+            hash_family=self._hash_family,
         )

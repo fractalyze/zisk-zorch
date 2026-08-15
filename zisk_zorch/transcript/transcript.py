@@ -16,6 +16,8 @@ byte-match requires pil2's exact buffer discipline).
 
 from __future__ import annotations
 
+import functools
+
 import frx
 import frx.numpy as fnp
 import numpy as np
@@ -34,6 +36,10 @@ _HASH_FAMILY_PERMS = {
     "Poseidon1": _poseidon1_perm,
 }
 DEFAULT_HASH_FAMILY = "Poseidon2"
+
+# A transcript digest is the flushed state's first four elements — pil2's
+# `HASH_SIZE`, independent of the transcript width.
+DIGEST = 4
 
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
 CHALLENGE_LIMBS = 3
@@ -124,6 +130,59 @@ class Transcript:
                     cur_field += 1
             out[i] = acc
         return out
+
+
+@functools.lru_cache(maxsize=None)
+def _linear_hash_jit(n_blocks: int, width: int, hash_family: str):
+    perm = _HASH_FAMILY_PERMS[hash_family](width)
+
+    def run(blocks: Array) -> Array:
+        def step(state: Array, block: Array) -> tuple[Array, None]:
+            return perm.permute(fnp.concatenate([block, state[:4]])), None
+
+        state, _ = lax.scan(step, fnp.zeros((width,), F), blocks)
+        return state
+
+    return frx.jit(run)
+
+
+def transcript_hash(
+    values: Array, width: int = 12, hash_family: str = DEFAULT_HASH_FAMILY
+) -> Array:
+    """pil2 ``calculateHash``: a fresh transcript absorbs the buffer and its
+    flushed state's first four elements are the digest.
+
+    Runs as ONE compiled scan over the sponge's rate-wide blocks instead of
+    the eager transcript's per-block permute dispatch — a 462-element section
+    is ~58 sequential permutes, which dominate an aggregation prove's
+    transcript legs when launched eagerly. The block discipline is the
+    eager path's exactly: `ceil(n / rate)` permutes, zero-padded tail,
+    running state's first four lanes in the last input slots."""
+    values = fnp.asarray(values)
+    n = values.shape[0]
+    if n == 0:
+        return fnp.zeros((DIGEST,), F)
+    rate = width - 4
+    pad = -n % rate
+    if pad:
+        values = fnp.concatenate([values, fnp.zeros((pad,), values.dtype)])
+    blocks = values.reshape(-1, rate)
+    state = _linear_hash_jit(blocks.shape[0], width, hash_family)(blocks)
+    return state[:DIGEST]
+
+
+def absorb_section(transcript: Transcript, values: Array, *, hashed: bool) -> None:
+    """Absorb a proof section — its raw limbs, or its `transcript_hash`
+    digest under a ``hashCommits`` stark struct. One definition, so the
+    prover, the schedule replay, and the query phase cannot disagree on
+    which form a section enters the stream in. The inner hash runs the
+    parent transcript's own family."""
+    if hashed:
+        transcript.put(
+            transcript_hash(values, transcript.width, transcript._hash_family)
+        )
+    else:
+        transcript.put(values)
 
 
 def _transcript_flatten(t: Transcript) -> tuple[tuple, tuple]:
