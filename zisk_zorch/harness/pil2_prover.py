@@ -413,12 +413,20 @@ class LogUpWitnessProver(
 # and 35 ms at the 8 chunks this target picks, with 4 (88 MB) and 16 (22 MB)
 # both landing near 40-84 ms.
 _Q_LIVE_SET_TARGET = 48 << 20
+# The live-set target alone scales the count linearly with the domain, which
+# overshoots badly on the wide basic AIRs: it asks for 32-64 windows at 2^23
+# where the measured curve has already turned over. Per-chunk dispatch beats
+# the cache win past this point — block e2e 43.7 s at 4 windows and 44.1 s at
+# 8, but 54.6 s when the target picked 16-64 (zz#141 bench, RTX 5090). The
+# recursion sweep bottoms out at exactly 8 (1:85 2:73 4:84 8:35 16:40 32:48
+# 64:80 ms), so one ceiling serves both shapes.
+_Q_MAX_CHUNKS = 8
 
 
 def _row_chunks(code: list[dict], cmp_map: list, n_ext: int) -> int:
     """How many row windows to evaluate the cExp in — the count whose live
-    temporary set fits `_Q_LIVE_SET_TARGET`, rounded up to a power of two and
-    clamped to the domain.
+    temporary set fits `_Q_LIVE_SET_TARGET`, rounded up to a power of two,
+    capped at `_Q_MAX_CHUNKS`, and clamped to the domain.
 
     Derived per AIR rather than configured, because the two things it has to
     serve pull the same way: a wide AIR's whole-domain working set does not
@@ -432,7 +440,7 @@ def _row_chunks(code: list[dict], cmp_map: list, n_ext: int) -> int:
     if override is not None:
         return int(override)
     per_row = live_bytes_per_row(code, lambda s: cmp_map[s["id"]]["dim"])
-    want = -(per_row * n_ext // -_Q_LIVE_SET_TARGET)  # ceil
+    want = min(-(per_row * n_ext // -_Q_LIVE_SET_TARGET), _Q_MAX_CHUNKS)  # ceil, capped
     chunks = 1
     while chunks < want and chunks < n_ext:
         chunks *= 2
