@@ -11,6 +11,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//zisk_zorch:shape_cache",
         requirement("frx"),
         requirement("pyzorch"),
         requirement("numpy"),

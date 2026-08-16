@@ -28,7 +28,7 @@ import frx
 import numpy as np
 from frx import Array
 
-from zisk_zorch.commit.openings import group_proof
+from zisk_zorch.commit.openings import batched_group_proof
 from zisk_zorch.harness.pil2 import value_offsets
 from zisk_zorch.transcript.transcript import DIGEST
 
@@ -52,7 +52,7 @@ def open_tree_dispatch(
     """The device half of `open_tree`: the batched group proofs, no host
     sync — so a caller opening several trees can dispatch them all before
     the first device→host copy blocks."""
-    return frx.vmap(lambda i: group_proof(tree, matrix, digest_layers, i))(idx)
+    return batched_group_proof(tree, matrix, digest_layers, idx)
 
 
 def open_tree_convert(

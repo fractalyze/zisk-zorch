@@ -262,17 +262,62 @@ which is production's shape (111 AIR instances per block):
   transcript is device-resident, so the grind's `_canonical` is the first
   host sync in the chain. Splitting the LDE into column blocks (exact — the
   transform is per-column) is the known fix, currently parked.
-- **No measured whole-proof ratio exists**: the only native total covers 111
-  AIRs. The bracket from the native per-stage sum (~0.27 s) and the
-  block-level average (~0.22 s) puts native at ~0.2–0.3 s per proof against
-  our 0.7 s warm — a ~2–3× gap. Derived, not measured — do not quote as a
-  benchmark row.
+- **For a measured whole-block ratio, see the block baseline below** — that
+  supersedes the derived ~2–3× bracket this bullet used to carry.
 
 Proofs verify: `verifier.InnerVerifier` replays the transcript and checks
 Merkle, DEEP, FRI, and the AIR constraint at the out-of-domain point
 (`verifier_test` round-trips prove → verify, honest and tampered). An accepting
 verify at 2^22 with 64 queries takes ~765 s — the verifier's per-query host
 loops are the minutes-scale wall, and the next per-stage issue candidate.
+
+### Block baseline against native pil2
+
+Both legs of a real eth block (21740136), same basis on both sides: **GPU work
+only, warm, traces already resident**. That is what native's per-instance
+`STARK_GPU_PROOF` timers cover, so it is the only form in which the two are
+comparable.
+
+| leg | zisk-zorch | native pil2 | ratio |
+|---|---|---|---|
+| basics — 38 instances, 20 families | 14.58 s | 12.79 s | **1.14×** |
+| aggregation tree — 66 proves | 9.10 s | 10.19 s | **0.89×** |
+| **block** | **23.68 s** | **22.98 s** | **1.03×** |
+
+Widest families, warm median per instance (native = a contention-free
+`cargo-zisk-dev prove -g -vv -t1 --no-aggregation` run):
+
+| family | n | ours | native | ratio |
+|---|---|---|---|---|
+| Main | 12 | 490.1 ms | 466.7 ms | 1.05× |
+| Keccakf | 5 | 688.3 ms | 545.1 ms | 1.26× |
+| Mem | 4 | 243.6 ms | 186.0 ms | 1.31× |
+| Binary | 2 | 405.9 ms | 291.0 ms | 1.39× |
+| ArithEq | 1 | 331.9 ms | 598.7 ms | **0.55×** |
+| VirtualTableZisk0 | 1 | 211.0 ms | 267.0 ms | **0.79×** |
+| VirtualTableZisk1 | 1 | 144.7 ms | 190.1 ms | **0.76×** |
+
+The tree's per-circuit rows live in `bench_recursion_block.json`; the basics'
+full 20-family table lives in `bench_e2e_block.json`.
+
+> **Staging is excluded, and excluding it is the point.** A capture-fed run
+> also pays ~1 s per instance to materialize each trace off a `.npy` dump
+> (`np.load` + un-tile + canonicalize, ~0.15 GB/s — 8.6 s cold for Main's
+> 1.28 GB), which puts the same work at 43.7 s. Native's timer never pays it
+> because its trace is already resident, and production feeds traces from the
+> emulator in memory rather than from dumps. Quoting the staged figure against
+> native compares our dump reader to their prover; that mistake is what made
+> the basics look like 3.4×.
+
+Two things this baseline settles, against what earlier pages and issues said:
+
+- **The commit stage is not a pole.** Main's real trace commit is 102.5 ms
+  (LDE 32.8 + leaf hash 69.5 + fold 8.6) against native's c1+c2 = 185.9 ms —
+  **0.55×**. The block bench's four-figure "commits" column is staging.
+- **The narrow-family floor is gone.** zz#138 measured ten families at
+  2.5–3.4× on a shared fixed-overhead floor and the VirtualTables at
+  5.29×/6.04×. That floor was eager dispatch in the Merkle group-proof, not
+  compute; the tables now sit at 0.79×/0.76×.
 
 ### pil2 conformance (`harness/`)
 
@@ -326,6 +371,16 @@ restore the `.orig` or you are not measuring the shipped plugin.
 > Not hypothetical: #60 exists partly because sp1-zorch captured a baseline
 > against a `zorch` override weeks behind `origin/main` and misread it as
 > shipped.
+
+### Basis caveat
+
+Never compare across measurement bases. The two sides must start and stop the
+clock on the same work: native's per-instance timers begin with the trace
+already on the device, so a figure of ours that includes reading or staging
+that trace is not comparable to them, however carefully the proving halves
+line up. This is not hypothetical either — the basics leg read as 3.4× native
+for exactly this reason until the staging was measured separately and the same
+work came out at 1.14×.
 
 ### Size caveat
 

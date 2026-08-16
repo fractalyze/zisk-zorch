@@ -36,8 +36,9 @@ from zk_dtypes import goldilocks as F
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 from zorch.utils.field import split_coeffs
 
+from zisk_zorch.commit.openings import batched_group_proof
 from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
-from zisk_zorch.evals.lev import compute_lev
+from zisk_zorch.evals.lev import compute_lev_jit
 from zisk_zorch.fri.prover import prove, prove_queries
 from zisk_zorch.fri.queries import sample_query_positions
 from zisk_zorch.golden import embed
@@ -52,6 +53,7 @@ from zisk_zorch.harness.pil2 import (
     custom_env,
     deep_two_challenge,
     device_sections,
+    expand_scalars,
     hint_value,
     open_evmap_columns,
     scalar_env,
@@ -63,7 +65,7 @@ from zisk_zorch.harness.proof_serializer import (
     open_tree_dispatch,
 )
 from zisk_zorch.logup.bus import LogUpBus
-from zisk_zorch.quotient.cexp_ref import run_block
+from zisk_zorch.quotient.cexp_ref import live_bytes_per_row, run_block
 from zisk_zorch.quotient.compute_q import compute_q
 from zisk_zorch.quotient.zerofier import _coset_points, inv_zerofier
 from zisk_zorch.transcript.transcript import Transcript, absorb_section
@@ -262,7 +264,7 @@ class LogUpWitnessProver(
                 for ci, buf in custom_base.items()
                 for j in range(buf.shape[1])
             },
-            **scalars,
+            **expand_scalars(scalars),
             "zi": {},
         }
         return self._logup_columns(env)
@@ -402,6 +404,49 @@ class LogUpWitnessProver(
         )
 
 
+# The cExp row window's target working set: the interpreter's live temporaries
+# for one chunk of rows. The whole-domain graph does not fuse — every SSA
+# temporary round-trips through HBM — so what the window buys is cache
+# residency for that traffic, and the target is set below the card's L2 rather
+# than by any memory-capacity limit. Measured on the recursion shape (2^20
+# extended rows, 336 live bytes/row): the quotient stage runs 85 ms whole-domain
+# and 35 ms at the 8 chunks this target picks, with 4 (88 MB) and 16 (22 MB)
+# both landing near 40-84 ms.
+_Q_LIVE_SET_TARGET = 48 << 20
+# The live-set target alone scales the count linearly with the domain, which
+# overshoots badly on the wide basic AIRs: it asks for 32-64 windows at 2^23
+# where the measured curve has already turned over. Per-chunk dispatch beats
+# the cache win past this point — block e2e 43.7 s at 4 windows and 44.1 s at
+# 8, but 54.6 s when the target picked 16-64 (zz#141 bench, RTX 5090). The
+# recursion sweep bottoms out at exactly 8 (1:85 2:73 4:84 8:35 16:40 32:48
+# 64:80 ms), so one ceiling serves both shapes.
+_Q_MAX_CHUNKS = 8
+
+
+def _row_chunks(code: list[dict], cmp_map: list, n_ext: int) -> int:
+    """How many row windows to evaluate the cExp in — the count whose live
+    temporary set fits `_Q_LIVE_SET_TARGET`, rounded up to a power of two,
+    capped at `_Q_MAX_CHUNKS`, and clamped to the domain.
+
+    Derived per AIR rather than configured, because the two things it has to
+    serve pull the same way: a wide AIR's whole-domain working set does not
+    fit device memory at all (Keccakf's ~30 GB at 3023 columns, zz#138), and
+    a narrow one's does but streams through HBM instead of cache. Both want
+    the window sized by bytes-per-row.
+
+    ``ZISK_QUOTIENT_ROW_CHUNKS`` overrides it outright — an escape hatch for
+    a card whose cache differs, not the normal path."""
+    override = os.environ.get("ZISK_QUOTIENT_ROW_CHUNKS")
+    if override is not None:
+        return int(override)
+    per_row = live_bytes_per_row(code, lambda s: cmp_map[s["id"]]["dim"])
+    want = min(-(per_row * n_ext // -_Q_LIVE_SET_TARGET), _Q_MAX_CHUNKS)  # ceil, capped
+    chunks = 1
+    while chunks < want and chunks < n_ext:
+        chunks *= 2
+    return chunks
+
+
 class Pil2QuotientProver(
     ProverStage[
         LogUpBoundClaim,
@@ -454,10 +499,9 @@ class Pil2QuotientProver(
                 1 << self._blowup_bits,
             )
         )
-        # Row-chunked evaluation for AIRs whose cExp working set exceeds
-        # device memory (Keccakf's ~30 GB at 3023 cols, zz#138). Off by
-        # default: the whole-domain graph fuses better.
-        self._q_chunks = int(os.environ.get("ZISK_QUOTIENT_ROW_CHUNKS", "1"))
+        self._q_chunks = _row_chunks(
+            self._code, si["cmPolsMap"], 1 << (self._nb + self._blowup_bits)
+        )
         self._q_chunk_jit = frx.jit(
             lambda cm1, cm2, const, custom, scalars, zi, rows: run_block(
                 self._code,
@@ -495,7 +539,7 @@ class Pil2QuotientProver(
             "cm": cm_env(self._si["cmPolsMap"], bufs),
             "const": const_env(bufs, self._si["nConstants"]),
             "custom": custom_env(bufs, self._si.get("customCommits", [])),
-            **scalars,
+            **expand_scalars(scalars),
             "zi": {0: zi},
         }
 
@@ -716,7 +760,7 @@ class Pil2OpeningProver(
         # lev materialized before the openings (its trace inside the same
         # zone regresses the openings' fusion — see
         # zisk-zorch@lev-must-be-materialized).
-        lev = compute_lev(xi, list(opening_points), self._nb)
+        lev = compute_lev_jit(xi, opening_points, self._nb)
         evals = self._evals_jit(bufs, lev)
         absorb_section(
             transcript, split_coeffs(evals).reshape(-1), hashed=self._hash_commits
@@ -748,13 +792,13 @@ class Pil2OpeningProver(
         )
         idx_ext = fnp.asarray(np.asarray(positions))
         mt = merkle_tree(self._arity, self._family)
-        trace_batched = open_tree_dispatch(
+        trace_batched = batched_group_proof(
             mt,
             witness.trace_commit.extended,
             witness.trace_commit.digest_layers,
             idx_ext,
         )
-        quotient_batched = open_tree_dispatch(
+        quotient_batched = batched_group_proof(
             mt, witness.quotient.matrix, witness.quotient.layers, idx_ext
         )
         # One device→host copy per tree, then host row views — a per-query

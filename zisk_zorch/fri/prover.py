@@ -28,9 +28,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 
-import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
@@ -38,7 +36,7 @@ from zorch.commit.merkle import MerkleTree
 from zorch.pcs.fold import FoldState, PreFoldKGroupCommitRound
 from zorch.prove import fold_rounds
 
-from zisk_zorch.commit.openings import group_proof
+from zisk_zorch.commit.openings import batched_group_proof
 from zisk_zorch.commit.trace_commit import DEFAULT_HASH_FAMILY, merkle_tree
 from zisk_zorch.fri.seam import Pil2FriCode, Pil2SeamTranscript
 from zisk_zorch.transcript.transcript import Transcript
@@ -112,8 +110,8 @@ def prove_queries(
     # Dispatch every layer before the first device→host copy blocks —
     # converting inside one loop serializes a round trip per layer.
     per_layer_dev = [
-        frx.vmap(partial(group_proof, layer.tree, layer.matrix, layer.digest_layers))(
-            qi % (1 << layer.leaf_bits)
+        batched_group_proof(
+            layer.tree, layer.matrix, layer.digest_layers, qi % (1 << layer.leaf_bits)
         )
         for layer in layers
     ]

@@ -13,7 +13,7 @@ import numpy as np
 from frx import Array
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 
-from zisk_zorch.commit.openings import group_proof
+from zisk_zorch.commit.openings import batched_group_proof
 from zisk_zorch.commit.trace_commit import commit_trace, merkle_tree
 from zisk_zorch.deep.fri_polynomial import deep_fri_polynomial
 from zisk_zorch.evals.lev import LevConstants, lev_constants
@@ -191,22 +191,16 @@ class OpeningProver(
         # effect on the byte stream.
         ext_mask = (1 << n_bits_ext) - 1
         idx_ext = fnp.asarray(np.asarray(positions)) & ext_mask
-        trace_batched = frx.vmap(
-            partial(
-                group_proof,
-                merkle_tree(self._arity),
-                witness.trace_commit.extended,
-                witness.trace_commit.digest_layers,
-            )
-        )(idx_ext)
-        quotient_batched = frx.vmap(
-            partial(
-                group_proof,
-                merkle_tree(self._arity),
-                witness.quotient.matrix,
-                witness.quotient.layers,
-            )
-        )(idx_ext)
+        mt = merkle_tree(self._arity)
+        trace_batched = batched_group_proof(
+            mt,
+            witness.trace_commit.extended,
+            witness.trace_commit.digest_layers,
+            idx_ext,
+        )
+        quotient_batched = batched_group_proof(
+            mt, witness.quotient.matrix, witness.quotient.layers, idx_ext
+        )
         trace_openings = [[row] for row in np.asarray(trace_batched)]
         quotient_openings = [[row] for row in np.asarray(quotient_batched)]
         fri_openings = prove_queries(fri_layers, positions)

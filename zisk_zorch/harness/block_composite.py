@@ -45,6 +45,7 @@ from zisk_zorch.harness.pil2 import (
 )
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.harness.proof_serializer import serialize_proof
+from zisk_zorch.shape_cache import release_shape_caches
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerWitness
 
@@ -159,6 +160,7 @@ def prove_block(
             dropped = provers.pop(fam, None)
             if dropped is not None:
                 release_device_sections(dropped.key)
+            release_shape_caches()
         gc.collect()
         av1 = (
             stage1_values(cap.u64("airvalues"), cap.si["airValuesMap"])
@@ -241,6 +243,11 @@ def prove_block(
                 # survives release), so the uploaded sections must be
                 # dropped explicitly.
                 release_device_sections(dropped.key)
+            # Same reason, one level up: the coset and LEv constants are
+            # interned by SHAPE, not by key, so no key-scoped release reaches
+            # them. Dropping them per family costs a millisecond-scale rebuild
+            # on the next family that shares the shape.
+            release_shape_caches()
         gc.collect()
 
     # Phase 4: the block binding over OUR airgroup values.

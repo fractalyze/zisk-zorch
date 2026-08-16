@@ -33,6 +33,8 @@ from frx import Array
 from zisk_zorch.golden import embed, u64x3
 from zisk_zorch.quotient.zerofier import inv_zerofier
 
+_ELEM_BYTES = 8
+
 
 def _load_inputs(case: dict) -> dict:
     """Materialize every cExp operand source from a golden case as `F3`."""
@@ -99,6 +101,48 @@ def _operand(s: dict, env: dict, tmp: dict[int, Array], extend: int, rows) -> Ar
     if t == "Zi":
         return _column(env["zi"][s.get("boundaryId", 0)], 0, extend, rows)
     raise ValueError(f"unhandled cExp operand type {t!r}")
+
+
+def live_bytes_per_row(code: list[dict], column_dim) -> int:
+    """Peak bytes of live SSA temporaries per evaluated row.
+
+    `run_block` is straight-line, so a temporary is live from the op that
+    writes it to the op that last reads it; walking the block with those
+    last-use points gives the widest simultaneous set. `column_dim(src)`
+    resolves a `cm` operand's extension degree (1 or 3) — everything else is
+    fixed by the operand class.
+
+    This is the quantity that sizes the row window: the interpreter's
+    temporaries are the working set the evaluation streams through, and the
+    window controls how much of it is resident at once."""
+    last: dict[int, int] = {}
+    for i, op in enumerate(code):
+        for s in op["src"]:
+            if s["type"] == "tmp":
+                last[s["id"]] = i
+
+    dim: dict[int, int] = {}
+
+    def _dim(s: dict) -> int:
+        t = s["type"]
+        if t == "cm":
+            return column_dim(s)
+        if t in ("challenge", "airvalue", "airgroupvalue", "proofvalue"):
+            return 3
+        if t == "tmp":
+            return dim[s["id"]]
+        return 1  # number, const, custom, public, Zi — base
+
+    live: set[int] = set()
+    peak = 0
+    for i, op in enumerate(code):
+        d = 3 if 3 in (_dim(op["src"][0]), _dim(op["src"][1])) else 1
+        if op["dest"]["type"] == "tmp":
+            dim[op["dest"]["id"]] = d
+            live.add(op["dest"]["id"])
+        live = {t for t in live if last.get(t, -1) > i}
+        peak = max(peak, sum(_ELEM_BYTES * dim[t] for t in live))
+    return peak
 
 
 def run_block(code: list[dict], env: dict, extend: int, rows=None) -> Array:
