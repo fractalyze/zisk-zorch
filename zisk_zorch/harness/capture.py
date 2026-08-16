@@ -28,6 +28,7 @@ from zisk_zorch.harness.pil2 import (
     const_env,
     cubic,
     custom_env,
+    expand_scalars,
     hint_value,
     scalar_env,
     values_env,
@@ -353,7 +354,7 @@ class Capture:
             "cm": cm_env(self.cmp_map, self.bufs),
             "const": const_env(self.bufs, si["nConstants"]),
             "custom": custom_env(self.bufs, si.get("customCommits", [])),
-            **self._scalar_env,
+            **expand_scalars(self._scalar_env),
             "zi": {0: inv_zerofier(self.nb, self.nbe - self.nb)},
         }
 
@@ -384,6 +385,6 @@ class Capture:
                 for i in range(self.si["nConstants"])
             },
             "custom": {},
-            **self._scalar_env,
+            **expand_scalars(self._scalar_env),
             "zi": {},
         }

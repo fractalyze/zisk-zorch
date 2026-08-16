@@ -28,6 +28,7 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/sr
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import frx
@@ -89,7 +90,16 @@ frx.tree_util.register_dataclass(
 
 
 def lev_constants(opening_points: list[int], n_bits: int) -> LevConstants:
-    """The eager prologue: every field constant the LEv arithmetic reads."""
+    """The eager prologue: every field constant the LEv arithmetic reads.
+
+    Interned per `(opening_points, n_bits)` — the pack is shape-static (only
+    `xi` is per-prove) and `wj_inv` is a power series over the whole base
+    domain, so rebuilding it each prove costs milliseconds for a constant."""
+    return _lev_constants(tuple(opening_points), n_bits)
+
+
+@functools.cache
+def _lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants:
     n = 1 << n_bits
     w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
     shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
@@ -138,3 +148,26 @@ def compute_lev(
             num * (consts.one / (g * consts.wj_inv - consts.one)) * consts.inv_n
         )
     return fnp.stack(cols, axis=1)
+
+
+@functools.cache
+def _lev_zone(opening_points: tuple[int, ...], n_bits: int):
+    pts = list(opening_points)
+    return frx.jit(lambda xi, consts: compute_lev(xi, pts, n_bits, consts=consts))
+
+
+def compute_lev_jit(
+    xi_challenge: Array, opening_points: list[int], n_bits: int
+) -> Array:
+    """`compute_lev` as one compiled zone over interned constants.
+
+    Everything but `xi` is shape-static, yet the eager form pays for all of it
+    per prove: `lev_constants` rebuilds a base-domain power series, and the
+    arithmetic itself is an `n_bits`-long squaring chain plus a cubic
+    reciprocal PER opening point — ~90 dispatches for a result that is a
+    handful of kernels. Byte-identical to the eager form (same ops, same
+    order); the caller still receives a materialized array, which the opening
+    role needs — tracing LEv into the openings' own zone regresses their
+    fusion."""
+    pts = tuple(opening_points)
+    return _lev_zone(pts, n_bits)(xi_challenge, lev_constants(pts, n_bits))

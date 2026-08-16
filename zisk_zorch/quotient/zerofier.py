@@ -24,6 +24,8 @@ buildFrameZerofierInv:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1
 
 from __future__ import annotations
 
+import functools
+
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
@@ -67,8 +69,14 @@ def _check(n_bits: int, blowup_bits: int) -> None:
         raise ValueError("n_bits + blowup_bits must be in [0, 32]")
 
 
+@functools.cache
 def _coset_points(n_bits: int, blowup_bits: int) -> Array:
-    """`x[i] = shift * w(nBitsExt)^i` on the extended coset — pil2 `computeX`."""
+    """`x[i] = shift * w(nBitsExt)^i` on the extended coset — pil2 `computeX`.
+
+    Fixed by the two bit sizes, and the DEEP composition takes it as an
+    argument once per prove (an in-trace coset is #67's NVPTX crash trigger),
+    so it is interned rather than rebuilt: the power series is a scan over the
+    whole extended domain, ~1 ms a prove at recursion shapes."""
     n_ext = 1 << (n_bits + blowup_bits)
     return _SHIFT * powers(_root(n_bits + blowup_bits), n_ext)
 

@@ -20,6 +20,7 @@ from zisk_zorch.harness.pil2 import (
     MODULUS,
     cubic_scalar,
     limbs,
+    pack_publics,
     publics_env,
     values_env,
 )
@@ -62,7 +63,7 @@ def check_global_constraints(
         "custom": {},
         "zi": {},
         "challenges": challenges,
-        "publics": publics_env(publics),
+        "publics": publics_env(pack_publics(publics)),
         "airvalues": {},
         "airgroupvalues": airgroupvalues,
         "proofvalues": values_env(proofvalues, proof_values_map),

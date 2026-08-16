@@ -125,10 +125,29 @@ def values_env(words: np.ndarray, vmap: list) -> dict[int, Array]:
     }
 
 
-def publics_env(words: np.ndarray) -> dict[int, Array]:
-    """The publics section as the interpreter's scalar environment — one
-    base word per public, embedded cubic."""
-    return {i: cubic_scalar([words[i], 0, 0]) for i in range(len(words))}
+def pack_publics(words: np.ndarray) -> Array:
+    """The publics section as ONE `(n_publics,)` cubic device array — the
+    eager half of `publics_env`.
+
+    Each public is a base word embedded cubic, so the whole section packs as
+    an `(n, 3)` limb matrix with two zero limbs and joins in one go. Packing
+    matters because a per-public `cubic_scalar` is a separate host→device hop
+    AND a separate leaf of the environment pytree the stage jits take: ZisK's
+    recursion circuits carry 473 publics and two stages each rebuild the
+    section, ~40 ms of pure dispatch per stage."""
+    w = np.asarray(words, dtype=np.uint64).reshape(-1)
+    limbs = np.zeros((w.size, 3), dtype=np.uint64)
+    limbs[:, 0] = w
+    return join_coeffs(to_field(limbs), F3)
+
+
+def publics_env(packed: Array) -> dict[int, Array]:
+    """`pack_publics`'s array as the interpreter's scalar environment, one
+    entry per public.
+
+    The traced half: call it inside the consuming jit, where each entry is a
+    free slice of the packed array rather than its own device buffer."""
+    return {i: packed[i] for i in range(packed.shape[0])}
 
 
 def device_sections(key: Pil2Key, domain: str) -> tuple[Array, dict[int, Array]]:
@@ -170,14 +189,23 @@ def scalar_env(
 ) -> dict:
     """The SSA interpreter's scalar operand classes, packed once for every
     environment builder — challenges and airgroup values arrive already
-    keyed (they may be squeezed/computed rather than dumped)."""
+    keyed (they may be squeezed/computed rather than dumped).
+
+    The publics ride PACKED (`pack_publics`); `expand_scalars` splits them
+    back into per-public entries inside the environment builder's trace."""
     return {
         "challenges": challenges,
-        "publics": publics_env(publics),
+        "publics": pack_publics(publics),
         "airvalues": values_env(airvalues, starkinfo["airValuesMap"]),
         "airgroupvalues": airgroupvalues,
         "proofvalues": values_env(proofvalues, starkinfo["proofValuesMap"]),
     }
+
+
+def expand_scalars(scalars: dict) -> dict:
+    """`scalar_env`'s packed form as the operand classes the SSA interpreter
+    reads — the traced half, run inside the environment builder's jit."""
+    return {**scalars, "publics": publics_env(scalars["publics"])}
 
 
 def absorb_stage2_airvalues(
