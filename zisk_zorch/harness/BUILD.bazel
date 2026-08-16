@@ -128,6 +128,37 @@ py_test(
     ],
 )
 
+# The recursion zkin builder: every witness input of the aggregation
+# tower from the composite's own artifacts (byte-pinned against the
+# native tower's 66 zkins on block 21740136).
+py_library(
+    name = "zkin",
+    srcs = ["zkin.py"],
+    visibility = ["//zisk_zorch:__pkg__"],
+    deps = [
+        ":block_composite",
+        requirement("numpy"),
+    ],
+)
+
+# ZisK's proof.bin envelope: the bincode varint stream around the flat
+# vadcop-final proof, key-constant trailer carried opaquely.
+py_library(
+    name = "proof_bin",
+    srcs = ["proof_bin.py"],
+    visibility = ["//zisk_zorch:__pkg__"],
+    deps = [requirement("numpy")],
+)
+
+py_test(
+    name = "proof_bin_test",
+    srcs = ["proof_bin_test.py"],
+    deps = [
+        ":proof_bin",
+        requirement("absl_py"),
+    ],
+)
+
 # The block composite: every instance proved in one process from the
 # self-derived seed, with per-instance wire-proof emission. Bundles the
 # contributions phase and the global-constraints binding it orchestrates.
