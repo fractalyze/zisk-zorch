@@ -24,13 +24,13 @@ buildFrameZerofierInv:  https://github.com/0xPolygonHermez/pil2-proofman/blob/v1
 
 from __future__ import annotations
 
-import functools
-
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
 from zk_dtypes import goldilocks as F
 from zorch.poly.univariate import powers
+
+from zisk_zorch.shape_cache import shape_cache
 
 # pil2's coset shift and the 2^32-order generator `Goldilocks::W[32]`, as field
 # scalars (cf. zisk_zorch.evals.lev / zisk_zorch.fri.fold, which share them —
@@ -69,14 +69,17 @@ def _check(n_bits: int, blowup_bits: int) -> None:
         raise ValueError("n_bits + blowup_bits must be in [0, 32]")
 
 
-@functools.cache
+@shape_cache
 def _coset_points(n_bits: int, blowup_bits: int) -> Array:
     """`x[i] = shift * w(nBitsExt)^i` on the extended coset — pil2 `computeX`.
 
     Fixed by the two bit sizes, and the DEEP composition takes it as an
     argument once per prove (an in-trace coset is #67's NVPTX crash trigger),
     so it is interned rather than rebuilt: the power series is a scan over the
-    whole extended domain, ~1 ms a prove at recursion shapes."""
+    whole extended domain, ~1 ms a prove at recursion shapes. `shape_cache`
+    rather than `functools.cache` because the interned array is `n_ext` field
+    elements — 64 MB at `nBitsExt` 23 — which a block run must be able to
+    reclaim at a family boundary."""
     n_ext = 1 << (n_bits + blowup_bits)
     return _SHIFT * powers(_root(n_bits + blowup_bits), n_ext)
 

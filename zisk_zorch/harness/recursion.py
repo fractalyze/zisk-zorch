@@ -30,9 +30,8 @@ from frx import Array
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import extend
+from zisk_zorch.harness.pil2 import MODULUS as P
 from zisk_zorch.harness.pil2 import Pil2Key
-
-P = 0xFFFFFFFF00000001
 
 
 def circuit_base(key: pathlib.Path, gi: dict, ty: str, air_idx: int) -> pathlib.Path:
@@ -64,13 +63,25 @@ def _add_waves(adds: np.ndarray, size_witness: int) -> list[np.ndarray]:
     witness cells and slots settled by waves below it, so a wave evaluates as
     one vectorized batch.
 
-    An add's operands are always earlier slots, so the depth relaxation
-    converges in `max(depth) + 1` passes — five on the recursion circuits.
-    Key-fixed, hence computed once per calculator."""
+    An add's operands are earlier slots (checked below), so the depth
+    relaxation converges in `max(depth) + 1` passes — five on the recursion
+    circuits. Key-fixed, hence computed once per calculator."""
     n = len(adds)
     if not n:
         return []
     dep = adds[:, :2].astype(np.int64) - size_witness
+    # Waves reorder the adds, so they agree with proofman's strictly in-index-
+    # order evaluation only while no add reads a LATER add's slot — that order
+    # would read such a slot as the buffer's initial zero, a wave reads the
+    # computed value. Nothing in the .exec format guarantees it, so the
+    # equivalence is checked rather than assumed (and it is what bounds the
+    # relaxation below).
+    forward = np.flatnonzero((dep >= np.arange(n, dtype=np.int64)[:, None]).any(axis=1))
+    if forward.size:
+        raise AssertionError(
+            f"exec add {int(forward[0])} reads a later add's slot — wave order "
+            "and index order would disagree"
+        )
     level = np.zeros(n, dtype=np.int64)
     for _ in range(n):
         nxt = np.zeros((n, 2), dtype=np.int64)
@@ -81,8 +92,8 @@ def _add_waves(adds: np.ndarray, size_witness: int) -> list[np.ndarray]:
         if np.array_equal(nxt, level):
             break
         level = nxt
-    else:
-        raise AssertionError("exec adds do not form an acyclic chain")
+    else:  # unreachable while the check above holds — the bound is its corollary
+        raise AssertionError("add depths did not settle in n passes")
     return [np.flatnonzero(level == lv) for lv in range(int(level.max()) + 1)]
 
 
@@ -119,6 +130,7 @@ class CircomCalc:
         self.smap_flat = exec_words[2 + self.n_adds * 4 :].astype(np.int64)
         self._add_waves = _add_waves(self.adds, self.size_witness)
         self._smap_dev: Array | None = None
+        self._smap_cols: int | None = None
 
     def witness(self, zkin: np.ndarray) -> np.ndarray:
         buf = np.zeros(self.size_witness + self.n_adds, dtype=np.uint64)
@@ -184,11 +196,15 @@ class CircomCalc:
         uploads the larger of the two. Moving it behind the upload sends the
         witness instead and leaves the trace where the commit wants it. The
         sMap is key-fixed, so it is uploaded once per calculator no matter
-        how many instances the circuit proves."""
-        if self._smap_dev is None:
+        how many instances the circuit proves. `n_cols` is the reshape's own
+        parameter, so the upload is keyed on it — `committed_pols` re-derives
+        the reshape per call, and the two must not disagree on the same
+        inputs."""
+        if self._smap_cols != n_cols:
             self._smap_dev = fnp.asarray(
                 self.smap_flat.reshape(self.n_smap, n_cols).astype(np.int32)
             )
+            self._smap_cols = n_cols
         rows = _gather_rows(fnp.array(self._settled(w).view(F)), self._smap_dev)
         if n == self.n_smap:
             return rows

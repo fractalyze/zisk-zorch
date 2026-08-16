@@ -39,6 +39,8 @@ from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zorch.poly.univariate import powers
 
+from zisk_zorch.shape_cache import shape_cache
+
 # The LDE coset generator and pil2's 2^32-order generator `Goldilocks::W[32]`
 # (cf. zisk_zorch.fri.fold, which folds on the same root).
 _COSET_SHIFT = 7
@@ -94,11 +96,15 @@ def lev_constants(opening_points: list[int], n_bits: int) -> LevConstants:
 
     Interned per `(opening_points, n_bits)` — the pack is shape-static (only
     `xi` is per-prove) and `wj_inv` is a power series over the whole base
-    domain, so rebuilding it each prove costs milliseconds for a constant."""
+    domain, so rebuilding it each prove costs milliseconds for a constant.
+
+    `shape_cache` rather than `functools.cache`: `wj_inv` spans the whole base
+    domain (32 MB at `nBits` 22), so a block run has to be able to reclaim it
+    at a family boundary rather than hold one per shape it has ever proved."""
     return _lev_constants(tuple(opening_points), n_bits)
 
 
-@functools.cache
+@shape_cache
 def _lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants:
     n = 1 << n_bits
     w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
@@ -150,6 +156,10 @@ def compute_lev(
     return fnp.stack(cols, axis=1)
 
 
+# Plain `functools.cache`, not `shape_cache`: what this retains is a compiled
+# executable, not a device buffer. It rides the same lifetime as a prover's own
+# zones (the block harness drops whole provers at a family boundary), and
+# dropping it on the buffer-release path would only buy a recompile.
 @functools.cache
 def _lev_zone(opening_points: tuple[int, ...], n_bits: int):
     pts = list(opening_points)

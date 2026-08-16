@@ -74,6 +74,26 @@ py_library(
     deps = [requirement("frx")],
 )
 
+# Shape-keyed device-array interning that a block run can release. Stdlib only,
+# and below every stage that interns through it.
+py_library(
+    name = "shape_cache",
+    srcs = ["shape_cache.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "shape_cache_test",
+    size = "small",
+    srcs = ["shape_cache_test.py"],
+    deps = [
+        ":shape_cache",
+        "//zisk_zorch/evals:lev",
+        "//zisk_zorch/quotient",
+        requirement("absl_py"),
+    ],
+)
+
 py_library(
     name = "prover",
     srcs = ["prover.py"],
