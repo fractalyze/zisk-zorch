@@ -23,11 +23,19 @@ _MARKER = {0xFB: 2, 0xFC: 4, 0xFD: 8, 0xFE: 16}
 
 
 def _decode_varint(buf: bytes, pos: int) -> tuple[int, int]:
+    if pos >= len(buf):
+        raise ValueError(f"truncated varint at offset {pos}")
     b = buf[pos]
     pos += 1
     if b <= 250:
         return b, pos
+    if b not in _MARKER:
+        raise ValueError(f"unknown varint marker {b:#04x} at offset {pos - 1}")
     n = _MARKER[b]
+    # int.from_bytes accepts a short slice, so an unchecked read past the
+    # end decodes to a plausible but wrong word instead of failing.
+    if pos + n > len(buf):
+        raise ValueError(f"truncated {n}-byte varint at offset {pos}")
     return int.from_bytes(buf[pos : pos + n], "little"), pos + n
 
 
@@ -43,9 +51,15 @@ def _encode_varint(v: int) -> bytes:
 
 def decode(buf: bytes) -> tuple[np.ndarray, bytes]:
     """`proof.bin` bytes -> (flat proof words, the constant trailer)."""
+    if not buf:
+        raise ValueError("empty buffer")
     if buf[0] != 0:
         raise ValueError(f"unexpected lead byte {buf[0]:#04x}")
     count, pos = _decode_varint(buf, 1)
+    # Every word costs at least one byte, so a count past the remaining
+    # length is a corrupt header — reject it before allocating for it.
+    if count > len(buf) - pos:
+        raise ValueError(f"proof count {count} exceeds {len(buf) - pos} bytes left")
     words = np.empty(count, dtype=np.uint64)
     for i in range(count):
         words[i], pos = _decode_varint(buf, pos)
