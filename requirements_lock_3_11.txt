@@ -119,29 +119,29 @@ blake3==1.0.9 \
     --hash=sha256:f9d8b6c6af52a8ff499debf5fd15d7395e0ed837ec2a80fd828b4c6b970de3ed \
     --hash=sha256:fe3c59f8a7b5460fd374b264559c5da7af0a33657a9eca95fff6d843f02cde9e
     # via hash-frx
-frx==0.10.1.dev20260811100738 \
-    --hash=sha256:0ef423158dec55247f5e08ba08c5012bfc4a2c7fb5ae1b1381ee34e6d6675a80
+frx==0.10.2.dev20260813110121 \
+    --hash=sha256:936016e093e3dc1eea32e83aa780f2c769c732ecf8d86040d7071c295b00c054
     # via
     #   -r requirements.in
     #   hash-frx
     #   pyzorch
     #   rw-constraints
-frx-cuda12-pjrt==0.10.1.dev20260811100738 \
-    --hash=sha256:e76eb38181efbcf96fac1426ca6c99ba19b8f5c10d111e7970cf6863fc9c5b47
+frx-cuda12-pjrt==0.10.2.dev20260813110121 \
+    --hash=sha256:21a8d3de71ce97aa9429d73fa0a2aa413b2bdaea911b590cd5f0124b2b714450
     # via
     #   -r requirements.in
     #   frx-cuda12-plugin
-frx-cuda12-plugin==0.10.1.dev20260811100738 \
-    --hash=sha256:532fdb4e5a7c6fe64afef6b8ba319e490e4bf225da417eae2221b53b407c815c
+frx-cuda12-plugin==0.10.2.dev20260813110121 \
+    --hash=sha256:0fcb4729ba451c41259bc40e6446c08a293c0aa2e15243d79138dcd4d2dfd06a
     # via -r requirements.in
-frxlib==0.10.1.dev20260811100738 \
-    --hash=sha256:745d4ccae5d4c3011976897de04c1437fc7835ed53b04e86307f924f20884d5a
+frxlib==0.10.2.dev20260813110121 \
+    --hash=sha256:36cd8adb9c30019fb12ab88aa4e75dd2fb03912820a649e98eabc56fe8f5ce5d
     # via
     #   -r requirements.in
     #   frx
     #   rw-constraints
-hash-frx==0.1.0.dev20260812010420 \
-    --hash=sha256:c08e088dd42d4f5373e8e66669e26360617b1cce08dd0d77e36085a06d4e599c
+hash-frx==0.2.0.dev20260817003244 \
+    --hash=sha256:0fa136420a6b26a44c98f744b3420523f8e4e6ffe9f1c83d201a14eb76702968
     # via
     #   -r requirements.in
     #   pyzorch
@@ -276,11 +276,11 @@ opt-einsum==3.4.0 \
     --hash=sha256:69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd \
     --hash=sha256:96ca72f1b886d148241348783498194c577fa30a8faac108586b14f1ba4473ac
     # via frx
-pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260811204608/pyzorch-0.1.0.dev20260811204608-py3-none-any.whl \
-    --hash=sha256:b4e3838ac8f1600d1d1f4df0ff415329f4425cbd507037d0dae71303de369b94
+pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260812101713/pyzorch-0.1.0.dev20260812101713-py3-none-any.whl \
+    --hash=sha256:85077228557bd67ac11c69d72851842a028ecd2b6490221b0ea6ff8c032ea112
     # via -r requirements.in
-rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260804022415/rw_constraints-0.1.0.dev20260804022415-py3-none-any.whl \
-    --hash=sha256:4b12f32561755d0c5d791e520ac059845e9fbf5d54c95517a70d94e438bb3216
+rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260809224945/rw_constraints-0.1.0.dev20260809224945-py3-none-any.whl \
+    --hash=sha256:6104fff18a1b840d0ee278311715764464da8831d301efde76b8df59ad01c66f
     # via -r requirements.in
 scipy==1.17.1 \
     --hash=sha256:010f4333c96c9bb1a4516269e33cb5917b08ef2166d5556ca2fd9f082a9e6ea0 \

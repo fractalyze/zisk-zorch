@@ -8,15 +8,15 @@ numpy
 # pyzorch is zorch's PyPI distribution name (the import package stays `zorch`).
 # Direct wheel URL: the index rebuild has no /simple/pyzorch/ page yet; the
 # release asset remains.
-pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260811204608/pyzorch-0.1.0.dev20260811204608-py3-none-any.whl
-frx==0.10.1.dev20260811100738
+pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260812101713/pyzorch-0.1.0.dev20260812101713-py3-none-any.whl
+frx==0.10.2.dev20260813110121
 zk-dtypes==0.0.10
-hash-frx==0.1.0.dev20260812010420
-frxlib==0.10.1.dev20260811100738
-frx-cuda12-plugin==0.10.1.dev20260811100738
-frx-cuda12-pjrt==0.10.1.dev20260811100738
+frxlib==0.10.2.dev20260813110121
+frx-cuda12-plugin==0.10.2.dev20260813110121
+frx-cuda12-pjrt==0.10.2.dev20260813110121
+hash-frx==0.2.0.dev20260817003244
 
-rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260804022415/rw_constraints-0.1.0.dev20260804022415-py3-none-any.whl
+rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260809224945/rw_constraints-0.1.0.dev20260809224945-py3-none-any.whl
 
 # zkbench — the JaxBenchmark harness behind zisk_zorch/bench_inner_proof.py
 # (warm-GPU inner-proof microbench, zisk-zorch#30). Direct wheel URL: the pypi

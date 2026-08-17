@@ -109,11 +109,22 @@ def _chip_eval_fn(chip_name: str) -> tuple[Callable, int, int]:
     from zisk_zorch.constraints.chip_loader import load_zisk_chips
 
     chip = load_zisk_chips(chip_names=[chip_name])[chip_name]
+    # ZisK's public-values vector width (`pilout.globalInfo.json` nPublics)
+    # — the exported pv-taking fns index below it.
+    zisk_n_publics = 68
     # Constraint fns evaluate the combined [prep | main] row, so the bench
     # trace is num_cols wide (the prefix folds like any other column).
     n_cols = chip.num_cols
-    k = int(chip.eval_constraints(fnp.zeros((2, n_cols), F)).shape[-1])
-    return (lambda t: chip.eval_constraints(t)), n_cols, k
+    # main's rw#2342-lineage constraints take the block's public values; the
+    # bench folds constraint structure, not boundary truth, so an all-zero
+    # vector of ZisK's pilout width (nPublics) is the right stub.
+    pv = fnp.zeros((zisk_n_publics,), F) if chip.has_pv else None
+
+    def eval_fn(t):
+        return chip.eval_constraints(t, pv)
+
+    k = int(eval_fn(fnp.zeros((2, n_cols), F)).shape[-1])
+    return eval_fn, n_cols, k
 
 
 def _fold_steps(n_bits_ext: int, fold_bits: int, final_bits: int) -> list[int]:

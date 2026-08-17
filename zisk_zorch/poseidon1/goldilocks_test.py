@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 
+import frx
 import frx.numpy as fnp
 from absl.testing import absltest
 
@@ -37,13 +38,17 @@ class GoldilocksPoseidon1Test(absltest.TestCase):
                 )
         self.assertCountEqual(widths_seen, WIDTHS)
 
-    def test_generic_fused_region_routing(self) -> None:
-        # No dedicated zorch.poseidon1 emitter: the dense full-field matrices ride
-        # as closed-over field arrays (an int64 literal would overflow), so every
-        # width stays on the generic fused region.
+    def test_dedicated_fused_region_routing(self) -> None:
+        # On a backend with the emitter, every width must route onto the
+        # dedicated sparse-Poseidon marker: falling back silently forfeits the
+        # fused Poseidon1 kernel the commit path is sized around. Off it, the
+        # fallback is the correct answer and not a forfeit — routing a whole
+        # permutation composite at a backend that can only inline it costs
+        # minutes of compile (hash-frx#154), so both arms are pinned here.
+        want = frx.default_backend() == "gpu"
         for width in WIDTHS:
-            self.assertFalse(
-                goldilocks_perm(width).has_dedicated_fusion, msg=f"width {width}"
+            self.assertEqual(
+                goldilocks_perm(width).has_dedicated_fusion, want, msg=f"width {width}"
             )
 
 
