@@ -40,6 +40,12 @@ DEFAULT_HASH_FAMILY = "Poseidon2"
 # A transcript digest is the flushed state's first four elements — pil2's
 # `HASH_SIZE`, independent of the transcript width.
 DIGEST = 4
+# The sponge width, `DIGEST * transcriptArity`. Unlike `merkleTreeArity`,
+# pil2's setup gives `transcriptArity` the constant 4 with no per-key override
+# on the Goldilocks path, so this is a fixed 16 rather than something a key
+# selects (every installed ZisK v1.0.0-alpha key declares 4):
+# https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/setup/pil2-stark/src/types/stark_struct.rs#L144-L155
+WIDTH = 16
 
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
 CHALLENGE_LIMBS = 3
@@ -60,10 +66,22 @@ def _canonical(values: Array) -> np.ndarray:
 
 
 class Transcript:
-    """pil2 transcript over the width-`4*transcript_arity` sponge of the
-    key's hash family."""
+    """pil2 transcript over the width-`WIDTH` sponge of the key's hash family.
 
-    def __init__(self, width: int = 12, hash_family: str = DEFAULT_HASH_FAMILY) -> None:
+    `width` is the key's declared `DIGEST * transcriptArity`; only `WIDTH` is
+    accepted (see its definition), so a key declaring anything else fails here
+    rather than sponging at a width no golden pins.
+    """
+
+    def __init__(
+        self, width: int = WIDTH, hash_family: str = DEFAULT_HASH_FAMILY
+    ) -> None:
+        # Guarded here rather than left to the permutation's own width check:
+        # the permutations also carry widths 4 and 8 (compression, grinding),
+        # so a width-4 transcript would build a rate-0 sponge that never
+        # flushes instead of failing.
+        if width != WIDTH:
+            raise ValueError(f"width must be {WIDTH}, got {width}")
         if hash_family not in _HASH_FAMILY_PERMS:
             raise ValueError(
                 f"hash_family must be one of {sorted(_HASH_FAMILY_PERMS)}, got "
@@ -147,7 +165,7 @@ def _linear_hash_jit(n_blocks: int, width: int, hash_family: str):
 
 
 def transcript_hash(
-    values: Array, width: int = 12, hash_family: str = DEFAULT_HASH_FAMILY
+    values: Array, width: int = WIDTH, hash_family: str = DEFAULT_HASH_FAMILY
 ) -> Array:
     """pil2 ``calculateHash``: a fresh transcript absorbs the buffer and its
     flushed state's first four elements are the digest.
@@ -158,11 +176,13 @@ def transcript_hash(
     transcript legs when launched eagerly. The block discipline is the
     eager path's exactly: `ceil(n / rate)` permutes, zero-padded tail,
     running state's first four lanes in the last input slots."""
+    if width != WIDTH:
+        raise ValueError(f"width must be {WIDTH}, got {width}")
     values = fnp.asarray(values)
     n = values.shape[0]
     if n == 0:
         return fnp.zeros((DIGEST,), F)
-    rate = width - 4
+    rate = width - DIGEST
     pad = -n % rate
     if pad:
         values = fnp.concatenate([values, fnp.zeros((pad,), values.dtype)])

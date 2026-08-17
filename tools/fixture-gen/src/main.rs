@@ -10,9 +10,9 @@
 
 use fields::{
     intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon1_hash, poseidon2_hash, verify_fold,
-    verify_mt, CubicExtensionField, Field, Goldilocks, Hash, Poseidon1Constants, Poseidon1_12,
-    Poseidon1_16, Poseidon1_8, PrimeField64, Poseidon2_12, Poseidon2_16, Poseidon2Constants,
-    Poseidon2_4, Poseidon2_8, Transcript,
+    verify_mt, CubicExtensionField, Field, Goldilocks, Hash, Poseidon1Constants, Poseidon1_16,
+    Poseidon1_8, PrimeField64, Poseidon2_16, Poseidon2Constants, Poseidon2_4, Poseidon2_8,
+    Transcript,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -20,6 +20,11 @@ use std::fs;
 use std::path::Path;
 
 const GOLDILOCKS_P: u128 = 0xFFFF_FFFF_0000_0001;
+
+/// The one merkle arity these fixtures pin (node width 16), matching
+/// `zisk_zorch/commit/trace_commit.py`, which explains why it is the only one
+/// modelled and holds the pil2 permalinks.
+const ARITY: u64 = 4;
 
 fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -167,9 +172,8 @@ fn linear_hash_cases<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize
 
 // Bound is `Hash` only (not `Poseidon2Constants`): `linear_hash_seq` /
 // `partial_merkle_tree` are hash-family-generic, so this serves both Poseidon2
-// and Poseidon1 leaf/node widths. `W` is retained so call sites read
-// `::<8, Poseidon2_8>` / `::<8, Poseidon1_8>` uniformly.
-fn merkle_root<const W: usize, C: Hash<Goldilocks>>(
+// and Poseidon1 node hashes.
+fn merkle_root<C: Hash<Goldilocks>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
 ) -> [Goldilocks; 4] {
@@ -185,28 +189,21 @@ fn merkle_cases(seed: u64) -> Value {
     // Leaf counts include non-multiples of the arity at intermediate levels
     // (e.g. 2^5 with arity 4 hits the per-level zero-padding path at the top).
     let heights = [1u64, 2, 4, 6, 8, 32, 64];
-    let n_cols = 9u64; // > one rate block for width 8 — exercises leaf chaining
+    let n_cols = 13u64; // > one rate block (12 at width 16) — exercises leaf chaining
     let mut out = Vec::new();
-    for &arity in &[2u64, 3, 4] {
-        let mut state = seed ^ arity;
-        for &height in &heights {
-            let rows: Vec<Vec<Goldilocks>> =
-                (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
-            let root = match arity {
-                2 => merkle_root::<8, Poseidon2_8>(&rows, arity),
-                3 => merkle_root::<12, Poseidon2_12>(&rows, arity),
-                4 => merkle_root::<16, Poseidon2_16>(&rows, arity),
-                _ => unreachable!(),
-            };
-            let flat: Vec<String> = rows.iter().flat_map(|r| ser(r)).collect();
-            out.push(json!({
-                "arity": arity,
-                "height": height,
-                "n_cols": n_cols,
-                "rows": flat,
-                "root": ser(&root),
-            }));
-        }
+    let mut state = seed;
+    for &height in &heights {
+        let rows: Vec<Vec<Goldilocks>> =
+            (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
+        let root = merkle_root::<Poseidon2_16>(&rows, ARITY);
+        let flat: Vec<String> = rows.iter().flat_map(|r| ser(r)).collect();
+        out.push(json!({
+            "arity": ARITY,
+            "height": height,
+            "n_cols": n_cols,
+            "rows": flat,
+            "root": ser(&root),
+        }));
     }
     json!({"cases": out})
 }
@@ -322,23 +319,16 @@ fn merkle_proof_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>
 
 fn merkle_proof_cases(seed: u64) -> Value {
     // Heights hit every proof regime: 1 (empty path), 2 (single level), 6/8
-    // (leaf-level padding for arity 4 / 3), 32 (interior padding: arity 4
-    // leaves a 2-node top level). Indices probe both group boundaries.
+    // (leaf-level padding), 32 (interior padding: arity 4 leaves a 2-node top
+    // level). Indices probe both group boundaries.
     let heights = [1u64, 2, 6, 8, 32];
-    let n_cols = 9u64; // > one rate block for width 8 — exercises leaf chaining
+    let n_cols = 13u64; // > one rate block (12 at width 16) — see merkle_cases
     let mut out = Vec::new();
-    for &arity in &[2u64, 3, 4] {
-        let mut state = seed ^ arity;
-        for &height in &heights {
-            let rows: Vec<Vec<Goldilocks>> =
-                (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
-            out.push(match arity {
-                2 => merkle_proof_case::<8, Poseidon2_8>(&rows, arity),
-                3 => merkle_proof_case::<12, Poseidon2_12>(&rows, arity),
-                4 => merkle_proof_case::<16, Poseidon2_16>(&rows, arity),
-                _ => unreachable!(),
-            });
-        }
+    let mut state = seed;
+    for &height in &heights {
+        let rows: Vec<Vec<Goldilocks>> =
+            (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
+        out.push(merkle_proof_case::<16, Poseidon2_16>(&rows, ARITY));
     }
     json!({"cases": out})
 }
@@ -620,15 +610,10 @@ enum HashFamily {
     Poseidon1,
 }
 
-fn stage1_merkle_root(rows: &[Vec<Goldilocks>], arity: u64, family: HashFamily) -> [Goldilocks; 4] {
-    match (family, arity) {
-        (HashFamily::Poseidon2, 2) => merkle_root::<8, Poseidon2_8>(rows, arity),
-        (HashFamily::Poseidon2, 3) => merkle_root::<12, Poseidon2_12>(rows, arity),
-        (HashFamily::Poseidon2, 4) => merkle_root::<16, Poseidon2_16>(rows, arity),
-        (HashFamily::Poseidon1, 2) => merkle_root::<8, Poseidon1_8>(rows, arity),
-        (HashFamily::Poseidon1, 3) => merkle_root::<12, Poseidon1_12>(rows, arity),
-        (HashFamily::Poseidon1, 4) => merkle_root::<16, Poseidon1_16>(rows, arity),
-        _ => unreachable!(),
+fn stage1_merkle_root(rows: &[Vec<Goldilocks>], family: HashFamily) -> [Goldilocks; 4] {
+    match family {
+        HashFamily::Poseidon2 => merkle_root::<Poseidon2_16>(rows, ARITY),
+        HashFamily::Poseidon1 => merkle_root::<Poseidon1_16>(rows, ARITY),
     }
 }
 
@@ -636,7 +621,6 @@ fn stage1_case(
     n_bits: usize,
     blowup_bits: usize,
     n_cols: usize,
-    arity: u64,
     family: HashFamily,
     seed: u64,
 ) -> Value {
@@ -650,9 +634,9 @@ fn stage1_case(
     let n_ext = 1usize << (n_bits + blowup_bits);
     let rows: Vec<Vec<Goldilocks>> =
         (0..n_ext).map(|r| extended[r * n_cols..(r + 1) * n_cols].to_vec()).collect();
-    let root = stage1_merkle_root(&rows, arity, family);
+    let root = stage1_merkle_root(&rows, family);
     json!({
-        "arity": arity,
+        "arity": ARITY,
         "lde": lde,
         "root": ser(&root),
     })
@@ -745,13 +729,8 @@ fn fri_transpose(pol: &[Goldilocks], current_bits: u64, next_bits: u64) -> Vec<V
 /// Self-checked: each layer root equals `partial_merkle_tree` and every opening
 /// passes `verify_mt`.
 /// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L236-L283
-fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
-    n_bits_ext: u64,
-    steps: &[u64],
-    arity: u64,
-    queries: &[u64],
-    seed: u64,
-) -> Value {
+fn fri_prove(n_bits_ext: u64, steps: &[u64], queries: &[u64], seed: u64) -> Value {
+    let arity = ARITY;
     let n_steps = steps.len();
     assert_eq!(steps[0], n_bits_ext, "steps[0] must be nBitsExt");
 
@@ -759,9 +738,9 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
     let mut pol: Vec<Goldilocks> = (0..(1usize << n_bits_ext) * 3).map(|_| rand_fe(&mut state)).collect();
     let init_pol = pol.clone();
 
-    // The transcript width follows transcriptArity = 3 (width 12); the merkle
-    // tree arity is independent. A fixed absorb seeds it deterministically.
-    let mut t = Transcript::<Goldilocks, Poseidon2_12>::new();
+    // Width 16 = pil2's fixed transcriptArity 4 (`transcript.WIDTH`); the
+    // merkle arity is independent. A fixed absorb seeds it deterministically.
+    let mut t = Transcript::<Goldilocks, Poseidon2_16>::new();
     let seed_absorb: Vec<Goldilocks> = (0..4).map(|_| rand_fe(&mut state)).collect();
     t.put(&seed_absorb);
 
@@ -780,10 +759,10 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
         if step < n_steps - 1 {
             let next_bits = steps[step + 1];
             let rows = fri_transpose(&pol, current_bits, next_bits);
-            let levels = build_levels::<W, C>(&rows, arity);
+            let levels = build_levels::<16, Poseidon2_16>(&rows, arity);
             let root = levels.last().unwrap()[..4].to_vec();
             let height = rows.len() as u64;
-            let ref_root = partial_merkle_tree::<Goldilocks, C>(
+            let ref_root = partial_merkle_tree::<Goldilocks, Poseidon2_16>(
                 &levels[0][..(height * 4) as usize],
                 height,
                 arity,
@@ -808,7 +787,7 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
             let li = q % (1u64 << layer_leaf_bits[s]);
             let mp = build_mp(&layer_levels[s], li, arity);
             assert!(
-                verify_mt::<Goldilocks, C, C>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
+                verify_mt::<Goldilocks, Poseidon2_16, Poseidon2_16>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
                 "FRI layer {s} opening rejected (query {q}, index {li})"
             );
             let proof = group_proof(&layer_rows[s][li as usize], &mp);
@@ -827,16 +806,6 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
         "final_pol": ser(&final_pol),
         "queries": query_json,
     })
-}
-
-/// Dispatch the FRI prover golden on the merkle tree arity (2/3/4 -> width 8/12/16).
-fn fri_prove(n_bits_ext: u64, steps: &[u64], arity: u64, queries: &[u64], seed: u64) -> Value {
-    match arity {
-        2 => fri_prove_case::<8, Poseidon2_8>(n_bits_ext, steps, arity, queries, seed),
-        3 => fri_prove_case::<12, Poseidon2_12>(n_bits_ext, steps, arity, queries, seed),
-        4 => fri_prove_case::<16, Poseidon2_16>(n_bits_ext, steps, arity, queries, seed),
-        _ => unreachable!(),
-    }
 }
 
 /// pil2-stark's terminal FRI low-degree test (`stark_verify.hpp` L672-L691): INTT
@@ -1264,23 +1233,23 @@ fn main() {
         "zisk_zorch/poseidon2/testdata/golden/permutation.json",
         json!({
             "widths": [
+                // 4 = compression, 8 = grinding, 16 = merkle leaf/node and
+                // transcript; width 12 (arity 3's node) is nothing ZisK runs.
                 permutation_cases::<Poseidon2_4, 4>(0xA0),
                 permutation_cases::<Poseidon2_8, 8>(0xA1),
-                permutation_cases::<Poseidon2_12, 12>(0xA2),
                 permutation_cases::<Poseidon2_16, 16>(0xA3),
             ]
         }),
     );
     // Poseidon1 (Hades / circom optimized-sparse) — the family native ZisK
     // commits with by default (the installed proving key sets no `hash`, so
-    // pil2's DEFAULT_HASH_ID = "Poseidon1" wins). Widths 8/12/16 only; there is
-    // no width-4 Poseidon1 leaf/node in the merkle layouts.
+    // pil2's DEFAULT_HASH_ID = "Poseidon1" wins). Width 16 (merkle leaf/node,
+    // transcript) and 8 (grinding); there is no width-4 Poseidon1.
     write(
         "zisk_zorch/poseidon1/testdata/golden/permutation.json",
         json!({
             "widths": [
                 poseidon1_permutation_cases::<Poseidon1_8, 8>(0xA4),
-                poseidon1_permutation_cases::<Poseidon1_12, 12>(0xA5),
                 poseidon1_permutation_cases::<Poseidon1_16, 16>(0xA6),
             ]
         }),
@@ -1289,8 +1258,6 @@ fn main() {
         "zisk_zorch/commit/testdata/golden/linear_hash.json",
         json!({
             "widths": [
-                linear_hash_cases::<Poseidon2_8, 8>(0xB1),
-                linear_hash_cases::<Poseidon2_12, 12>(0xB2),
                 linear_hash_cases::<Poseidon2_16, 16>(0xB3),
             ]
         }),
@@ -1301,11 +1268,8 @@ fn main() {
         "zisk_zorch/transcript/testdata/golden/transcript.json",
         json!({
             "widths": [
-                transcript_case::<Poseidon2_8, 8>(0xD1, "Poseidon2"),
-                transcript_case::<Poseidon2_12, 12>(0xD2, "Poseidon2"),
+                // Width 16 only — `transcript.WIDTH`.
                 transcript_case::<Poseidon2_16, 16>(0xD3, "Poseidon2"),
-                transcript_case::<Poseidon1_8, 8>(0xD4, "Poseidon1"),
-                transcript_case::<Poseidon1_12, 12>(0xD5, "Poseidon1"),
                 transcript_case::<Poseidon1_16, 16>(0xD6, "Poseidon1"),
             ]
         }),
@@ -1359,10 +1323,8 @@ fn main() {
         "zisk_zorch/commit/testdata/golden/stage1_commit.json",
         json!({
             "cases": [
-                stage1_case(3, 2, 5, 2, HashFamily::Poseidon2, 0xF1),
-                stage1_case(3, 2, 5, 3, HashFamily::Poseidon2, 0xF2),
-                stage1_case(3, 2, 5, 4, HashFamily::Poseidon2, 0xF3),
-                stage1_case(5, 1, 9, 4, HashFamily::Poseidon2, 0xF4),
+                stage1_case(3, 2, 5, HashFamily::Poseidon2, 0xF3),
+                stage1_case(5, 1, 9, HashFamily::Poseidon2, 0xF4),
             ]
         }),
     );
@@ -1374,7 +1336,6 @@ fn main() {
         json!({
             "widths": [
                 poseidon1_constants::<Poseidon1_8, 8>(),
-                poseidon1_constants::<Poseidon1_12, 12>(),
                 poseidon1_constants::<Poseidon1_16, 16>(),
             ]
         }),
@@ -1383,8 +1344,6 @@ fn main() {
         "zisk_zorch/commit/testdata/golden/poseidon1_linear_hash.json",
         json!({
             "widths": [
-                poseidon1_linear_hash_cases::<Poseidon1_8, 8>(0xB4),
-                poseidon1_linear_hash_cases::<Poseidon1_12, 12>(0xB5),
                 poseidon1_linear_hash_cases::<Poseidon1_16, 16>(0xB6),
             ]
         }),
@@ -1393,10 +1352,8 @@ fn main() {
         "zisk_zorch/commit/testdata/golden/poseidon1_stage1_commit.json",
         json!({
             "cases": [
-                stage1_case(3, 2, 5, 2, HashFamily::Poseidon1, 0xF5),
-                stage1_case(3, 2, 5, 3, HashFamily::Poseidon1, 0xF6),
-                stage1_case(3, 2, 5, 4, HashFamily::Poseidon1, 0xF7),
-                stage1_case(5, 1, 9, 4, HashFamily::Poseidon1, 0xF8),
+                stage1_case(3, 2, 5, HashFamily::Poseidon1, 0xF7),
+                stage1_case(5, 1, 9, HashFamily::Poseidon1, 0xF8),
             ]
         }),
     );
@@ -1422,24 +1379,25 @@ fn main() {
         "zisk_zorch/fri/testdata/golden/fri_prove.json",
         json!({
             "cases": [
-                // Two FRI trees, arity 4: heights 8 (irregular arity-4 padding)
-                // and 2; each fold nX = 4; final pol of 2 cubic elements.
-                fri_prove(5, &[5, 3, 1], 4, &[0, 3, 17, 31], 0x201),
-                // Single FRI tree, arity 2 (historical single-sibling path):
-                // one fold 2^4 -> 2^2, leaf row 4 cubic = 3 linear-hash blocks.
-                fri_prove(4, &[4, 2], 2, &[0, 1, 9, 15], 0x202),
-                // Three-layer chain, arity 3: 6 -> 4 -> 2 -> 0, two trees plus a
-                // length-1 final pol; query indices probe group boundaries.
-                fri_prove(6, &[6, 4, 2, 0], 3, &[0, 5, 40, 63], 0x203),
-                // Production fold factor 8 (uniform drop 3), arity 4: 6 -> 3 -> 0.
-                // The real ZisK FRI schedules fold by 8 (recursive2 [20,17,14,
-                // 11,8,5], vadcop_final_compressed [19,16,13,10]); the cases above
+                // Every case runs at ARITY; what varies is the fold schedule.
+                //
+                // Two FRI trees: heights 8 (irregular padding) and 2; each fold
+                // nX = 4; final pol of 2 cubic elements.
+                fri_prove(5, &[5, 3, 1], &[0, 3, 17, 31], 0x201),
+                // Single FRI tree: one fold 2^4 -> 2^2.
+                fri_prove(4, &[4, 2], &[0, 1, 9, 15], 0x202),
+                // Three-layer chain 6 -> 4 -> 2 -> 0: two trees plus a length-1
+                // final pol; query indices probe group boundaries.
+                fri_prove(6, &[6, 4, 2, 0], &[0, 5, 40, 63], 0x203),
+                // Production fold factor 8 (uniform drop 3): 6 -> 3 -> 0. The
+                // real ZisK FRI schedules fold by 8 (recursive2 [20,17,14,11,8,
+                // 5], vadcop_final_compressed [19,16,13,10]); the cases above
                 // only fold by 4 (drop 2), a factor no ZisK config uses.
-                fri_prove(6, &[6, 3, 0], 4, &[0, 7, 33, 63], 0x204),
-                // Production fold factor 16 (uniform drop 4), arity 2: 8 -> 4 -> 0.
+                fri_prove(6, &[6, 3, 0], &[0, 7, 33, 63], 0x204),
+                // Production fold factor 16 (uniform drop 4): 8 -> 4 -> 0.
                 // Matches vadcop_final [21,17,13,9,5]; nX = 16 cubic per group is
                 // the widest fold-group regroup the chain commits.
-                fri_prove(8, &[8, 4, 0], 2, &[0, 15, 100, 255], 0x205),
+                fri_prove(8, &[8, 4, 0], &[0, 15, 100, 255], 0x205),
             ]
         }),
     );
@@ -1461,13 +1419,15 @@ fn main() {
         "zisk_zorch/fri/testdata/golden/query_sample.json",
         json!({
             "cases": [
-                // arity 3 (width 12): 2-element final pol, 4 queries over nBitsExt 5.
-                query_sample_case::<Poseidon2_12, 12>(1, 4, 5, 0x4142, 0x401),
-                // arity 2 (width 8): length-1 final pol, queries straddle the
-                // 63-bit element boundary (8 * 4 bits is small, but exercises width 8).
-                query_sample_case::<Poseidon2_8, 8>(0, 6, 4, 0x9, 0x402),
-                // arity 4 (width 16): 4-element final pol, wide nBitsExt 6,
-                // 8 queries force a second squeezed element in getPermutations.
+                // All at the transcript's only width (16); what varies is the
+                // final-pol length, the query count and nBitsExt.
+                //
+                // 2-element final pol, 4 queries over nBitsExt 5.
+                query_sample_case::<Poseidon2_16, 16>(1, 4, 5, 0x4142, 0x401),
+                // Length-1 final pol; queries straddle the 63-bit element boundary.
+                query_sample_case::<Poseidon2_16, 16>(0, 6, 4, 0x9, 0x402),
+                // 4-element final pol, wide nBitsExt 6, and 8 queries force a
+                // second squeezed element in getPermutations.
                 query_sample_case::<Poseidon2_16, 16>(2, 8, 6, 0xABCDEF, 0x403),
             ]
         }),

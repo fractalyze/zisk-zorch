@@ -6,7 +6,9 @@ own slot skipped — mp slot j holds group position j + (j >= pos). zorch's
 `MerkleTree.open` packs `Opening.path` in exactly that order, so serializing is
 flatten-and-concatenate with no re-ordering (pinned by the merkle_proof golden);
 the only shape glue is arity 2, where zorch keeps its historical single-sibling
-`(digest_elems,)` path entries.
+`(digest_elems,)` path entries. That branch is unreachable from this repo —
+`trace_commit.merkle_tree` builds arity 4 only — and stays because `MerkleTree`
+is zorch's general type, whose arity-2 contract is not ZisK's to narrow.
 
 https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/merkleTree/merkleTreeGL.cpp#L145-L175
 """

@@ -169,7 +169,7 @@ class FriVerifierTest(absltest.TestCase):
         seed = u64(["1", "2", "3", "4"])
 
         fri_pol = _low_degree_codeword(n_bits, n_bits_ext, seed=0xF2)
-        transcript = Transcript(12, "Poseidon1")
+        transcript = Transcript(hash_family="Poseidon1")
         transcript.put(seed)
         proof, layers = prove(
             fri_pol,
@@ -187,7 +187,7 @@ class FriVerifierTest(absltest.TestCase):
         )
         openings = prove_queries(layers, indices)
 
-        t = Transcript(12, "Poseidon1")
+        t = Transcript(hash_family="Poseidon1")
         t.put(seed)
         self.assertTrue(
             verify(

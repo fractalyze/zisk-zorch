@@ -22,12 +22,6 @@ _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
 class MerkleRootTest(absltest.TestCase):
     def test_matches_pil2_partial_merkle_tree(self) -> None:
         for case in load(_TESTDATA / "merkle_root.json")["cases"]:
-            if case["arity"] == 2 and case["height"] & (case["height"] - 1):
-                # zorch's binary tree keeps its pad-free power-of-two-height
-                # contract (the fold-PCS query layout); a stage-1 commit always
-                # has 2^nBitsExt rows, so pil2's padded binary case is
-                # unreachable on this path. Arity 3/4 still pin the padding.
-                continue
             rows = u64(case["rows"]).reshape(case["height"], case["n_cols"])
             root, _ = merkle_tree(case["arity"]).commit(rows)
             self.assertTrue(
@@ -94,7 +88,9 @@ class MerkleTreeJitKeyTest(absltest.TestCase):
         # every proof recompiles them.
         self.assertEqual(merkle_tree(4), merkle_tree(4))
         self.assertEqual(hash(merkle_tree(4)), hash(merkle_tree(4)))
-        self.assertNotEqual(merkle_tree(4), merkle_tree(2))
+        # Arity no longer varies, so the hash family is what must still key
+        # apart — two families at the same arity are different kernels.
+        self.assertNotEqual(merkle_tree(4, "Poseidon1"), merkle_tree(4, "Poseidon2"))
 
 
 if __name__ == "__main__":

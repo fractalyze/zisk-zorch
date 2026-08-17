@@ -17,7 +17,10 @@ from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark, _make_eval_fn
+from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.poseidon1.goldilocks import goldilocks_perm as _poseidon1_perm
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zisk_zorch.transcript.transcript import Transcript
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
@@ -30,7 +33,7 @@ class BenchInnerProofTest(absltest.TestCase):
     def test_parser_defaults_match_the_production_fri_schedule(self) -> None:
         args = _parse([])
         self.assertEqual(args.stages, ",".join(_STAGES))
-        self.assertEqual(args.arity, 2)
+        self.assertEqual(args.arity, 4)
         # The ZisK v1.0.0-alpha starkStructs fold by 3 down to nBits 5.
         self.assertEqual(args.fold_bits, 3)
         self.assertEqual(args.final_bits, 5)
@@ -66,21 +69,26 @@ class BenchInnerProofTest(absltest.TestCase):
         self.assertEqual(out.shape, (8, 900))
         self.assertLen({out[:, j].tobytes() for j in range(900)}, 900)
 
-    def test_fri_leg_warms_the_perm_width_its_arity_needs(self) -> None:
-        # The fri leg jits `prove`, which builds `merkle_tree(arity)` *inside* the
-        # trace, so the width-4*arity perm must be memoized host-side first or its
-        # M4 analysis meets a tracer. Every arity must warm, not a listed few.
-        for arity, width in ((2, 8), (3, 12), (4, 16)):
-            with self.subTest(arity=arity):
-                goldilocks_perm.cache_clear()
-                list(
-                    InnerProofBenchmark().get_ops(
-                        _parse([f"--arity={arity}", "--stages=fri", "--n_bits=7"])
-                    )
-                )
-                before = goldilocks_perm.cache_info().hits
-                goldilocks_perm(width)  # a hit iff get_ops already warmed it
-                self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
+    def test_fri_leg_warms_the_perms_it_traces(self) -> None:
+        # `prove` builds its transcript sponge and `merkle_tree(arity)` inside
+        # the jit trace, and building a permutation there would hand its
+        # external-M4 matrix analysis a tracer instead of concrete constants.
+        # So `get_ops` has to populate the permutation caches host-side before
+        # jitting; this asserts both seams find their perm already cached —
+        # they share one entry today, so a missed seam would only show as a
+        # miss, never as a hit count.
+        args = _parse(["--stages=fri", "--n_bits=7"])
+        goldilocks_perm.cache_clear()
+        _poseidon1_perm.cache_clear()
+        list(InnerProofBenchmark().get_ops(args))
+        before = (goldilocks_perm.cache_info(), _poseidon1_perm.cache_info())
+        Transcript()  # the transcript seam
+        merkle_tree(args.arity)  # the merkle seam
+        after = (goldilocks_perm.cache_info(), _poseidon1_perm.cache_info())
+        self.assertEqual([c.misses for c in after], [c.misses for c in before])
+        self.assertGreater(
+            after[0].hits + after[1].hits, before[0].hits + before[1].hits
+        )
 
     def test_chip_mode_folds_a_real_air(self) -> None:
         # #66: the chip leg replaces the proxy's independent products with a real

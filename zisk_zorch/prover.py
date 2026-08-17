@@ -109,7 +109,7 @@ class InnerProver(ProverStage[InnerClaim, InnerWitness, TrivialClaim, InnerProof
         *,
         n_bits: int,
         blowup_bits: int = 1,
-        arity: int = 2,
+        arity: int,
         fold_bits: int = 3,
         final_bits: int = 5,
         pow_bits: int = 16,
