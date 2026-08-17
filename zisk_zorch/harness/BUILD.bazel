@@ -145,6 +145,15 @@ py_library(
     ],
 )
 
+py_test(
+    name = "zkin_test",
+    srcs = ["zkin_test.py"],
+    deps = [
+        ":zkin",
+        requirement("absl_py"),
+    ],
+)
+
 # ZisK's proof.bin envelope: the bincode varint stream around the flat
 # vadcop-final proof, key-constant trailer carried opaquely.
 py_library(

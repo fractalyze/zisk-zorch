@@ -36,7 +36,15 @@ from zisk_zorch.harness.contributions import aggregate_contributions
 _P = (1 << 64) - (1 << 32) + 1
 
 
+def _u64(a: np.ndarray) -> np.ndarray:
+    """Every wire part as u64 BEFORE it reaches a concatenate: numpy
+    promotes a mixed int64/uint64 concatenate to float64, which rounds
+    away the low bits of any Goldilocks word above 2^53."""
+    return np.asarray(a, dtype=np.uint64)
+
+
 def _canon(a: np.ndarray) -> np.ndarray:
+    a = _u64(a)
     return np.where(a >= np.uint64(_P), a - np.uint64(_P), a)
 
 
@@ -60,10 +68,10 @@ def wire_prefix(
     ``proofValuesMap`` entry); `verkey` is the recursive2 verkey where the
     circuit carries one (recursive1/compressor/recursive2 — vadcop_final
     reads no verkey from its input)."""
-    parts = [publics, proofvalues3, global_challenge]
+    parts = [_u64(publics), _u64(proofvalues3), _u64(global_challenge)]
     if verkey is not None:
-        parts.append(verkey)
-    return np.concatenate(parts).astype(np.uint64)
+        parts.append(_u64(verkey))
+    return np.concatenate(parts)
 
 
 def subtree_head(
@@ -79,7 +87,7 @@ def subtree_head(
             np.array(lead, dtype=np.uint64),
             np.zeros(1, dtype=np.uint64),
             agv.astype(np.uint64),
-            _canon(np.asarray(lattice).astype(np.uint64)),
+            _canon(lattice),
         ]
     )
 
@@ -87,7 +95,7 @@ def subtree_head(
 def leaf_zkin(prefix: np.ndarray, proof: np.ndarray) -> np.ndarray:
     """compressor (no-verkey prefix) / recursive1-over-basic (verkey
     prefix): the prefix and the wrapped flat proof."""
-    return np.concatenate([prefix, _canon(proof)]).astype(np.uint64)
+    return np.concatenate([_u64(prefix), _canon(proof)])
 
 
 def compressed_leaf_zkin(
@@ -96,7 +104,7 @@ def compressed_leaf_zkin(
     """recursive1 over a COMPRESSOR proof: the instance's aggregation head
     leads, then the verkey prefix, then the compressor's flat proof — the
     only zkin whose head precedes its prefix."""
-    return np.concatenate([head, prefix, _canon(proof)]).astype(np.uint64)
+    return np.concatenate([_u64(head), _u64(prefix), _canon(proof)])
 
 
 def node_zkin(
@@ -109,11 +117,11 @@ def node_zkin(
     widths = {h.size + p.size for hp in segments if hp for h, p in [hp]}
     assert len(widths) == 1, f"segment widths disagree: {widths}"
     width = widths.pop()
-    out = [prefix]
+    out = [_u64(prefix)]
     for hp in segments:
         if hp is None:
             out.append(np.zeros(width, dtype=np.uint64))
         else:
             head, proof = hp
-            out.append(np.concatenate([head, _canon(proof)]))
-    return np.concatenate(out).astype(np.uint64)
+            out.append(np.concatenate([_u64(head), _canon(proof)]))
+    return np.concatenate(out)
