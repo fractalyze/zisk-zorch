@@ -225,7 +225,7 @@ def hint_value(hint: dict, name: str) -> dict:
 
 def transcript_width(stark_struct: dict) -> int:
     """The prove transcript's width: ``DIGEST`` lanes per transcript arity."""
-    return DIGEST * stark_struct.get("transcriptArity", 3)
+    return DIGEST * stark_struct.get("transcriptArity", 4)
 
 
 def stage_challenge_ids(challenges_map: list, stage: int) -> list[int]:

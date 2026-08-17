@@ -17,7 +17,10 @@ from absl.testing import absltest
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.bench_inner_proof import _STAGES, InnerProofBenchmark, _make_eval_fn
+from zisk_zorch.commit.trace_commit import merkle_tree
+from zisk_zorch.poseidon1.goldilocks import goldilocks_perm as _poseidon1_perm
 from zisk_zorch.poseidon2.goldilocks import goldilocks_perm
+from zisk_zorch.transcript.transcript import Transcript
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
@@ -66,16 +69,26 @@ class BenchInnerProofTest(absltest.TestCase):
         self.assertEqual(out.shape, (8, 900))
         self.assertLen({out[:, j].tobytes() for j in range(900)}, 900)
 
-    def test_fri_leg_warms_the_perm_width_its_arity_needs(self) -> None:
-        # `prove` builds `merkle_tree(arity)` inside the jit trace, and building
-        # the permutation there would hand its external-M4 matrix analysis a
-        # tracer instead of concrete constants. So `get_ops` has to populate the
-        # `goldilocks_perm` cache host-side before jitting; this asserts it did.
+    def test_fri_leg_warms_the_perms_it_traces(self) -> None:
+        # `prove` builds its transcript sponge and `merkle_tree(arity)` inside
+        # the jit trace, and building a permutation there would hand its
+        # external-M4 matrix analysis a tracer instead of concrete constants.
+        # So `get_ops` has to populate the permutation caches host-side before
+        # jitting; this asserts both seams find their perm already cached —
+        # they share one entry today, so a missed seam would only show as a
+        # miss, never as a hit count.
+        args = _parse(["--stages=fri", "--n_bits=7"])
         goldilocks_perm.cache_clear()
-        list(InnerProofBenchmark().get_ops(_parse(["--stages=fri", "--n_bits=7"])))
-        before = goldilocks_perm.cache_info().hits
-        goldilocks_perm(16)  # a hit iff get_ops already warmed it
-        self.assertEqual(goldilocks_perm.cache_info().hits, before + 1)
+        _poseidon1_perm.cache_clear()
+        list(InnerProofBenchmark().get_ops(args))
+        before = (goldilocks_perm.cache_info(), _poseidon1_perm.cache_info())
+        Transcript()  # the transcript seam
+        merkle_tree(args.arity)  # the merkle seam
+        after = (goldilocks_perm.cache_info(), _poseidon1_perm.cache_info())
+        self.assertEqual([c.misses for c in after], [c.misses for c in before])
+        self.assertGreater(
+            after[0].hits + after[1].hits, before[0].hits + before[1].hits
+        )
 
     def test_chip_mode_folds_a_real_air(self) -> None:
         # #66: the chip leg replaces the proxy's independent products with a real

@@ -178,9 +178,7 @@ class InnerProofBenchmark(FrxBenchmark):
             "--arity",
             type=int,
             default=4,
-            help="Merkle arity. Only 4 is modelled — the one ZisK proves at. "
-            "It needs an even nBitsExt, or the leaf layer is not a power of "
-            "the arity and merkle_commit rejects it.",
+            help="Merkle arity; only 4 (ZisK's) is modelled.",
         )
         parser.add_argument("--n_constraints", type=int, default=64)
         parser.add_argument("--degree", type=int, default=3)
@@ -316,8 +314,10 @@ class InnerProofBenchmark(FrxBenchmark):
         if "fri" in stages:
             # `prove` builds its transcript sponge and `merkle_tree(arity)` inside
             # the jit trace, and building a permutation there would hand its
-            # external-M4 matrix analysis a tracer instead of concrete constants.
-            # Both perms therefore have to be memoized host-side first.
+            # external-M4 matrix analysis a tracer instead of concrete constants,
+            # so both seams' permutations are memoized host-side first (today
+            # they resolve to the same width-16 Poseidon2 entry; warming each
+            # seam keeps that true if either changes width or family).
             goldilocks_perm(WIDTH)
             merkle_tree(args.arity)
             n_bits_ext = n_bits + args.blowup_bits
@@ -332,7 +332,7 @@ class InnerProofBenchmark(FrxBenchmark):
                 # the fold/commit chain (FriProof is not a pytree).
                 t = Transcript()
                 t.put(fnp.zeros((1,), F))  # stand-in for the pre-FRI proof state
-                proof = prove(pol, steps, arity=arity, transcript=t)
+                proof, _layers = prove(pol, steps, arity=arity, transcript=t)
                 return (proof.final_pol, *proof.roots)
 
             # Jitted: the perm-memoize + device-bitcast seam make the fold loop

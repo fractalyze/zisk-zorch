@@ -11,7 +11,8 @@
 use fields::{
     intt_tiny, linear_hash_seq, partial_merkle_tree, poseidon1_hash, poseidon2_hash, verify_fold,
     verify_mt, CubicExtensionField, Field, Goldilocks, Hash, Poseidon1Constants, Poseidon1_16,
-    PrimeField64, Poseidon2_16, Poseidon2Constants, Poseidon2_4, Transcript,
+    Poseidon1_8, PrimeField64, Poseidon2_16, Poseidon2Constants, Poseidon2_4, Poseidon2_8,
+    Transcript,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -20,16 +21,9 @@ use std::path::Path;
 
 const GOLDILOCKS_P: u128 = 0xFFFF_FFFF_0000_0001;
 
-/// The only merkle arity ZisK proves at, so the only one these fixtures pin.
-///
-/// `starkStruct.merkleTreeArity` is one value per key governing the stage
-/// trees, the constant tree and the FRI layer trees alike — `starks.hpp` builds
-/// both `treesGL` and `treesFRI` from that one field:
-/// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp
-///
-/// ZisK fixes that field at 4: its generated `pil/src/pil_helpers/traces.rs`
-/// carries `MERKLE_TREE_ARITY = 4`, `rom-setup` uses 4 for the ROM tree, and
-/// nothing in the fork overrides pil2's default. Arity 4 means node width 16.
+/// The one merkle arity these fixtures pin (node width 16), matching
+/// `zisk_zorch/commit/trace_commit.py`, which explains why it is the only one
+/// modelled and holds the pil2 permalinks.
 const ARITY: u64 = 4;
 
 fn splitmix64(state: &mut u64) -> u64 {
@@ -178,9 +172,8 @@ fn linear_hash_cases<C: Poseidon2Constants<W> + Hash<Goldilocks>, const W: usize
 
 // Bound is `Hash` only (not `Poseidon2Constants`): `linear_hash_seq` /
 // `partial_merkle_tree` are hash-family-generic, so this serves both Poseidon2
-// and Poseidon1 leaf/node widths. `W` is retained so call sites read
-// `::<16, Poseidon2_16>` / `::<16, Poseidon1_16>` uniformly.
-fn merkle_root<const W: usize, C: Hash<Goldilocks>>(
+// and Poseidon1 node hashes.
+fn merkle_root<C: Hash<Goldilocks>>(
     rows: &[Vec<Goldilocks>],
     arity: u64,
 ) -> [Goldilocks; 4] {
@@ -196,16 +189,13 @@ fn merkle_cases(seed: u64) -> Value {
     // Leaf counts include non-multiples of the arity at intermediate levels
     // (e.g. 2^5 with arity 4 hits the per-level zero-padding path at the top).
     let heights = [1u64, 2, 4, 6, 8, 32, 64];
-    // > one rate block (12 at width 16) — exercises leaf chaining. This used to
-    // be 9, which cleared width 8's rate of 4; at the only arity ZisK proves it
-    // would fit in a single block and never chain.
-    let n_cols = 13u64;
+    let n_cols = 13u64; // > one rate block (12 at width 16) — exercises leaf chaining
     let mut out = Vec::new();
-    let mut state = seed ^ ARITY;
+    let mut state = seed;
     for &height in &heights {
         let rows: Vec<Vec<Goldilocks>> =
             (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
-        let root = merkle_root::<16, Poseidon2_16>(&rows, ARITY);
+        let root = merkle_root::<Poseidon2_16>(&rows, ARITY);
         let flat: Vec<String> = rows.iter().flat_map(|r| ser(r)).collect();
         out.push(json!({
             "arity": ARITY,
@@ -334,7 +324,7 @@ fn merkle_proof_cases(seed: u64) -> Value {
     let heights = [1u64, 2, 6, 8, 32];
     let n_cols = 13u64; // > one rate block (12 at width 16) — see merkle_cases
     let mut out = Vec::new();
-    let mut state = seed ^ ARITY;
+    let mut state = seed;
     for &height in &heights {
         let rows: Vec<Vec<Goldilocks>> =
             (0..height).map(|_| (0..n_cols).map(|_| rand_fe(&mut state)).collect()).collect();
@@ -622,8 +612,8 @@ enum HashFamily {
 
 fn stage1_merkle_root(rows: &[Vec<Goldilocks>], family: HashFamily) -> [Goldilocks; 4] {
     match family {
-        HashFamily::Poseidon2 => merkle_root::<16, Poseidon2_16>(rows, ARITY),
-        HashFamily::Poseidon1 => merkle_root::<16, Poseidon1_16>(rows, ARITY),
+        HashFamily::Poseidon2 => merkle_root::<Poseidon2_16>(rows, ARITY),
+        HashFamily::Poseidon1 => merkle_root::<Poseidon1_16>(rows, ARITY),
     }
 }
 
@@ -739,13 +729,8 @@ fn fri_transpose(pol: &[Goldilocks], current_bits: u64, next_bits: u64) -> Vec<V
 /// Self-checked: each layer root equals `partial_merkle_tree` and every opening
 /// passes `verify_mt`.
 /// https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/gen_proof.hpp#L236-L283
-fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
-    n_bits_ext: u64,
-    steps: &[u64],
-    arity: u64,
-    queries: &[u64],
-    seed: u64,
-) -> Value {
+fn fri_prove(n_bits_ext: u64, steps: &[u64], queries: &[u64], seed: u64) -> Value {
+    let arity = ARITY;
     let n_steps = steps.len();
     assert_eq!(steps[0], n_bits_ext, "steps[0] must be nBitsExt");
 
@@ -753,11 +738,8 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
     let mut pol: Vec<Goldilocks> = (0..(1usize << n_bits_ext) * 3).map(|_| rand_fe(&mut state)).collect();
     let init_pol = pol.clone();
 
-    // pil2 sets transcriptArity to the same constant 4 as the default merkle
-    // arity and does not let a key override it on the Goldilocks path, so the
-    // transcript sponge is width 16. (This used to say arity 3 / width 12,
-    // which is not a configuration pil2 can produce.) A fixed absorb seeds it
-    // deterministically.
+    // Width 16 = pil2's fixed transcriptArity 4 (`transcript.WIDTH`); the
+    // merkle arity is independent. A fixed absorb seeds it deterministically.
     let mut t = Transcript::<Goldilocks, Poseidon2_16>::new();
     let seed_absorb: Vec<Goldilocks> = (0..4).map(|_| rand_fe(&mut state)).collect();
     t.put(&seed_absorb);
@@ -777,10 +759,10 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
         if step < n_steps - 1 {
             let next_bits = steps[step + 1];
             let rows = fri_transpose(&pol, current_bits, next_bits);
-            let levels = build_levels::<W, C>(&rows, arity);
+            let levels = build_levels::<16, Poseidon2_16>(&rows, arity);
             let root = levels.last().unwrap()[..4].to_vec();
             let height = rows.len() as u64;
-            let ref_root = partial_merkle_tree::<Goldilocks, C>(
+            let ref_root = partial_merkle_tree::<Goldilocks, Poseidon2_16>(
                 &levels[0][..(height * 4) as usize],
                 height,
                 arity,
@@ -805,7 +787,7 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
             let li = q % (1u64 << layer_leaf_bits[s]);
             let mp = build_mp(&layer_levels[s], li, arity);
             assert!(
-                verify_mt::<Goldilocks, C, C>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
+                verify_mt::<Goldilocks, Poseidon2_16, Poseidon2_16>(&roots[s], &[], &mp, li, &layer_rows[s][li as usize], arity, 0),
                 "FRI layer {s} opening rejected (query {q}, index {li})"
             );
             let proof = group_proof(&layer_rows[s][li as usize], &mp);
@@ -824,11 +806,6 @@ fn fri_prove_case<const W: usize, C: Poseidon2Constants<W> + Hash<Goldilocks>>(
         "final_pol": ser(&final_pol),
         "queries": query_json,
     })
-}
-
-/// The FRI prover golden at ZisK's arity — node width 16.
-fn fri_prove(n_bits_ext: u64, steps: &[u64], queries: &[u64], seed: u64) -> Value {
-    fri_prove_case::<16, Poseidon2_16>(n_bits_ext, steps, ARITY, queries, seed)
 }
 
 /// pil2-stark's terminal FRI low-degree test (`stark_verify.hpp` L672-L691): INTT
@@ -1256,23 +1233,23 @@ fn main() {
         "zisk_zorch/poseidon2/testdata/golden/permutation.json",
         json!({
             "widths": [
-                // Width 4 is not an arity: pil2 fixes its rate at the full
-                // state and uses it as a compression primitive, never a sponge,
-                // so the arity-4 narrowing does not reach it.
+                // 4 = compression, 8 = grinding, 16 = merkle leaf/node and
+                // transcript; width 12 (arity 3's node) is nothing ZisK runs.
                 permutation_cases::<Poseidon2_4, 4>(0xA0),
+                permutation_cases::<Poseidon2_8, 8>(0xA1),
                 permutation_cases::<Poseidon2_16, 16>(0xA3),
             ]
         }),
     );
     // Poseidon1 (Hades / circom optimized-sparse) — the family native ZisK
     // commits with by default (the installed proving key sets no `hash`, so
-    // pil2's DEFAULT_HASH_ID = "Poseidon1" wins). Width 16 only: that is the
-    // node width of the one arity ZisK proves at, and there is no width-4
-    // Poseidon1 in the merkle layouts.
+    // pil2's DEFAULT_HASH_ID = "Poseidon1" wins). Width 16 (merkle leaf/node,
+    // transcript) and 8 (grinding); there is no width-4 Poseidon1.
     write(
         "zisk_zorch/poseidon1/testdata/golden/permutation.json",
         json!({
             "widths": [
+                poseidon1_permutation_cases::<Poseidon1_8, 8>(0xA4),
                 poseidon1_permutation_cases::<Poseidon1_16, 16>(0xA6),
             ]
         }),
@@ -1291,9 +1268,7 @@ fn main() {
         "zisk_zorch/transcript/testdata/golden/transcript.json",
         json!({
             "widths": [
-                // pil2 pins transcriptArity to the same constant 4 and does not
-                // let a key override it on the Goldilocks path, so width 16 is
-                // the only transcript sponge ZisK ever runs.
+                // Width 16 only — `transcript.WIDTH`.
                 transcript_case::<Poseidon2_16, 16>(0xD3, "Poseidon2"),
                 transcript_case::<Poseidon1_16, 16>(0xD6, "Poseidon1"),
             ]
@@ -1360,6 +1335,7 @@ fn main() {
         "zisk_zorch/poseidon1/goldilocks_constants.json",
         json!({
             "widths": [
+                poseidon1_constants::<Poseidon1_8, 8>(),
                 poseidon1_constants::<Poseidon1_16, 16>(),
             ]
         }),
@@ -1403,10 +1379,7 @@ fn main() {
         "zisk_zorch/fri/testdata/golden/fri_prove.json",
         json!({
             "cases": [
-                // Every case runs at ARITY; what each varies is the fold
-                // schedule. The arity dimension is gone (ZisK proves at one
-                // arity), so the fold factors that used to ride on arity 2/3
-                // cases were re-pointed rather than deleted with them.
+                // Every case runs at ARITY; what varies is the fold schedule.
                 //
                 // Two FRI trees: heights 8 (irregular padding) and 2; each fold
                 // nX = 4; final pol of 2 cubic elements.
@@ -1447,8 +1420,7 @@ fn main() {
         json!({
             "cases": [
                 // All at the transcript's only width (16); what varies is the
-                // final-pol length, the query count and nBitsExt. These used to
-                // double as width 8/12 coverage, which pil2 cannot select.
+                // final-pol length, the query count and nBitsExt.
                 //
                 // 2-element final pol, 4 queries over nBitsExt 5.
                 query_sample_case::<Poseidon2_16, 16>(1, 4, 5, 0x4142, 0x401),

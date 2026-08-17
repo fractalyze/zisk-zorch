@@ -4,11 +4,11 @@ pil2-proofman's `DEFAULT_HASH_ID` is `Poseidon1`, and the installed ziskup
 v1.0.0-alpha proving key sets no `hash` in `pilout.globalInfo.json`, so native
 ZisK builds its stage-1 merkle trees with Poseidon1 — the *optimized-sparse*
 (Hades) form, distinct from the Poseidon2 this repo also models. This module
-carries pil2's Poseidon1-Goldilocks constants at width 16, the leaf/node width
-of arity 4, on zorch's optimized-sparse `SparsePoseidon` core. Arity 4 is the
-only one ZisK proves at — `starkStruct.merkleTreeArity` is a single per-key
-value governing the stage, constant and FRI trees alike, and ZisK's generated
-`MERKLE_TREE_ARITY` fixes it at 4.
+carries pil2's Poseidon1-Goldilocks constants at width 16 (the leaf/node width
+of merkle arity 4 — see `commit.trace_commit` for why that is the only arity
+modelled) and width 8 (the family-1 grinding permutation,
+`PoseidonGoldilocksGrinding = PoseidonGoldilocks<8>`, `fri.queries`) on zorch's
+optimized-sparse `SparsePoseidon` core.
 
 The constants are loaded from `goldilocks_constants.json`, a fixture-gen dump of
 pil2's own `Poseidon1Constants` (`tools/fixture-gen/`), so nothing is
@@ -32,9 +32,8 @@ from hash_frx.poseidon.params import SparsePoseidonParams
 from hash_frx.poseidon.sparse import SparsePoseidon
 from zk_dtypes import goldilocks as F
 
-WIDTHS = (16,)
+WIDTHS = (8, 16)
 CAPACITY = 4
-RATE = {16: 12}
 _ALPHA = 7
 
 _CONSTANTS_PATH = pathlib.Path(__file__).with_name("goldilocks_constants.json")

@@ -43,7 +43,8 @@ DIGEST = 4
 # The sponge width, `DIGEST * transcriptArity`. Unlike `merkleTreeArity`,
 # pil2's setup gives `transcriptArity` the constant 4 with no per-key override
 # on the Goldilocks path, so this is a fixed 16 rather than something a key
-# selects.
+# selects (every installed ZisK v1.0.0-alpha key declares 4):
+# https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/setup/pil2-stark/src/types/stark_struct.rs#L144-L155
 WIDTH = 16
 
 # Challenges live in the cubic extension — 3 Goldilocks limbs per challenge.
@@ -65,22 +66,20 @@ def _canonical(values: Array) -> np.ndarray:
 
 
 class Transcript:
-    """pil2 transcript over the width-`4*transcript_arity` sponge of the
-    key's hash family.
+    """pil2 transcript over the width-`WIDTH` sponge of the key's hash family.
 
-    `transcriptArity` is not a per-key knob on the Goldilocks path: pil2's setup
-    assigns it the same constant 4 it defaults `merkleTreeArity` to, and unlike
-    the merkle arity it accepts no override. So the sponge is width 16, which
-    the captured ziskup key confirms.
+    `width` is the key's declared `DIGEST * transcriptArity`; only `WIDTH` is
+    accepted (see its definition), so a key declaring anything else fails here
+    rather than sponging at a width no golden pins.
     """
 
     def __init__(
         self, width: int = WIDTH, hash_family: str = DEFAULT_HASH_FAMILY
     ) -> None:
         # Guarded here rather than left to the permutation's own width check:
-        # Poseidon2 also carries width 4 for the grinding predicate, so a
-        # width-4 transcript would build a rate-0 sponge that never flushes
-        # instead of failing.
+        # the permutations also carry widths 4 and 8 (compression, grinding),
+        # so a width-4 transcript would build a rate-0 sponge that never
+        # flushes instead of failing.
         if width != WIDTH:
             raise ValueError(f"width must be {WIDTH}, got {width}")
         if hash_family not in _HASH_FAMILY_PERMS:

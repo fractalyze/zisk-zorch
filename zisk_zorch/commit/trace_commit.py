@@ -49,11 +49,21 @@ COSET_SHIFT = 7
 # (MerkleTreeGL::merkelize switches the arity to the width-4*arity permutation
 # for both the leaf linear hash and the node hash).
 #
-# Only arity 4 is modelled: `merkleTreeArity` is a single per-key value that
-# pil2-stark applies to the stage trees, the constant tree and the FRI layer
-# trees alike, and ZisK fixes it at 4. The parameter stays so a key that
-# declares anything else fails loudly here rather than committing a root no
-# golden pins.
+# Only arity 4 is modelled — this is the one place that decision is explained;
+# `tools/fixture-gen`, `transcript.WIDTH` and the poseidon modules' `WIDTHS`
+# follow it. `merkleTreeArity` is one value per key that pil2-stark applies to
+# the stage trees, the constant tree and the FRI layer trees alike:
+# https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/pil2-stark/src/starkpil/starks.hpp#L44-L70
+# pil2's setup defaults it to 4 on the Goldilocks path:
+# https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/setup/pil2-stark/src/types/stark_struct.rs#L144-L155
+# and every stark in the ZisK v1.0.0-alpha tower this repo replays — the
+# 43 AIR/compressor/recursive/vadcop_final keys — declares 4. The single
+# exception is `vadcop_final_compressed`, the SNARK-wrap input, which pil2
+# hardcodes to arity 2 (and whose FRI would need the width-8 node hash):
+# https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/setup/pil2-stark/src/proving_key/compressed_final.rs#L205
+# That stark is past the tower's end and unmodelled; the parameter stays so a
+# key that declares anything but 4 fails loudly here rather than committing a
+# root no golden pins.
 _ARITY = 4
 _WIDTH = 4 * _ARITY
 
