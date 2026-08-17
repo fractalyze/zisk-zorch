@@ -409,7 +409,7 @@ class LogUpWitnessProver(
 # temporary round-trips through HBM — so what the window buys is cache
 # residency for that traffic, and the target is set below the card's L2 rather
 # than by any memory-capacity limit. Measured on the recursion shape (2^20
-# extended rows, 336 live bytes/row): the quotient stage runs 85 ms whole-domain
+# extended rows, 872 live bytes/row): the quotient stage runs 85 ms whole-domain
 # and 35 ms at the 8 chunks this target picks, with 4 (88 MB) and 16 (22 MB)
 # both landing near 40-84 ms.
 _Q_LIVE_SET_TARGET = 48 << 20
