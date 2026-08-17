@@ -141,7 +141,17 @@ py_library(
     visibility = ["//zisk_zorch:__pkg__"],
     deps = [
         ":block_composite",
+        ":pil2",
         requirement("numpy"),
+    ],
+)
+
+py_test(
+    name = "zkin_test",
+    srcs = ["zkin_test.py"],
+    deps = [
+        ":zkin",
+        requirement("absl_py"),
     ],
 )
 

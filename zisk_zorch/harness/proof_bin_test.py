@@ -32,6 +32,26 @@ class ProofBinTest(absltest.TestCase):
         with self.assertRaises(ValueError):
             decode(b"\x01\x00")
 
+    def test_rejects_truncated_word(self) -> None:
+        # A short tail used to decode to a plausible wrong word with an
+        # empty trailer, so a truncated file re-encoded to a different one.
+        buf = encode(np.array([12345678901234567890], dtype=np.uint64), b"")
+        with self.assertRaises(ValueError):
+            decode(buf[:-3])
+
+    def test_rejects_empty_buffer(self) -> None:
+        with self.assertRaises(ValueError):
+            decode(b"")
+
+    def test_rejects_count_past_end(self) -> None:
+        # Lead 0x00, then a u32 count of 2^31 over a 4-byte body.
+        with self.assertRaises(ValueError):
+            decode(b"\x00\xfc" + (1 << 31).to_bytes(4, "little") + b"\x00\x00")
+
+    def test_rejects_unknown_marker(self) -> None:
+        with self.assertRaises(ValueError):
+            decode(b"\x00\x01\xff")
+
 
 if __name__ == "__main__":
     absltest.main()
