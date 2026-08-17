@@ -9,12 +9,12 @@ numpy
 # Direct wheel URL: the index rebuild has no /simple/pyzorch/ page yet; the
 # release asset remains.
 pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260812101713/pyzorch-0.1.0.dev20260812101713-py3-none-any.whl
-frx==0.10.2.dev20260812043237
+frx==0.10.2.dev20260813110121
 zk-dtypes==0.0.10
-frxlib==0.10.2.dev20260812043237
-frx-cuda12-plugin==0.10.2.dev20260812043237
-frx-cuda12-pjrt==0.10.2.dev20260812043237
-hash-frx==0.1.0.dev20260812065722
+frxlib==0.10.2.dev20260813110121
+frx-cuda12-plugin==0.10.2.dev20260813110121
+frx-cuda12-pjrt==0.10.2.dev20260813110121
+hash-frx==0.2.0.dev20260817003244
 
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260809224945/rw_constraints-0.1.0.dev20260809224945-py3-none-any.whl
 
