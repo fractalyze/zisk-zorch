@@ -297,9 +297,6 @@ Widest families, warm median per instance (native = a contention-free
 | VirtualTableZisk0 | 1 | 211.0 ms | 267.0 ms | **0.79×** |
 | VirtualTableZisk1 | 1 | 144.7 ms | 190.1 ms | **0.76×** |
 
-The tree's per-circuit rows live in `bench_recursion_block.json`; the basics'
-full 20-family table lives in `bench_e2e_block.json`.
-
 > **Staging is excluded, and excluding it is the point.** A capture-fed run
 > also pays ~1 s per instance to materialize each trace off a `.npy` dump
 > (`np.load` + un-tile + canonicalize, ~0.15 GB/s — 8.6 s cold for Main's
