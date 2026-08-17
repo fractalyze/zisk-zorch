@@ -280,22 +280,22 @@ comparable.
 
 | leg | zisk-zorch | native pil2 | ratio |
 |---|---|---|---|
-| basics — 38 instances, 20 families | 14.58 s | 12.79 s | **1.14×** |
-| aggregation tree — 66 proves | 9.10 s | 10.19 s | **0.89×** |
-| **block** | **23.68 s** | **22.98 s** | **1.03×** |
+| basics — 38 instances, 20 families | 14.47 s | 12.79 s | **1.13×** |
+| aggregation tree — 66 proves | 9.36 s | 10.19 s | **0.92×** |
+| **block** | **23.83 s** | **22.98 s** | **1.04×** |
 
 Widest families, warm median per instance (native = a contention-free
 `cargo-zisk-dev prove -g -vv -t1 --no-aggregation` run):
 
 | family | n | ours | native | ratio |
 |---|---|---|---|---|
-| Main | 12 | 490.1 ms | 466.7 ms | 1.05× |
-| Keccakf | 5 | 688.3 ms | 545.1 ms | 1.26× |
-| Mem | 4 | 243.6 ms | 186.0 ms | 1.31× |
-| Binary | 2 | 405.9 ms | 291.0 ms | 1.39× |
-| ArithEq | 1 | 331.9 ms | 598.7 ms | **0.55×** |
-| VirtualTableZisk0 | 1 | 211.0 ms | 267.0 ms | **0.79×** |
-| VirtualTableZisk1 | 1 | 144.7 ms | 190.1 ms | **0.76×** |
+| Main | 12 | 483.8 ms | 466.7 ms | 1.04× |
+| Keccakf | 5 | 684.4 ms | 545.1 ms | 1.26× |
+| Mem | 4 | 239.1 ms | 186.0 ms | 1.29× |
+| Binary | 2 | 404.2 ms | 291.0 ms | 1.39× |
+| ArithEq | 1 | 330.6 ms | 598.7 ms | **0.55×** |
+| VirtualTableZisk0 | 1 | 216.1 ms | 267.0 ms | **0.81×** |
+| VirtualTableZisk1 | 1 | 147.4 ms | 190.1 ms | **0.78×** |
 
 > **Staging is excluded, and excluding it is the point.** A capture-fed run
 > also pays ~1 s per instance to materialize each trace off a `.npy` dump
@@ -314,7 +314,7 @@ Two things this baseline settles, against what earlier pages and issues said:
 - **The narrow-family floor is gone.** zz#138 measured ten families at
   2.5–3.4× on a shared fixed-overhead floor and the VirtualTables at
   5.29×/6.04×. That floor was eager dispatch in the Merkle group-proof, not
-  compute; the tables now sit at 0.79×/0.76×.
+  compute; the tables now sit at 0.81×/0.78×.
 
 ### pil2 conformance (`harness/`)
 
@@ -377,7 +377,7 @@ already on the device, so a figure of ours that includes reading or staging
 that trace is not comparable to them, however carefully the proving halves
 line up. This is not hypothetical either — the basics leg read as 3.4× native
 for exactly this reason until the staging was measured separately and the same
-work came out at 1.14×.
+work came out at 1.13×.
 
 ### Size caveat
 
