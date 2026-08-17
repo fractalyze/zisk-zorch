@@ -112,6 +112,22 @@ def live_bytes_per_row(code: list[dict], column_dim) -> int:
     resolves a `cm` operand's extension degree (1 or 3) — everything else is
     fixed by the operand class.
 
+    Two properties of an operand decide what it costs, and they are
+    independent (`_shape` carries both):
+
+    - **Extension degree**, which fixes the bytes an element occupies. Every
+      scalar class is CUBIC, `number` and `public` included: `_operand` embeds
+      both through `golden.embed` / the packed cubic publics section, so their
+      values are base but their dtype is `F3` and any product with one widens
+      to 24 bytes an element. Reading them as base under-reports a temporary
+      threefold, which is the direction that OOMs.
+    - **Whether the value varies per row.** Only the column classes do; the
+      scalar classes are 0-d (or shape-(1,)) and cost a fixed handful of bytes
+      no matter how many rows are evaluated. A temporary folded purely from
+      scalars — a Horner chain over the quotient challenge, say — is one
+      scalar, so charging it per row would pin the window at its ceiling for a
+      working set that does not exist.
+
     This is the quantity that sizes the row window: the interpreter's
     temporaries are the working set the evaluation streams through, and the
     window controls how much of it is resident at once."""
@@ -121,27 +137,40 @@ def live_bytes_per_row(code: list[dict], column_dim) -> int:
             if s["type"] == "tmp":
                 last[s["id"]] = i
 
-    dim: dict[int, int] = {}
+    shape: dict[int, tuple[int, bool]] = {}
 
-    def _dim(s: dict) -> int:
+    def _shape(s: dict) -> tuple[int, bool]:
+        """One operand's `(extension degree, varies per row)`. Mirrors
+        `_operand`'s dispatch, so an unhandled class fails here too rather
+        than being silently sized as something it is not."""
         t = s["type"]
         if t == "cm":
-            return column_dim(s)
-        if t in ("challenge", "airvalue", "airgroupvalue", "proofvalue"):
-            return 3
+            return column_dim(s), True
         if t == "tmp":
-            return dim[s["id"]]
-        return 1  # number, const, custom, public, Zi — base
+            return shape[s["id"]]
+        if t in ("const", "custom", "Zi"):
+            return 1, True
+        if t in (
+            "number",
+            "public",
+            "challenge",
+            "airvalue",
+            "airgroupvalue",
+            "proofvalue",
+        ):
+            return 3, False
+        raise ValueError(f"unhandled cExp operand type {t!r}")
 
     live: set[int] = set()
     peak = 0
     for i, op in enumerate(code):
-        d = 3 if 3 in (_dim(op["src"][0]), _dim(op["src"][1])) else 1
+        (dim_a, row_a), (dim_b, row_b) = _shape(op["src"][0]), _shape(op["src"][1])
+        result = (3 if 3 in (dim_a, dim_b) else 1, row_a or row_b)
         if op["dest"]["type"] == "tmp":
-            dim[op["dest"]["id"]] = d
+            shape[op["dest"]["id"]] = result
             live.add(op["dest"]["id"])
         live = {t for t in live if last.get(t, -1) > i}
-        peak = max(peak, sum(_ELEM_BYTES * dim[t] for t in live))
+        peak = max(peak, sum(_ELEM_BYTES * shape[t][0] for t in live if shape[t][1]))
     return peak
 
 

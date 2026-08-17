@@ -24,9 +24,10 @@ import frx.numpy as fnp  # noqa: E402
 from absl.testing import absltest  # noqa: E402
 
 from zisk_zorch.golden import load, u64x3  # noqa: E402
-from zisk_zorch.quotient.cexp_ref import (
+from zisk_zorch.quotient.cexp_ref import (  # noqa: E402
     evaluate,
     evaluate_from_constraints,
+    live_bytes_per_row,
 )
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata"
@@ -68,6 +69,100 @@ class CExpRefTest(absltest.TestCase):
             with self.subTest(air=case["air"], n_bits=case["n_bits"]):
                 got = evaluate_from_constraints(self.constraints[case["air"]], case)
                 self.assertTrue(bool(fnp.array_equal(got, u64x3(case["q"]))))
+
+
+def _op(kind: str, a: dict, b: dict, dest: dict) -> dict:
+    return {"op": kind, "src": [a, b], "dest": dest}
+
+
+def _t(i: int) -> dict:
+    return {"type": "tmp", "id": i}
+
+
+_CM = {"type": "cm", "id": 0}
+_Q = {"type": "q", "id": 0}
+
+
+class LiveBytesPerRowTest(absltest.TestCase):
+    """The derived row window's input. Both properties it reads off an operand
+    — extension degree and whether the value varies per row — are invisible to
+    the golden cases (those pin values, not footprints) and easy to get
+    backwards, so they are pinned directly.
+
+    Every block below ends by consuming its temporaries into `q`, the way a
+    real cExp does: a temporary nothing reads again is dead on the spot."""
+
+    def _dims(self, *dims: int):
+        return lambda s: dims[s["id"]]
+
+    def test_a_base_column_times_a_base_column_is_one_element(self):
+        code = [
+            _op("mul", _CM, {"type": "const", "id": 0}, _t(0)),
+            _op("add", _t(0), _CM, _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(1)), 8)
+
+    def test_an_extension_column_is_three_elements(self):
+        code = [
+            _op("mul", _CM, {"type": "const", "id": 0}, _t(0)),
+            _op("add", _t(0), _CM, _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(3)), 24)
+
+    def test_a_number_widens_a_base_column_to_cubic(self):
+        # `_operand` embeds a literal through `golden.embed`, so the product is
+        # F3 even though the literal's value is base. Reading the literal as
+        # base under-reports this temporary threefold.
+        code = [
+            _op("mul", _CM, {"type": "number", "value": "7"}, _t(0)),
+            _op("add", _t(0), _CM, _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(1)), 24)
+
+    def test_a_public_widens_a_base_column_to_cubic(self):
+        code = [
+            _op("mul", _CM, {"type": "public", "id": 0}, _t(0)),
+            _op("add", _t(0), _CM, _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(1)), 24)
+
+    def test_a_scalar_only_fold_costs_nothing_per_row(self):
+        # A Horner chain over the quotient challenge is one 0-d scalar however
+        # many rows are evaluated — charging it per row would pin the window at
+        # its ceiling for a working set that does not exist. Only t2 is a
+        # column here, and it is the whole per-row cost.
+        chal = {"type": "challenge", "id": 0}
+        code = [
+            _op("mul", chal, chal, _t(0)),
+            _op("add", _t(0), {"type": "airvalue", "id": 0}, _t(1)),
+            _op("mul", _CM, _CM, _t(2)),
+            _op("mul", _t(1), _t(2), _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(1)), 8)
+
+    def test_a_scalar_reaching_a_column_becomes_per_row(self):
+        chal = {"type": "challenge", "id": 0}
+        code = [
+            _op("mul", chal, chal, _t(0)),
+            _op("mul", _t(0), _CM, _t(1)),
+            _op("add", _t(1), _CM, _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(1)), 24)
+
+    def test_peak_counts_only_simultaneously_live_temporaries(self):
+        # t0 dies at op 1; t1 and t2 overlap, so the peak is those two.
+        code = [
+            _op("mul", _CM, _CM, _t(0)),
+            _op("mul", _t(0), _CM, _t(1)),
+            _op("mul", _CM, _CM, _t(2)),
+            _op("add", _t(1), _t(2), _Q),
+        ]
+        self.assertEqual(live_bytes_per_row(code, self._dims(1)), 16)
+
+    def test_an_unknown_operand_class_is_not_silently_sized(self):
+        code = [_op("mul", {"type": "wat", "id": 0}, _CM, _t(0))]
+        with self.assertRaisesRegex(ValueError, "unhandled cExp operand type"):
+            live_bytes_per_row(code, self._dims(1))
 
 
 if __name__ == "__main__":
