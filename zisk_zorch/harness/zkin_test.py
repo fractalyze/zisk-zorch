@@ -5,10 +5,13 @@ from __future__ import annotations
 import numpy as np
 from absl.testing import absltest
 
+from zisk_zorch.harness.pil2 import MODULUS
 from zisk_zorch.harness.zkin import (
+    BasicArtifacts,
     compressed_leaf_zkin,
     leaf_zkin,
     node_zkin,
+    subtree_head,
     wire_prefix,
 )
 
@@ -51,6 +54,35 @@ class ZkinTest(absltest.TestCase):
         out = node_zkin(np.array([7]), [(head, proof), None])
         self.assertEqual(out.dtype, np.uint64)
         self.assertTrue(np.array_equal(out, [7, 1, 1, _BIG, 0, 0, 0]))
+
+    def test_node_rejects_disagreeing_widths(self) -> None:
+        # An assert would vanish under `python -O` and zero-fill the absent
+        # segment to whichever width popped out of the set.
+        one = (np.array([1, 1]), np.array([2], dtype=np.uint64))
+        two = (np.array([1, 1]), np.array([2, 3], dtype=np.uint64))
+        with self.assertRaises(ValueError):
+            node_zkin(np.array([7]), [one, two, None])
+
+    def test_node_rejects_all_absent_segments(self) -> None:
+        with self.assertRaises(ValueError):
+            node_zkin(np.array([7]), [None, None])
+
+    def test_subtree_head_reduces_both_sums(self) -> None:
+        # Both the airgroup value and the lattice wrap, so the head pins the
+        # mod-p addition as well as the layout.
+        def basic(agv0: int, c0: int) -> BasicArtifacts:
+            return BasicArtifacts(
+                np.array([agv0, 0, 0], dtype=np.uint64),
+                np.array([c0, 1], dtype=np.uint64),
+            )
+
+        head = subtree_head([basic(MODULUS - 1, 1), basic(2, MODULUS - 1)], (7, 1))
+        self.assertEqual(head.dtype, np.uint64)
+        self.assertTrue(np.array_equal(head, [7, 1, 0, 1, 0, 0, 0, 2]))
+
+    def test_subtree_head_rejects_empty_subtree(self) -> None:
+        with self.assertRaises(ValueError):
+            subtree_head([], (1, 0))
 
 
 if __name__ == "__main__":

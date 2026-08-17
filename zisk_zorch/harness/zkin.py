@@ -32,8 +32,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from zisk_zorch.harness.contributions import aggregate_contributions
-
-_P = (1 << 64) - (1 << 32) + 1
+from zisk_zorch.harness.pil2 import MODULUS, canon_u64
 
 
 def _u64(a: np.ndarray) -> np.ndarray:
@@ -44,8 +43,8 @@ def _u64(a: np.ndarray) -> np.ndarray:
 
 
 def _canon(a: np.ndarray) -> np.ndarray:
-    a = _u64(a)
-    return np.where(a >= np.uint64(_P), a - np.uint64(_P), a)
+    """`canon_u64` over a part the caller may not have typed yet."""
+    return canon_u64(_u64(a))
 
 
 @dataclass(frozen=True)
@@ -65,9 +64,10 @@ def wire_prefix(
     verkey: np.ndarray | None,
 ) -> np.ndarray:
     """The zkin prefix. `proofvalues3` is already wire-packed (3 words per
-    ``proofValuesMap`` entry); `verkey` is the recursive2 verkey where the
-    circuit carries one (recursive1/compressor/recursive2 — vadcop_final
-    reads no verkey from its input)."""
+    ``proofValuesMap`` entry); `verkey` is the recursive2 verkey, which
+    only recursive1 and recursive2 carry — the compressor and vadcop_final
+    take `None` (`recursion.rs` sizes their prefix without the trailing 4
+    and passes an empty verkey path)."""
     parts = [_u64(publics), _u64(proofvalues3), _u64(global_challenge)]
     if verkey is not None:
         parts.append(_u64(verkey))
@@ -78,9 +78,11 @@ def subtree_head(
     basics: list[BasicArtifacts], lead: tuple[int, int]
 ) -> np.ndarray:
     """A child segment's aggregation head over its subtree's basics."""
+    if not basics:
+        raise ValueError("a subtree head needs at least one basic instance")
     agv = np.zeros(3, dtype=object)
     for b in basics:
-        agv = (agv + b.airgroupvalue.astype(object)) % _P
+        agv = (agv + b.airgroupvalue.astype(object)) % MODULUS
     lattice = aggregate_contributions([b.contribution for b in basics])
     return np.concatenate(
         [
@@ -115,7 +117,14 @@ def node_zkin(
     segments — `(head, proof)` per child, `None` for an absent one
     (zero-filled, the circuit's null-segment convention)."""
     widths = {h.size + p.size for hp in segments if hp for h, p in [hp]}
-    assert len(widths) == 1, f"segment widths disagree: {widths}"
+    # Validation, not a sanity check: with `python -O` an assert here would
+    # be stripped and a disagreeing set would pop an arbitrary width, so the
+    # `None` slots would zero-fill to the wrong length — a silently
+    # misaligned zkin.
+    if not widths:
+        raise ValueError("a node zkin needs at least one present segment")
+    if len(widths) > 1:
+        raise ValueError(f"segment widths disagree: {sorted(widths)}")
     width = widths.pop()
     out = [_u64(prefix)]
     for hp in segments:

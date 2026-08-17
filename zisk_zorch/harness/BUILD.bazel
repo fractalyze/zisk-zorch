@@ -141,6 +141,7 @@ py_library(
     visibility = ["//zisk_zorch:__pkg__"],
     deps = [
         ":block_composite",
+        ":pil2",
         requirement("numpy"),
     ],
 )
