@@ -119,29 +119,29 @@ blake3==1.0.9 \
     --hash=sha256:f9d8b6c6af52a8ff499debf5fd15d7395e0ed837ec2a80fd828b4c6b970de3ed \
     --hash=sha256:fe3c59f8a7b5460fd374b264559c5da7af0a33657a9eca95fff6d843f02cde9e
     # via hash-frx
-frx==0.10.2.dev20260813110121 \
-    --hash=sha256:936016e093e3dc1eea32e83aa780f2c769c732ecf8d86040d7071c295b00c054
+frx==0.10.2.dev20260818233737 \
+    --hash=sha256:4b486b284cc7f103d1bae0805c672d3b3382e072c8e73d7f0ccbb47fecdf7680
     # via
     #   -r requirements.in
     #   hash-frx
     #   pyzorch
     #   rw-constraints
-frx-cuda12-pjrt==0.10.2.dev20260813110121 \
-    --hash=sha256:21a8d3de71ce97aa9429d73fa0a2aa413b2bdaea911b590cd5f0124b2b714450
+frx-cuda12-pjrt==0.10.2.dev20260818233737 \
+    --hash=sha256:70d2147718a78a23ca37416ffb3ecc24b61d6917d21d5f170591772ba13b9e82
     # via
     #   -r requirements.in
     #   frx-cuda12-plugin
-frx-cuda12-plugin==0.10.2.dev20260813110121 \
-    --hash=sha256:0fcb4729ba451c41259bc40e6446c08a293c0aa2e15243d79138dcd4d2dfd06a
+frx-cuda12-plugin==0.10.2.dev20260818233737 \
+    --hash=sha256:b001f450bf77e081715ddc27f4f85c9c56c7212078cc1e793953b6ebdd338d84
     # via -r requirements.in
-frxlib==0.10.2.dev20260813110121 \
-    --hash=sha256:36cd8adb9c30019fb12ab88aa4e75dd2fb03912820a649e98eabc56fe8f5ce5d
+frxlib==0.10.2.dev20260818233737 \
+    --hash=sha256:111c8d4f31713de6e085aa4b06e55a32e1278a03d7d7d287cfbe2a5dd0b792e7
     # via
     #   -r requirements.in
     #   frx
     #   rw-constraints
-hash-frx==0.2.0.dev20260817003244 \
-    --hash=sha256:0fa136420a6b26a44c98f744b3420523f8e4e6ffe9f1c83d201a14eb76702968
+hash-frx==0.2.0.dev20260819071642 \
+    --hash=sha256:920b012422fffe85d6a6b3a8a15949cdb03cf01a73d910a8a937755641178b38
     # via
     #   -r requirements.in
     #   pyzorch
