@@ -53,7 +53,10 @@ class LinearHash:
 
     @property
     def has_dedicated_fusion(self) -> bool:
-        return self._permutation.has_dedicated_fusion
+        # zorch's leaf-hasher surface keeps the bool; hash-frx#170 retired it
+        # in favor of `fusion_path`, whose `is_one_kernel` answers the same
+        # question.
+        return self._permutation.fusion_path.is_one_kernel
 
     def hash(self, input: Array) -> Array:
         """pil2 leaf digest of a row: (n,) over dtype -> (DIGEST_ELEMS,).

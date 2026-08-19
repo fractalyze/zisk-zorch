@@ -49,7 +49,7 @@ class GoldilocksPoseidon2Test(absltest.TestCase):
         # marker-carried, so it stays on the generic fused region.
         for width in WIDTHS:
             self.assertEqual(
-                goldilocks_perm(width).has_dedicated_fusion,
+                goldilocks_perm(width).fusion_path.is_one_kernel,
                 width != 4,
                 msg=f"width {width}",
             )

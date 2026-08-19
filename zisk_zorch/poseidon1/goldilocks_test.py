@@ -48,7 +48,9 @@ class GoldilocksPoseidon1Test(absltest.TestCase):
         want = frx.default_backend() == "gpu"
         for width in WIDTHS:
             self.assertEqual(
-                goldilocks_perm(width).has_dedicated_fusion, want, msg=f"width {width}"
+                goldilocks_perm(width).fusion_path.is_one_kernel,
+                want,
+                msg=f"width {width}",
             )
 
 
