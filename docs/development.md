@@ -284,6 +284,21 @@ comparable.
 | aggregation tree — 66 proves | 9.36 s | 10.19 s | **0.92×** |
 | **block** | **23.83 s** | **22.98 s** | **1.04×** |
 
+The same stack at 2.04× the gas (block 21740158: 11.25 MG, 136 txs, 68 basic
+instances, 114 tree proves), same basis:
+
+| leg | zisk-zorch | native pil2 | ratio |
+|---|---|---|---|
+| basics — 68 instances, 20 families | 26.59 s | 23.00 s | **1.16×** |
+| aggregation tree — 114 proves | 14.94 s | 15.88 s | **0.94×** |
+| **block** | **41.53 s** | **38.88 s** | **1.07×** |
+
+Per-family medians match the table below within ~2% on every recurring
+family — the basics ratio moves 1.13× → 1.16× only because the bigger
+block's mix weights the ≥1.27× families more heavily (Keccakf ×9, Mem ×9,
+Binary ×4). Wall scaling for 2.04× gas: native 1.69×, ours 1.74×. The
+proof.bin verifies natively and byte-matches its own capture run's.
+
 Widest families, warm median per instance (native = a contention-free
 `cargo-zisk-dev prove -g -vv -t1 --no-aggregation` run):
 
