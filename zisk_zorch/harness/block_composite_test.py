@@ -22,6 +22,7 @@ from absl.testing import absltest
 
 from zisk_zorch.harness.block_composite import prove_block
 from zisk_zorch.harness.capture import CAPTURE_ENV, FIXTURE_INSTANCE, Capture
+from zisk_zorch.harness.recursion import key_root
 from zisk_zorch.harness.verify_proof_layout import starkinfo_for
 
 
@@ -49,7 +50,7 @@ class BlockCompositeTest(absltest.TestCase):
             self.skipTest(f"{inst} not in {bundle}; set ZISK_PIL2_INSTANCE")
         cap = Capture(pathlib.Path(bundle), inst, starkinfo_for(key_dir, gi, inst))
         family = cap.si["name"]
-        root = key_dir / "zisk" if (key_dir / "zisk").is_dir() else key_dir / "build"
+        root = key_root(key_dir)
         verkey_files = sorted(root.rglob(f"{family}.verkey.json"))
         if not verkey_files:
             self.skipTest(f"no verkey for {family} under {root}")

@@ -208,10 +208,7 @@ py_library(
     srcs = ["zisk_key.py"],
     deps = [
         ":pil2",
-        "//zisk_zorch/commit:trace_commit",
-        requirement("frx"),
-        requirement("numpy"),
-        requirement("zk_dtypes"),
+        ":recursion",
     ],
 )
 
@@ -318,6 +315,7 @@ py_test(
     deps = [
         ":block_composite",
         ":capture",
+        ":recursion",
         ":verify_proof_layout",
         requirement("absl_py"),
         requirement("numpy"),
