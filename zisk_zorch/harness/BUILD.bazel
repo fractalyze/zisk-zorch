@@ -199,6 +199,37 @@ py_test(
     ],
 )
 
+# A basic ZisK AIR's Pil2Key from the proving-key directory alone — what a
+# non-capture witness source configures its prover with (the recursion
+# module's recursion_pil2_key, for the basic-AIR key tree).
+py_library(
+    name = "zisk_key",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["zisk_key.py"],
+    deps = [
+        ":pil2",
+        "//zisk_zorch/commit:trace_commit",
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "zisk_key_test",
+    srcs = ["zisk_key_test.py"],
+    env_inherit = ["ZISK_PIL2_CAPTURE"],
+    deps = [
+        ":capture",
+        ":verify_proof_layout",
+        ":zisk_key",
+        requirement("absl_py"),
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 # The witness-source seam: the protocol `prove_block` consumes, so a
 # non-capture intake (#115's rw handoff) implements a contract instead of
 # the dump bundle's accidents.
@@ -333,6 +364,7 @@ py_binary(
         ":pil2",
         ":proof_serializer",
         ":recursion",
+        ":zisk_key",
         "//zisk_zorch/transcript",
         requirement("numpy"),
     ],

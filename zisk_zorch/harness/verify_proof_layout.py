@@ -39,6 +39,7 @@ import numpy as np
 from zisk_zorch.harness.pil2 import canon_u64 as _canon
 from zisk_zorch.harness.proof_serializer import _n_siblings
 from zisk_zorch.harness.recursion import circuit_base, recursion_starkinfo
+from zisk_zorch.harness.zisk_key import zisk_air_base
 from zisk_zorch.transcript.transcript import DIGEST as _HASH
 
 
@@ -98,10 +99,8 @@ def starkinfo_for(key: pathlib.Path, gi: dict, inst: str) -> pathlib.Path:
             if ty == "vadcop_final" and not base.parent.is_dir():
                 base = key / "build" / "vadcop_final" / "vadcop_final"
             return recursion_starkinfo(base)
-    group0 = gi["air_groups"][0]
     air = [a["name"] for a in gi["airs"][0]][air_idx()]
-    root = key / "zisk" if (key / "zisk").is_dir() else key / "build"
-    return root / group0 / "airs" / air / "air" / f"{air}.starkinfo.json"
+    return pathlib.Path(f"{zisk_air_base(key, gi, air)}.starkinfo.json")
 
 
 def main() -> int:
