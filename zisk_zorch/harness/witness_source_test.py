@@ -8,6 +8,7 @@ here, on a bare CI host, instead of only on a capture-provisioned one.
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 
@@ -68,11 +69,26 @@ class WitnessSourceTest(absltest.TestCase):
                 f"no capture: set {CAPTURE_ENV} to a tools/pil2-dump bundle "
                 "directory to run"
             )
-        cap = Capture(
-            pathlib.Path(bundle),
-            FIXTURE_INSTANCE,
-            pathlib.Path(bundle) / FIXTURE_STARKINFO,
-        )
+        bundle = pathlib.Path(bundle)
+        inst = os.environ.get("ZISK_PIL2_INSTANCE", FIXTURE_INSTANCE)
+        key = os.environ.get("ZISK_PROVING_KEY", "")
+        # The fixture bundle copies its starkinfo in-dir; a block dump
+        # doesn't, so there the starkinfo resolves through the proving key
+        # like block_composite_test's — without one, skip loudly.
+        if inst == FIXTURE_INSTANCE and (bundle / FIXTURE_STARKINFO).exists():
+            starkinfo = bundle / FIXTURE_STARKINFO
+        elif key and pathlib.Path(key).is_dir():
+            from zisk_zorch.harness.verify_proof_layout import starkinfo_for
+
+            key_dir = pathlib.Path(key)
+            gi = json.loads((key_dir / "pilout.globalInfo.json").read_text())
+            starkinfo = starkinfo_for(key_dir, gi, inst)
+        else:
+            self.skipTest(
+                "bundle carries no fixture starkinfo; set ZISK_PROVING_KEY "
+                "(and ZISK_PIL2_INSTANCE) to resolve it from the key"
+            )
+        cap = Capture(bundle, inst, starkinfo)
         self.assertIsInstance(cap, WitnessSource)
         words = cap.trace_words()
         self.assertEqual(words.dtype, np.uint64)
