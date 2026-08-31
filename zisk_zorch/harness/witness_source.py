@@ -45,14 +45,22 @@ class WitnessSource(Protocol):
         """The settled stage-1 witness as canonical Goldilocks u64 words,
         row-major ``(2**n_bits, n_cols)``, host-resident.
 
-        Callable once per phase (commit, prove); the returned view is valid
-        until `release()`. Canonicality is the source's contract — the
-        driver reinterprets the words as field lanes without a reduction
-        pass (`view`, not `astype`; #144)."""
+        Callable once per phase (commit, prove). Canonicality is the
+        source's contract — the driver reinterprets the words as field
+        lanes without a reduction pass (`view`, not `astype`; #144).
+
+        Lifetime: the driver may still hold references to the returned
+        array after `release()` — including the runtime's own reference
+        while an async upload dispatched from it is in flight — so the
+        underlying memory must stay valid as long as any reference does
+        (ordinary refcount-owned numpy buffers qualify; a source that
+        recycles an arena or unmaps the buffer in `release()` does not)."""
         ...
 
     def release(self) -> None:
-        """Drop per-instance residency (host sections, device arrays). A
-        block walks ~40 instances in one process; nothing per-instance may
-        survive its iteration. The next `trace_words()` re-materializes."""
+        """Drop the source's own per-instance residency (cached host
+        sections, device arrays). A block walks ~40 instances in one
+        process; nothing per-instance may survive its iteration. The next
+        `trace_words()` re-materializes. Must only drop references, never
+        invalidate memory the driver may still hold (see `trace_words`)."""
         ...

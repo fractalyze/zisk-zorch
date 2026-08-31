@@ -14,7 +14,12 @@ import pathlib
 import numpy as np
 from absl.testing import absltest
 
-from zisk_zorch.harness.capture import CAPTURE_ENV, FIXTURE_INSTANCE, Capture
+from zisk_zorch.harness.capture import (
+    CAPTURE_ENV,
+    FIXTURE_INSTANCE,
+    FIXTURE_STARKINFO,
+    Capture,
+)
 from zisk_zorch.harness.witness_source import WitnessSource
 
 
@@ -63,8 +68,6 @@ class WitnessSourceTest(absltest.TestCase):
                 f"no capture: set {CAPTURE_ENV} to a tools/pil2-dump bundle "
                 "directory to run"
             )
-        from zisk_zorch.harness.capture import FIXTURE_STARKINFO
-
         cap = Capture(
             pathlib.Path(bundle),
             FIXTURE_INSTANCE,
