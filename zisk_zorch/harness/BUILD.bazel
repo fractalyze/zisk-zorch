@@ -173,6 +173,32 @@ py_test(
     ],
 )
 
+# The witness-source seam: the protocol `prove_block` consumes, so a
+# non-capture intake (#115's rw handoff) implements a contract instead of
+# the dump bundle's accidents.
+py_library(
+    name = "witness_source",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["witness_source.py"],
+    deps = [
+        ":pil2",
+        ":pil2_prover",
+        requirement("numpy"),
+    ],
+)
+
+py_test(
+    name = "witness_source_test",
+    srcs = ["witness_source_test.py"],
+    env_inherit = ["ZISK_PIL2_CAPTURE"],
+    deps = [
+        ":capture",
+        ":witness_source",
+        requirement("absl_py"),
+        requirement("numpy"),
+    ],
+)
+
 # The block composite: every instance proved in one process from the
 # self-derived seed, with per-instance wire-proof emission. Bundles the
 # contributions phase and the global-constraints binding it orchestrates.
@@ -184,10 +210,10 @@ py_library(
         "global_constraints.py",
     ],
     deps = [
-        ":capture",
         ":pil2",
         ":pil2_prover",
         ":proof_serializer",
+        ":witness_source",
         "//zisk_zorch:shape_cache",
         "//zisk_zorch:types",
         "//zisk_zorch/quotient",
@@ -195,6 +221,7 @@ py_library(
         requirement("frx"),
         requirement("numpy"),
         requirement("pyzorch"),
+        requirement("zk_dtypes"),
     ],
 )
 

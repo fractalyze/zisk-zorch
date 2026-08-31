@@ -230,18 +230,23 @@ class Capture:
             dtype=np.uint64,
         ).reshape(self.n, self.si["nConstants"])
 
-    @cached_property
-    def trace(self):
-        """The settled stage-1 witness: hint-computed columns fill
-        asynchronously during STEP_1, so the pre-commit dump can be
-        incomplete — prefer the post-commit section."""
+    def trace_words(self) -> np.ndarray:
+        """The settled stage-1 witness's host words (the `WitnessSource`
+        contract): hint-computed columns fill asynchronously during STEP_1,
+        so the pre-commit dump can be incomplete — prefer the post-commit
+        section. Canonical by `u64`'s reduction-on-read."""
         name = "trace_post" if self.path("trace_post").exists() else "trace"
         words = self.u64(name)
         assert words.size == self.n * self.n_cols, "trace size mismatch"
-        # `view`, not `astype`: u64() canonicalizes on read, and for
-        # canonical words the F reinterpret is bit-identical — `astype` was
-        # a full extra copy pass per witness (GBs at Main width, #144).
-        return fnp.array(words.view(F).reshape(self.n, self.n_cols))
+        return words.reshape(self.n, self.n_cols)
+
+    @cached_property
+    def trace(self):
+        """`trace_words` on the device, F-typed."""
+        # `view`, not `astype`: trace_words is canonical, and for canonical
+        # words the F reinterpret is bit-identical — `astype` was a full
+        # extra copy pass per witness (GBs at Main width, #144).
+        return fnp.array(self.trace_words().view(F))
 
     @cached_property
     def bufs(self) -> dict:
