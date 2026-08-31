@@ -40,14 +40,14 @@ class TraceStagerTest(absltest.TestCase):
 
     def test_staged_lands_in_device_memory(self):
         stager = TraceStager()
-        if stager._pinned is None:
+        if stager._route is None:
             self.skipTest("backend has no pinned_host memory space")
         staged = stager.stage(_canonical_words((8, 3)))
         self.assertEqual(staged.sharding.memory_kind, "device")
 
     def test_fallback_path_matches_too(self):
         stager = TraceStager()
-        stager._pinned = stager._device = None
+        stager._route = None
         words = _canonical_words((16, 4), seed=11)
         staged = stager.stage(words)
         np.testing.assert_array_equal(

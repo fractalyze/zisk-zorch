@@ -10,6 +10,8 @@ commit kernels instead of idling at the root sync.
 
 from __future__ import annotations
 
+import sys
+
 import frx
 import frx.numpy as fnp
 import numpy as np
@@ -26,15 +28,35 @@ class TraceStager:
     same everywhere and only the transfer path differs."""
 
     def __init__(self, device=None) -> None:
-        device = device if device is not None else frx.devices()[0]
+        if device is None:
+            # A zero-size placement resolves the ambient default device —
+            # an enclosing `frx.default_device(...)` included — where
+            # `frx.devices()[0]` would pin the backend's first device
+            # regardless of the caller's context.
+            device = next(iter(fnp.empty(0).devices()))
+        self._route: tuple[SingleDeviceSharding, SingleDeviceSharding] | None = None
         try:
-            self._pinned = SingleDeviceSharding(device, memory_kind="pinned_host")
-            self._device = SingleDeviceSharding(device, memory_kind="device")
-            # Probe once: a backend that names the space but cannot place
-            # buffers there should fall back now, not mid-block.
-            frx.device_put(np.zeros(1, dtype=np.uint64), self._pinned)
-        except (ValueError, RuntimeError):
-            self._pinned = self._device = None
+            kinds = {m.kind for m in device.addressable_memories()}
+        except RuntimeError:  # backend predates memory spaces
+            kinds = set()
+        if "pinned_host" not in kinds:
+            return
+        pinned = SingleDeviceSharding(device, memory_kind="pinned_host")
+        # Probe once: a backend that names the space but cannot place
+        # buffers there should fall back now, not mid-block.
+        try:
+            frx.device_put(np.zeros(1, dtype=np.uint64), pinned)
+        except (ValueError, RuntimeError) as e:
+            # Degrading silently would hide a slow pageable block (and
+            # whatever runtime breakage tripped the probe) until the next
+            # re-profile against #144's baseline, so say why.
+            print(
+                f"TraceStager: pinned_host probe failed ({e}); "
+                "falling back to pageable uploads",
+                file=sys.stderr,
+            )
+        else:
+            self._route = (pinned, SingleDeviceSharding(device, memory_kind="device"))
 
     def stage(self, words: np.ndarray):
         """`words` (canonical Goldilocks u64) on the device, F-typed.
@@ -47,6 +69,7 @@ class TraceStager:
         host buffer stays referenced until the pinned copy lands, so
         releasing the source while the upload is in flight is safe."""
         lanes = words.view(F)
-        if self._pinned is None:
+        if self._route is None:
             return fnp.asarray(lanes)
-        return frx.device_put(frx.device_put(lanes, self._pinned), self._device)
+        pinned, device = self._route
+        return frx.device_put(frx.device_put(lanes, pinned), device)

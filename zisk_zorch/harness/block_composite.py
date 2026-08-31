@@ -128,6 +128,11 @@ def prove_block(
     executables are device-module memory that cannot all stay loaded);
     passing a dict keeps every prover warm across calls — the caller owns
     that residency, e.g. a warm-timed benchmark pass."""
+    if not sources:
+        # Phase 2 cannot derive a seed from zero contributions
+        # (`aggregate_contributions([])` has no lattice shape to fold), so
+        # refuse here instead of crashing a phase later.
+        raise ValueError("prove_block needs at least one witness source")
     lattice = global_info["latticeSize"]
     family_hash = global_info["hash"]
     release_provers = provers is None
@@ -145,16 +150,24 @@ def prove_block(
     # Phase 1: stage-1 commits -> contributions. The commitment is dropped
     # immediately; only the root feeds the hash. The source's caches go
     # with it — the 38 traces alone are larger than host RAM, so nothing
-    # per-instance may survive its iteration. The claim (scalars only) is
-    # taken before release so its sections load once.
+    # per-instance may survive its own iteration (the lookahead's staged
+    # trace belongs to the next one). The claim (scalars only) is taken
+    # before release so its sections load once.
     stager = TraceStager()
     contribs = []
     publics = proofvalues_words = None
-    staged = stager.stage(sources[0][1].trace_words()) if sources else None
+    staged = stager.stage(sources[0][1].trace_words())
     for i, (fam, src, vk) in enumerate(sources):
         prover = prover_for(fam, src)
         claim = src.pil2_claim()
         commitment = prover.opening.commit(InnerWitness(staged))
+        # The commit consumed this source's staged upload, so its host
+        # sections go now — before the lookahead materializes the next
+        # trace, or three trace-sized host buffers would coexist. Safe
+        # even while this source's upload is still in flight:
+        # `trace_words`'s contract keeps the buffer alive until the
+        # runtime's copy lands. `claim` and `si` survive release.
+        src.release()
         # The commit is dispatched, the root not yet read: stage the next
         # instance now so its host read and upload ride behind this
         # instance's kernels — the in-process form of #144's double-buffer
@@ -166,7 +179,6 @@ def prove_block(
         )
         root1 = np.asarray(commitment.root).astype(np.uint64)
         del commitment, prover
-        src.release()
         # Same family-boundary release as phase 3: keeping every family's
         # prover (and its uploaded key sections) resident through phases
         # 1-2 is exactly the residency this module exists to bound.
