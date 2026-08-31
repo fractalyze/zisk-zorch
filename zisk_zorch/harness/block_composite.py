@@ -24,9 +24,7 @@ import gc
 import pathlib
 from dataclasses import dataclass, replace
 
-import frx.numpy as fnp
 import numpy as np
-from zk_dtypes import goldilocks as F
 
 from zisk_zorch.harness.contributions import (
     aggregate_contributions,
@@ -46,18 +44,11 @@ from zisk_zorch.harness.pil2 import (
 )
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.harness.proof_serializer import serialize_proof
+from zisk_zorch.harness.staging import TraceStager
 from zisk_zorch.harness.witness_source import WitnessSource
 from zisk_zorch.shape_cache import release_shape_caches
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerWitness
-
-
-def _trace_dev(src: WitnessSource):
-    """One instance's witness on the device. `view`, not `astype`: the
-    source contract says canonical words, for which the F reinterpret is
-    bit-identical — `astype` was a full extra copy pass per witness (GBs
-    at Main width, #144)."""
-    return fnp.asarray(src.trace_words().view(F))
 
 
 @dataclass(frozen=True)
@@ -137,6 +128,11 @@ def prove_block(
     executables are device-module memory that cannot all stay loaded);
     passing a dict keeps every prover warm across calls — the caller owns
     that residency, e.g. a warm-timed benchmark pass."""
+    if not sources:
+        # Phase 2 cannot derive a seed from zero contributions
+        # (`aggregate_contributions([])` has no lattice shape to fold), so
+        # refuse here instead of crashing a phase later.
+        raise ValueError("prove_block needs at least one witness source")
     lattice = global_info["latticeSize"]
     family_hash = global_info["hash"]
     release_provers = provers is None
@@ -154,17 +150,35 @@ def prove_block(
     # Phase 1: stage-1 commits -> contributions. The commitment is dropped
     # immediately; only the root feeds the hash. The source's caches go
     # with it — the 38 traces alone are larger than host RAM, so nothing
-    # per-instance may survive its iteration. The claim (scalars only) is
-    # taken before release so its sections load once.
+    # per-instance may survive its own iteration (the lookahead's staged
+    # trace belongs to the next one). The claim (scalars only) is taken
+    # before release so its sections load once.
+    stager = TraceStager()
     contribs = []
     publics = proofvalues_words = None
+    staged = stager.stage(sources[0][1].trace_words())
     for i, (fam, src, vk) in enumerate(sources):
         prover = prover_for(fam, src)
         claim = src.pil2_claim()
-        commitment = prover.opening.commit(InnerWitness(_trace_dev(src)))
+        commitment = prover.opening.commit(InnerWitness(staged))
+        # The commit consumed this source's staged upload, so its host
+        # sections go now — before the lookahead materializes the next
+        # trace, or three trace-sized host buffers would coexist. Safe
+        # even while this source's upload is still in flight:
+        # `trace_words`'s contract keeps the buffer alive until the
+        # runtime's copy lands. `claim` and `si` survive release.
+        src.release()
+        # The commit is dispatched, the root not yet read: stage the next
+        # instance now so its host read and upload ride behind this
+        # instance's kernels — the in-process form of #144's double-buffer
+        # lever, placed at the one point phase 1 would otherwise idle.
+        staged = (
+            stager.stage(sources[i + 1][1].trace_words())
+            if i + 1 < len(sources)
+            else None
+        )
         root1 = np.asarray(commitment.root).astype(np.uint64)
         del commitment, prover
-        src.release()
         # Same family-boundary release as phase 3: keeping every family's
         # prover (and its uploaded key sections) resident through phases
         # 1-2 is exactly the residency this module exists to bound.
@@ -210,8 +224,14 @@ def prove_block(
             transcript_width(src.si["starkStruct"]), src.hash_family
         )
         logup_claim = quotient_claim = opening_proof = None
+        # No cross-instance pipelining here, deliberately: `prove_stages`
+        # is a lazy generator whose consumption IS the dispatch, so a
+        # host read inserted mid-loop stalls the device instead of hiding
+        # behind it. The staged (pinned) upload still replaces the
+        # pageable one; the host-read cost itself leaves with the rw
+        # in-memory source (#115).
         for name, result in prover.prove_stages(
-            claim, InnerWitness(_trace_dev(src)), transcript
+            claim, InnerWitness(stager.stage(src.trace_words())), transcript
         ):
             if name == "logup_witness":
                 logup_claim = result.reduced_claim

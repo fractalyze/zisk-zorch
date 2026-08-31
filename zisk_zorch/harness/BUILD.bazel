@@ -173,6 +173,32 @@ py_test(
     ],
 )
 
+# Pinned-host staging: the witness upload as an async two-hop
+# (host -> pinned_host -> device) so the block driver can overlap the next
+# instance's upload with the current instance's kernels.
+py_library(
+    name = "staging",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["staging.py"],
+    deps = [
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
+    name = "staging_test",
+    srcs = ["staging_test.py"],
+    deps = [
+        ":staging",
+        requirement("absl_py"),
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 # The witness-source seam: the protocol `prove_block` consumes, so a
 # non-capture intake (#115's rw handoff) implements a contract instead of
 # the dump bundle's accidents.
@@ -213,6 +239,7 @@ py_library(
         ":pil2",
         ":pil2_prover",
         ":proof_serializer",
+        ":staging",
         ":witness_source",
         "//zisk_zorch:shape_cache",
         "//zisk_zorch:types",
@@ -221,7 +248,6 @@ py_library(
         requirement("frx"),
         requirement("numpy"),
         requirement("pyzorch"),
-        requirement("zk_dtypes"),
     ],
 )
 
