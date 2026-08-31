@@ -34,11 +34,18 @@ from zisk_zorch.harness.pil2 import MODULUS as P
 from zisk_zorch.harness.pil2 import Pil2Key
 
 
+def key_root(key: pathlib.Path) -> pathlib.Path:
+    """The key tree's root — native ziskup keys root at ``zisk/``, the
+    example builds at ``build/``. The layout's one home: every artifact
+    path (circuit or basic AIR) hangs off this probe."""
+    return key / "zisk" if (key / "zisk").is_dir() else key / "build"
+
+
 def circuit_base(key: pathlib.Path, gi: dict, ty: str, air_idx: int) -> pathlib.Path:
     """The circuit artifact base (``<base>.{so,dat,exec,starkinfo.json}``)."""
     group0 = gi["air_groups"][0]
     airs = [a["name"] for a in gi["airs"][0]]
-    root = key / "zisk" if (key / "zisk").is_dir() else key / "build"
+    root = key_root(key)
     if ty == "compressor":
         return root / group0 / "airs" / airs[air_idx] / "compressor" / "compressor"
     if ty == "recursive1":
@@ -211,32 +218,45 @@ class CircomCalc:
         return fnp.concatenate([rows, fnp.zeros((n - self.n_smap, n_cols), F)])
 
 
-def recursion_pil2_key(base: pathlib.Path, hash_family: str) -> tuple[Pil2Key, dict]:
-    """A `Pil2Key` from the proving-key directory alone (no capture): base
-    constants from ``.const``, extended by the prover's own coset LDE."""
-    si = json.loads(recursion_starkinfo(base).read_text())
+def const_pil2_key(
+    si: dict, expressionsinfo: dict, const_path: pathlib.Path | str, hash_family: str
+) -> Pil2Key:
+    """A `Pil2Key` with both constant domains materialized from a
+    ``.const`` binary: the base section's canonical u64 words reinterpreted
+    as F, the extended one by the prover's own coset LDE — exact field
+    arithmetic, so it is equal to a dumped section or wrong. Shared by the
+    recursion circuits and the basic-AIR key (`zisk_key.zisk_pil2_key`)."""
     ss = si["starkStruct"]
     n = 1 << ss["nBits"]
     blowup = 1 << (ss["nBitsExt"] - ss["nBits"])
-    const_base = np.fromfile(str(base) + ".const", dtype=np.uint64).reshape(
+    const_base = np.fromfile(str(const_path), dtype=np.uint64).reshape(
         n, si["nConstants"]
     )
-    const_ext = np.asarray(
-        extend(fnp.array(const_base.view(F)), blowup), dtype=np.uint64
-    ).view(F)
-    key = Pil2Key(
+    # `np.asarray` alone: the LDE's output is already F-typed, so this is
+    # one D2H copy — forcing dtype=uint64 first added a full conversion
+    # pass over the key's largest section for bit-identical words (#144's
+    # view-not-astype rule).
+    const_ext = np.asarray(extend(fnp.array(const_base.view(F)), blowup))
+    return Pil2Key(
         starkinfo=si,
-        expressionsinfo=json.loads(
-            recursion_starkinfo(base)
-            .with_name(
-                recursion_starkinfo(base).name.replace(".starkinfo", ".expressionsinfo")
-            )
-            .read_text()
-        ),
+        expressionsinfo=expressionsinfo,
         const_base=const_base.view(F),
         const_ext=const_ext,
         custom_ext={},
         custom_base={},
         hash_family=hash_family,
     )
-    return key, si
+
+
+def recursion_pil2_key(base: pathlib.Path, hash_family: str) -> tuple[Pil2Key, dict]:
+    """A `Pil2Key` from the proving-key directory alone (no capture): base
+    constants from ``.const``, extended by the prover's own coset LDE."""
+    si_path = recursion_starkinfo(base)
+    ei_path = si_path.with_name(si_path.name.replace(".starkinfo", ".expressionsinfo"))
+    key = const_pil2_key(
+        json.loads(si_path.read_text()),
+        json.loads(ei_path.read_text()),
+        str(base) + ".const",
+        hash_family,
+    )
+    return key, key.starkinfo
