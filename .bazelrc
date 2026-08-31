@@ -2,6 +2,15 @@
 build --announce_rc
 test --test_output=errors
 
+# Every package commits its __init__.py, so rules_python's legacy auto-init
+# has nothing to add — and it is actively harmful: for a py_test whose dep
+# closure carries no committed init (a leaf library), the auto-created empty
+# __init__.py can land through a runfiles symlink and TRUNCATE the source
+# file in the working tree (observed on bazel 9.1.0: zisk_zorch/__init__.py
+# zeroed, taking __version__ with it — the string pyproject.toml and
+# release.yml derive the package version from).
+build --incompatible_default_to_explicit_init_py
+
 # Tests are backend-agnostic; CPU is the default (not a requirement) so plain
 # `bazel test` is deterministic on any machine. CI overrides it per matrix leg
 # via --test_env (the GPU leg pins FRX_PLATFORMS=cuda).
