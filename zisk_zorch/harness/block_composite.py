@@ -13,8 +13,9 @@ Two deliberate v1 shapes:
   phase 1's extended sections — 38 resident LDEs exceed device memory at
   block scale, and a commit is ~10-40x cheaper than its prove. Overlapping
   the two phases is a scheduling lever, not a correctness one.
-- The witness and scalar sections still arrive from captures; the seed and
-  the block binding no longer do. #115's intake swaps the witness source.
+- The witness arrives through the `WitnessSource` seam; the capture bundle
+  is the current implementation, and #115's rw intake swaps in behind the
+  same protocol. The seed and the block binding are already self-derived.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ from dataclasses import dataclass, replace
 
 import frx.numpy as fnp
 import numpy as np
+from zk_dtypes import goldilocks as F
 
-from zisk_zorch.harness.capture import Capture
 from zisk_zorch.harness.contributions import (
     aggregate_contributions,
     global_challenge,
@@ -45,9 +46,18 @@ from zisk_zorch.harness.pil2 import (
 )
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.harness.proof_serializer import serialize_proof
+from zisk_zorch.harness.witness_source import WitnessSource
 from zisk_zorch.shape_cache import release_shape_caches
 from zisk_zorch.transcript.transcript import Transcript
 from zisk_zorch.types import InnerWitness
+
+
+def _trace_dev(src: WitnessSource):
+    """One instance's witness on the device. `view`, not `astype`: the
+    source contract says canonical words, for which the F reinterpret is
+    bit-identical — `astype` was a full extra copy pass per witness (GBs
+    at Main width, #144)."""
+    return fnp.asarray(src.trace_words().view(F))
 
 
 @dataclass(frozen=True)
@@ -78,13 +88,13 @@ def _dumped_airgroupvalues(claim) -> np.ndarray:
 
 
 def emit_wire_proof(
-    cap: Capture, out_dir: pathlib.Path, claim, opening
+    src: WitnessSource, out_dir: pathlib.Path, claim, opening
 ) -> pathlib.Path:
     """Serialize one instance's own-prove wire proof — `claim` is the
     quotient-bound claim (the three roots and the values), `opening` the
     `Pil2OpeningProof` carrying `WireOpenings`."""
     proof = serialize_proof(
-        cap.si,
+        src.si,
         airgroup_values=_dumped_airgroupvalues(claim),
         air_values=np.asarray(claim.pil2.airvalues, dtype=np.uint64),
         roots=[
@@ -100,13 +110,13 @@ def emit_wire_proof(
         final_pol=limbs(opening.fri.final_pol),
         nonce=opening.nonce,
     )
-    path = out_dir / f"{cap.instance}_proof.npy"
+    path = out_dir / f"{src.instance}_proof.npy"
     np.save(path, proof)
     return path
 
 
 def prove_block(
-    captures: list[tuple[str, Capture, np.ndarray]],
+    sources: list[tuple[str, WitnessSource, np.ndarray]],
     *,
     global_info: dict,
     global_constraints: list[dict],
@@ -114,9 +124,10 @@ def prove_block(
     emit_dir: pathlib.Path | None = None,
     provers: dict[str, Pil2InnerProver] | None = None,
 ) -> tuple[np.ndarray, list[InstanceResult], list[np.ndarray]]:
-    """Prove `captures` (``(family, capture, verkey)`` triples, any order)
-    as one block. Returns the derived global challenge, the per-instance
-    results, and the global-constraint values (all-zero for a sound block).
+    """Prove `sources` (``(family, witness_source, verkey)`` triples, any
+    order) as one block. Returns the derived global challenge, the
+    per-instance results, and the global-constraint values (all-zero for a
+    sound block).
 
     `on_stage(instance, stage_name, result)` observes each stage as it
     lands — the byte-gates ride there during the capture-fed transition.
@@ -132,39 +143,40 @@ def prove_block(
     if provers is None:
         provers = {}
 
-    def prover_for(fam: str, cap: Capture) -> Pil2InnerProver:
+    def prover_for(fam: str, src: WitnessSource) -> Pil2InnerProver:
         if fam not in provers:
-            provers[fam] = Pil2InnerProver(cap.pil2_key, emit_wire=emit_dir is not None)
+            provers[fam] = Pil2InnerProver(src.pil2_key, emit_wire=emit_dir is not None)
         return provers[fam]
 
     if emit_dir is not None:
         emit_dir.mkdir(parents=True, exist_ok=True)
 
     # Phase 1: stage-1 commits -> contributions. The commitment is dropped
-    # immediately; only the root feeds the hash. The capture's caches go
+    # immediately; only the root feeds the hash. The source's caches go
     # with it — the 38 traces alone are larger than host RAM, so nothing
-    # per-instance may survive its iteration.
+    # per-instance may survive its iteration. The claim (scalars only) is
+    # taken before release so its sections load once.
     contribs = []
-    publics = proofvalues = None
-    for i, (fam, cap, vk) in enumerate(captures):
-        prover = prover_for(fam, cap)
-        trace_dev = fnp.asarray(cap.trace)
-        commitment = prover.opening.commit(InnerWitness(trace_dev))
+    publics = proofvalues_words = None
+    for i, (fam, src, vk) in enumerate(sources):
+        prover = prover_for(fam, src)
+        claim = src.pil2_claim()
+        commitment = prover.opening.commit(InnerWitness(_trace_dev(src)))
         root1 = np.asarray(commitment.root).astype(np.uint64)
-        del commitment, trace_dev, prover
-        cap.release()
+        del commitment, prover
+        src.release()
         # Same family-boundary release as phase 3: keeping every family's
         # prover (and its uploaded key sections) resident through phases
         # 1-2 is exactly the residency this module exists to bound.
-        if release_provers and (i + 1 == len(captures) or captures[i + 1][0] != fam):
+        if release_provers and (i + 1 == len(sources) or sources[i + 1][0] != fam):
             dropped = provers.pop(fam, None)
             if dropped is not None:
                 release_device_sections(dropped.key)
             release_shape_caches()
         gc.collect()
         av1 = (
-            stage1_values(cap.u64("airvalues"), cap.si["airValuesMap"])
-            if cap.si.get("airValuesMap")
+            stage1_values(claim.airvalues, src.si["airValuesMap"])
+            if src.si.get("airValuesMap")
             else np.zeros(0, dtype=np.uint64)
         )
         contribs.append(
@@ -173,15 +185,13 @@ def prove_block(
             )
         )
         if publics is None:
-            publics = cap.u64("publics")
-            proofvalues = stage1_values(
-                cap.u64("proofvalues"), global_info["proofValuesMap"]
-            )
+            publics = claim.publics
+            proofvalues_words = claim.proofvalues
 
     # Phase 2: the seed.
     seed = global_challenge(
         publics,
-        proofvalues,
+        stage1_values(proofvalues_words, global_info["proofValuesMap"]),
         aggregate_contributions(contribs),
         hash_family=family_hash,
     )
@@ -193,15 +203,15 @@ def prove_block(
     # values and the first instance's stage-2 challenges.
     results = []
     stage2_challenges = None
-    for i, (fam, cap, _) in enumerate(captures):
-        prover = prover_for(fam, cap)
-        claim = replace(cap.pil2_claim(), global_challenge=seed)
+    for i, (fam, src, _) in enumerate(sources):
+        prover = prover_for(fam, src)
+        claim = replace(src.pil2_claim(), global_challenge=seed)
         transcript = Transcript(
-            transcript_width(cap.si["starkStruct"]), cap.hash_family
+            transcript_width(src.si["starkStruct"]), src.hash_family
         )
         logup_claim = quotient_claim = opening_proof = None
         for name, result in prover.prove_stages(
-            claim, InnerWitness(fnp.asarray(cap.trace)), transcript
+            claim, InnerWitness(_trace_dev(src)), transcript
         ):
             if name == "logup_witness":
                 logup_claim = result.reduced_claim
@@ -210,36 +220,36 @@ def prove_block(
             elif name == "opening":
                 opening_proof = result.reduction_proof
             if on_stage is not None:
-                on_stage(cap.instance, name, result)
-        assert logup_claim is not None, f"{cap.instance}: no logup stage"
+                on_stage(src.instance, name, result)
+        assert logup_claim is not None, f"{src.instance}: no logup stage"
         if stage2_challenges is None:
-            ids2 = stage_challenge_ids(cap.si["challengesMap"], 2)
+            ids2 = stage_challenge_ids(src.si["challengesMap"], 2)
             stage2_challenges = {
                 g: logup_claim.challenges[i] for g, i in enumerate(ids2)
             }
         wire_path = (
-            emit_wire_proof(cap, emit_dir, quotient_claim, opening_proof)
+            emit_wire_proof(src, emit_dir, quotient_claim, opening_proof)
             if emit_dir is not None
             else None
         )
         results.append(
             InstanceResult(
-                instance=cap.instance,
+                instance=src.instance,
                 airgroupvalues=_airgroupvalue_words(logup_claim),
                 wire_proof=wire_path,
             )
         )
         del logup_claim, quotient_claim, opening_proof, prover
-        cap.release()
+        src.release()
         # A family's compiled executables are device-module memory; 20
         # families' worth cannot stay loaded at once. The manifest arrives
         # family-grouped, so the prover is dropped after its family's last
         # prove (an ungrouped manifest stays correct — `prover_for` just
         # recompiles). A caller-owned `provers` cache opts out.
-        if release_provers and (i + 1 == len(captures) or captures[i + 1][0] != fam):
+        if release_provers and (i + 1 == len(sources) or sources[i + 1][0] != fam):
             dropped = provers.pop(fam, None)
             if dropped is not None:
-                # The key outlives the prover (its capture's `pil2_key`
+                # The key outlives the prover (its source's `pil2_key`
                 # survives release), so the uploaded sections must be
                 # dropped explicitly.
                 release_device_sections(dropped.key)
@@ -254,11 +264,10 @@ def prove_block(
     aggregated = aggregate_airgroupvalues(
         [r.airgroupvalues for r in results], global_info["aggTypes"][0]
     )
-    first = captures[0][1]
     constraint_values = check_global_constraints(
         global_constraints,
         publics=publics,
-        proofvalues=first.u64("proofvalues"),
+        proofvalues=proofvalues_words,
         proof_values_map=global_info["proofValuesMap"],
         challenges=stage2_challenges,
         airgroupvalues=aggregated,
