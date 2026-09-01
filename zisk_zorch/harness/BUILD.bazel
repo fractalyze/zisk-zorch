@@ -215,11 +215,19 @@ py_library(
 py_test(
     name = "zisk_key_test",
     srcs = ["zisk_key_test.py"],
-    env_inherit = ["ZISK_PIL2_CAPTURE"],
+    # The bundle case needs all three: the capture, the key tree it compares
+    # against, and the instance selector — inheriting only the capture would
+    # skip on "no proving key" and never run the gate under bazel.
+    env_inherit = [
+        "ZISK_PIL2_CAPTURE",
+        "ZISK_PIL2_INSTANCE",
+        "ZISK_PROVING_KEY",
+    ],
     deps = [
         ":capture",
         ":verify_proof_layout",
         ":zisk_key",
+        "//zisk_zorch/commit:trace_commit",
         requirement("absl_py"),
         requirement("frx"),
         requirement("numpy"),

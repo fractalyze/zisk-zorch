@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import sys
 
 from zisk_zorch.harness.pil2 import Pil2Key
 from zisk_zorch.harness.recursion import const_pil2_key, key_root
@@ -26,19 +25,16 @@ def zisk_air_base(key: pathlib.Path, gi: dict, air: str) -> pathlib.Path:
 
 
 def zisk_hash_family(gi: dict) -> str:
-    """`pilout.globalInfo.json`'s sponge selection. A key that ships no
-    ``hash`` entry is assumed to be an example key (those are Poseidon2) —
-    looser than `Capture.hash_family`, which raises when the globalInfo
-    file exists but omits the entry; the assumption is announced on stderr
-    because a wrong guess byte-mismatches the whole prove with nothing
-    pointing here."""
-    family = gi.get("hash")
-    if family is None:
-        print(
-            "pilout.globalInfo.json ships no 'hash' entry; assuming Poseidon2",
-            file=sys.stderr,
-        )
-        return "Poseidon2"
+    """`pilout.globalInfo.json`'s sponge selection, resolved the way pil2
+    resolves it: an absent ``hash`` means ``DEFAULT_HASH_ID``, which is
+    Poseidon1 (see `zisk_zorch/poseidon1/goldilocks.py` — the shipped
+    ziskup v1.0.0-alpha key omitted the entry and native committed its
+    stage-1 trees with Poseidon1 because of exactly this default).
+
+    A present-but-unrecognized value still raises: that is a malformed key,
+    not a default. An explicitly wrong family byte-mismatches every tree,
+    transcript, and grind of the prove with nothing pointing here."""
+    family = gi.get("hash", "Poseidon1")
     if family not in ("Poseidon1", "Poseidon2"):
         raise ValueError(
             f"unknown hash family {family!r} — expected 'Poseidon1' or 'Poseidon2'"
