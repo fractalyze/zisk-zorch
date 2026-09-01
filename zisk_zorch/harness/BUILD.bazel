@@ -261,6 +261,46 @@ py_test(
     ],
 )
 
+# The rw intake: trace bundles from the witness generator, joined to the
+# key's AIRs. The bundle types are duck-typed, so this carries no
+# riscv_witness dep — only a caller that generates witnesses needs the
+# wheel, and the join stays testable on stubs without it.
+py_library(
+    name = "rw_source",
+    visibility = ["//zisk_zorch:__pkg__"],
+    srcs = ["rw_source.py"],
+    deps = [
+        ":pil2",
+        ":pil2_prover",
+        ":recursion",
+        ":zisk_key",
+        requirement("numpy"),
+    ],
+)
+
+py_test(
+    name = "rw_source_test",
+    srcs = ["rw_source_test.py"],
+    # Same three as zisk_key_test: the cross-source root gate needs the
+    # capture, the key it joins against, and the instance selector.
+    env_inherit = [
+        "ZISK_PIL2_CAPTURE",
+        "ZISK_PIL2_INSTANCE",
+        "ZISK_PROVING_KEY",
+    ],
+    deps = [
+        ":capture",
+        ":rw_source",
+        ":verify_proof_layout",
+        ":witness_source",
+        "//zisk_zorch/commit:trace_commit",
+        requirement("absl_py"),
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 # The block composite: every instance proved in one process from the
 # self-derived seed, with per-instance wire-proof emission. Bundles the
 # contributions phase and the global-constraints binding it orchestrates.
