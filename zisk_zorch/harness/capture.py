@@ -120,11 +120,15 @@ class Capture:
         guess byte-mismatches the whole prove with nothing pointing here:
         an unrecognized value raises, and the no-globalInfo fallback (a
         starkinfo copied outside its key tree looks identical to an example
-        key) announces itself on stderr."""
+        key) announces itself on stderr. A globalInfo that omits `hash` is
+        not a guess — that is pil2's `DEFAULT_HASH_ID` (Poseidon1), the
+        shape the shipped v1.0.0-alpha key had; `zisk_key.zisk_hash_family`
+        resolves it identically, which is what lets a key-only `Pil2Key`
+        and a dump-fed one agree on the same key."""
         for parent in self.starkinfo_path.parents:
             gi = parent / "pilout.globalInfo.json"
             if gi.exists():
-                fam = json.loads(gi.read_text()).get("hash")
+                fam = json.loads(gi.read_text()).get("hash", "Poseidon1")
                 if fam not in ("Poseidon1", "Poseidon2"):
                     raise ValueError(
                         f"{gi}: unknown hash family {fam!r} — expected "

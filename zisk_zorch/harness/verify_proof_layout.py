@@ -84,10 +84,10 @@ def parse_proof(si: dict, buf: np.ndarray) -> dict:
 
 
 def starkinfo_for(key: pathlib.Path, gi: dict, inst: str) -> pathlib.Path:
-    """The starkinfo for a dumped instance name. Recursion circuits resolve
-    through `recursion.circuit_base` so the key-tree layout has one home;
-    the basic-AIR case below is this tool's own (the recursion module never
-    needs it)."""
+    """The starkinfo for a dumped instance name. Both cases resolve through
+    the key-tree layout's own homes — `recursion.circuit_base` for the
+    circuits, `zisk_key.zisk_air_base` for the basic AIRs — so this tool
+    spells no path itself."""
     air_idx = lambda: int(re.search(r"_air(\d+)_", inst).group(1))
     for prefix, ty in (
         ("compressor_", "compressor"),
