@@ -1,0 +1,358 @@
+//! genProof's schedule over one artifact — `zisk_zorch/export/replay.py`
+//! in Rust, step for step. The artifacts hold every device stage; this is
+//! the host half: the transcript, the challenge bookkeeping, the query
+//! draw, and the flat `proof2pointer` layout pil2 reads back.
+//!
+//! One `AirDriver` per (session, artifact): it keeps the key's fixed
+//! sections resident (the constant tree, the zerofier, the coset), so a
+//! prove uploads only the instance.
+
+use std::collections::HashMap;
+
+use crate::artifact::{Artifact, Buf, Env};
+use crate::manifest::{Manifest, StageOnly};
+use crate::transcript::{HostTranscript, DIGEST};
+use crate::Error;
+
+/// The proving key's base-domain fixed sections, as row-major u64 words.
+pub struct FixedSections<'a> {
+    /// (2^nBits, nConstants)
+    pub const_base: &'a [u64],
+    /// commitId -> (2^nBits, width)
+    pub custom_base: HashMap<usize, &'a [u64]>,
+}
+
+/// One `StepsParams` worth of host inputs, as canonical u64 words.
+pub struct InstanceInputs<'a> {
+    /// (2^nBits, cm1 width)
+    pub trace: &'a [u64],
+    pub publics: &'a [u64],
+    /// dumped packing
+    pub airvalues: &'a [u64],
+    /// dumped packing
+    pub proofvalues: &'a [u64],
+    pub global_challenge: &'a [u64],
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ProveOutputs {
+    /// (n, 3)
+    pub airgroupvalues: Vec<u64>,
+    /// dumped packing, after the stage-2 hints
+    pub airvalues: Vec<u64>,
+    pub nonce: u64,
+}
+
+pub struct AirDriver {
+    artifact: Artifact,
+    fixed: Option<Env>,
+}
+
+struct TreeOpening {
+    rows: Vec<u64>,
+    paths: Vec<u64>,
+    last_level: Vec<u64>,
+}
+
+/// `proof_serializer._n_siblings`: the path levels the wire carries.
+fn n_siblings(n_bits: u32, arity: usize, llv: u32) -> usize {
+    let per_level = (arity as f64).log2();
+    (n_bits as f64 / per_level).ceil() as usize - llv as usize
+}
+
+/// `proof_serializer._values3`: dumped packing -> three words per entry.
+fn push_values3(out: &mut Vec<u64>, words: &[u64], stages: &[StageOnly]) {
+    for (off, width) in Manifest::value_offsets(stages) {
+        for k in 0..3 {
+            out.push(if k < width { words[off + k] } else { 0 });
+        }
+    }
+}
+
+impl AirDriver {
+    pub fn new(artifact: Artifact) -> AirDriver {
+        AirDriver { artifact, fixed: None }
+    }
+
+    pub fn manifest(&self) -> &Manifest {
+        &self.artifact.manifest
+    }
+
+    pub fn artifact(&self) -> &Artifact {
+        &self.artifact
+    }
+
+    pub fn has_fixed(&self) -> bool {
+        self.fixed.is_some()
+    }
+
+    /// Release the resident fixed sections (the compiled programs stay);
+    /// the next prove runs the setup programs again.
+    pub fn drop_fixed(&mut self) {
+        self.fixed = None;
+    }
+
+    /// Upload the key's fixed sections and run the setup programs.
+    pub fn set_fixed(&mut self, fixed: &FixedSections) -> Result<(), Error> {
+        let art = &self.artifact;
+        let m = &art.manifest;
+        let mut env = Env::new();
+        art.run_into("constants", &mut env, None)?;
+        let spec = m.program("const_setup")?.inputs[0].clone();
+        env.insert("const_base".into(), art.upload_words(fixed.const_base, &spec)?);
+        art.run_into("const_setup", &mut env, Some(("const_setup_layers_", "const_layers_")))?;
+        for cc in &m.custom_commits {
+            let words = fixed
+                .custom_base
+                .get(&cc.id)
+                .ok_or_else(|| format!("set_fixed: custom commit {} section missing", cc.id))?;
+            let prog = format!("custom_setup_{}", cc.id);
+            let spec = m.program(&prog)?.inputs[0].clone();
+            env.insert(format!("custom_base_{}", cc.id), art.upload_words(words, &spec)?);
+            let from = format!("{prog}_layers_");
+            let to = format!("custom_layers_{}_", cc.id);
+            art.run_into(&prog, &mut env, Some((&from, &to)))?;
+        }
+        self.fixed = Some(env);
+        Ok(())
+    }
+
+    /// The flat wire proof's length in u64 words.
+    pub fn proof_words(&self) -> usize {
+        let m = &self.artifact.manifest;
+        let per_level = (m.arity - 1) * DIGEST;
+        let last_level = m.arity.pow(m.last_level_verification) * DIGEST;
+        let llv = m.last_level_verification;
+        let tree_block = |width: usize, n_bits: u32| {
+            m.n_queries * (width + n_siblings(n_bits, m.arity, llv) * per_level) + last_level
+        };
+        let mut n = 0;
+        n += m.airgroupvalues.len() * 3;
+        n += m.airvalues.len() * 3;
+        n += 3 * DIGEST;
+        n += m.ev_map_size * 3;
+        n += tree_block(m.n_constants, m.n_bits_ext);
+        for cc in &m.custom_commits {
+            n += tree_block(cc.width, m.n_bits_ext);
+        }
+        n += tree_block(m.widths.cm1, m.n_bits_ext);
+        n += tree_block(m.widths.cm2, m.n_bits_ext);
+        n += tree_block(m.widths.qsec, m.n_bits_ext);
+        let rounds = m.steps.len() - 1;
+        n += rounds * DIGEST;
+        for i in 0..rounds {
+            let n_x = 1usize << (m.steps[i] - m.steps[i + 1]);
+            n += tree_block(n_x * 3, m.steps[i + 1]);
+        }
+        n += (1usize << m.steps[rounds]) * 3;
+        n + 1
+    }
+
+    fn open_tree(&self, name: &str, width: usize, n_bits: u32, env: &Env, positions: &Buf) -> Result<TreeOpening, Error> {
+        let art = &self.artifact;
+        let m = &art.manifest;
+        let prog = format!("open_{name}");
+        let mut penv = env.clone();
+        penv.insert("positions".into(), positions.clone());
+        let outs = art.run(&prog, &penv)?;
+        let info = m.program(&prog)?;
+        let flat = art.download_words(&outs[0], &info.outputs[0])?;
+        let last_level = art.download_words(&outs[1], &info.outputs[1])?;
+        let nq = info.outputs[0].dims[0] as usize;
+        let row_words = info.outputs[0].dims[1] as usize;
+        let per_level = (m.arity - 1) * DIGEST;
+        let n_levels = (row_words - width) / per_level;
+        let n_sib = n_siblings(n_bits, m.arity, m.last_level_verification);
+        if n_sib > n_levels {
+            return Err(format!("{prog}: {n_levels} path levels, wire wants {n_sib}").into());
+        }
+        let mut rows = Vec::with_capacity(nq * width);
+        let mut paths = Vec::with_capacity(nq * n_sib * per_level);
+        for q in 0..nq {
+            let row = &flat[q * row_words..(q + 1) * row_words];
+            rows.extend_from_slice(&row[..width]);
+            paths.extend_from_slice(&row[width..width + n_sib * per_level]);
+        }
+        Ok(TreeOpening { rows, paths, last_level })
+    }
+
+    /// Prove one instance through the artifacts, writing `proof_words()`
+    /// words into `proof_out`.
+    pub fn prove(&self, inp: &InstanceInputs, transcript: &mut HostTranscript, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+        let fixed = self.fixed.as_ref().ok_or("prove: set_fixed first")?;
+        let art = &self.artifact;
+        let m = &art.manifest;
+        let nbe = m.n_bits_ext;
+        let in_spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
+            m.program(prog)?.input(input).cloned().ok_or_else(|| format!("{prog}: no input {input}").into())
+        };
+        let out_spec = |prog: &str, output: &str| -> Result<crate::manifest::Spec, Error> {
+            m.program(prog)?.output(output).cloned().ok_or_else(|| format!("{prog}: no output {output}").into())
+        };
+        let squeeze = |t: &mut HostTranscript, challenges: &mut Vec<u64>, stage: u32| {
+            for id in m.stage_challenge_ids(stage) {
+                let c = t.get_field();
+                challenges[id * 3..id * 3 + 3].copy_from_slice(&c);
+            }
+        };
+
+        // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
+        // rewrite the air values below and every later program reads those.
+        let mut env = fixed.clone();
+        env.insert("publics".into(), art.upload_words(inp.publics, &in_spec("logup", "publics")?)?);
+        env.insert("airvalues".into(), art.upload_words(inp.airvalues, &in_spec("logup", "airvalues")?)?);
+        env.insert("proofvalues".into(), art.upload_words(inp.proofvalues, &in_spec("logup", "proofvalues")?)?);
+        env.insert("trace".into(), art.upload_words(inp.trace, &in_spec("commit1", "trace")?)?);
+        if m.witness_calc {
+            let trace = art.run("witness_calc", &env)?.remove(0);
+            env.insert("trace".into(), trace);
+        }
+        art.run_into("commit1", &mut env, None)?;
+        // Non-recursive schedule: the seed already binds root1 through the
+        // contributions phase, so root1 itself is never absorbed.
+        transcript.put(inp.global_challenge);
+
+        let mut challenges = vec![0u64; m.challenges.len() * 3];
+        squeeze(transcript, &mut challenges, 2);
+        env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
+        art.run_into("logup", &mut env, None)?;
+        let mut result = ProveOutputs::default();
+        result.airvalues = art.download_words(&env["airvalues"], &out_spec("logup", "airvalues")?)?;
+        art.run_into("commit2", &mut env, None)?;
+        let root2 = art.download_words(&env["root2"], &out_spec("commit2", "root2")?)?;
+        transcript.put(&root2);
+        for (i, (off, _)) in Manifest::value_offsets(&m.airvalues).into_iter().enumerate() {
+            if m.airvalues[i].stage == 2 {
+                transcript.put(&result.airvalues[off..off + 3]);
+            }
+        }
+        result.airgroupvalues = vec![0u64; m.airgroupvalues.len() * 3];
+        if let Some(buf) = env.get("airgroupvalue") {
+            let agv = art.download_words(buf, &out_spec("logup", "airgroupvalue")?)?;
+            let idx = m.airgroupvalue_index.ok_or("manifest: airgroupvalue without an index")?;
+            result.airgroupvalues[idx * 3..idx * 3 + 3].copy_from_slice(&agv);
+        }
+
+        squeeze(transcript, &mut challenges, m.n_stages + 1);
+        env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
+        let single = m.quotient_chunks.len() == 1;
+        let qprog0 = if single { "quotient".to_string() } else { format!("quotient_{}", m.quotient_chunks[0]) };
+        env.insert("airgroupvalues".into(), art.upload_words(&result.airgroupvalues, &in_spec(&qprog0, "airgroupvalues")?)?);
+        let mut qenv = Env::new();
+        if single {
+            qenv.insert("q_0".into(), art.run("quotient", &env)?.remove(0));
+        } else {
+            let mut start = 0i32;
+            for (k, size) in m.quotient_chunks.iter().enumerate() {
+                let prog = format!("quotient_{size}");
+                let rows: Vec<i32> = (start..start + *size as i32).collect();
+                env.insert("rows".into(), art.upload_i32(&rows, &in_spec(&prog, "rows")?)?);
+                qenv.insert(format!("q_{k}"), art.run(&prog, &env)?.remove(0));
+                start += *size as i32;
+            }
+            env.remove("rows");
+        }
+        let outs = art.run("quotient_commit", &qenv)?;
+        drop(qenv);
+        for (spec, buf) in m.program("quotient_commit")?.outputs.iter().zip(outs) {
+            env.insert(spec.name.clone(), buf);
+        }
+        let rootq = art.download_words(&env["rootq"], &out_spec("quotient_commit", "rootq")?)?;
+        transcript.put(&rootq);
+
+        squeeze(transcript, &mut challenges, m.n_stages + 2);
+        let xi_id = m.challenge_id("std_xi")?;
+        env.insert("xi".into(), art.upload_words(&challenges[xi_id * 3..xi_id * 3 + 3], &in_spec("lev", "xi")?)?);
+        let lev = art.run("lev", &env)?.remove(0);
+        env.insert("lev".into(), lev);
+        let evals_buf = art.run("evals", &env)?.remove(0);
+        env.remove("lev");
+        env.insert("evals".into(), evals_buf);
+        let evals = art.download_words(&env["evals"], &out_spec("evals", "evals")?)?;
+        transcript.absorb_section(&evals, m.hash_commits);
+        squeeze(transcript, &mut challenges, m.n_stages + 3);
+        let vf1 = m.challenge_id("std_vf1")?;
+        let vf2 = m.challenge_id("std_vf2")?;
+        env.insert("vf1".into(), art.upload_words(&challenges[vf1 * 3..vf1 * 3 + 3], &in_spec("deep", "vf1")?)?);
+        env.insert("vf2".into(), art.upload_words(&challenges[vf2 * 3..vf2 * 3 + 3], &in_spec("deep", "vf2")?)?);
+        let mut codeword = art.run("deep", &env)?.remove(0);
+
+        let rounds = m.steps.len() - 1;
+        let mut fri_roots = Vec::with_capacity(rounds * DIGEST);
+        let mut fri_layers: Vec<Env> = Vec::with_capacity(rounds);
+        for i in 0..rounds {
+            let commit = format!("fri_commit_{i}");
+            let fold = format!("fri_fold_{i}");
+            let mut fenv = Env::new();
+            fenv.insert("codeword".into(), codeword.clone());
+            let mut layer = Env::new();
+            let outs = art.run(&commit, &fenv)?;
+            for (spec, buf) in m.program(&commit)?.outputs.iter().zip(outs) {
+                layer.insert(spec.name.clone(), buf);
+            }
+            let root_name = format!("fri_root_{i}");
+            let root = art.download_words(&layer[&root_name], &out_spec(&commit, &root_name)?)?;
+            transcript.put(&root);
+            fri_roots.extend_from_slice(&root);
+            let beta = transcript.get_field();
+            fenv.insert("beta".into(), art.upload_words(&beta, &in_spec(&fold, "beta")?)?);
+            codeword = art.run(&fold, &fenv)?.remove(0);
+            fri_layers.push(layer);
+        }
+        let mut fenv = Env::new();
+        fenv.insert("codeword".into(), codeword);
+        let final_buf = art.run("fri_final", &fenv)?.remove(0);
+        let final_pol = art.download_words(&final_buf, &out_spec("fri_final", "final_pol")?)?;
+        transcript.absorb_section(&final_pol, m.hash_commits);
+        let challenge = transcript.get_field();
+        let mut genv = Env::new();
+        genv.insert("challenge".into(), art.upload_words(&challenge, &in_spec("grind", "challenge")?)?);
+        let nonce_buf = art.run("grind", &genv)?.remove(0);
+        result.nonce = art.download_words(&nonce_buf, &out_spec("grind", "nonce")?)?[0];
+        let positions = {
+            let mut seeded = transcript.fresh();
+            seeded.put(&challenge);
+            seeded.put(&[result.nonce]);
+            seeded.get_permutations(m.n_queries, nbe)
+        };
+        let pos_ext = art.upload_words(&positions, &in_spec("open_cm1", "positions")?)?;
+
+        // The wire, in `proof2pointer` order (`proof_serializer.serialize_proof`).
+        let mut proof: Vec<u64> = Vec::with_capacity(self.proof_words());
+        push_values3(&mut proof, &result.airgroupvalues, &m.airgroupvalues);
+        push_values3(&mut proof, &result.airvalues, &m.airvalues);
+        proof.extend(art.download_words(&env["root1"], &out_spec("commit1", "root1")?)?);
+        proof.extend(root2);
+        proof.extend(rootq);
+        proof.extend(evals);
+        let push_tree = |proof: &mut Vec<u64>, t: TreeOpening| {
+            proof.extend(t.rows);
+            proof.extend(t.paths);
+            proof.extend(t.last_level);
+        };
+        push_tree(&mut proof, self.open_tree("const", m.n_constants, nbe, &env, &pos_ext)?);
+        for cc in &m.custom_commits {
+            push_tree(&mut proof, self.open_tree(&format!("custom_{}", cc.id), cc.width, nbe, &env, &pos_ext)?);
+        }
+        push_tree(&mut proof, self.open_tree("cm1", m.widths.cm1, nbe, &env, &pos_ext)?);
+        push_tree(&mut proof, self.open_tree("cm2", m.widths.cm2, nbe, &env, &pos_ext)?);
+        push_tree(&mut proof, self.open_tree("qsec", m.widths.qsec, nbe, &env, &pos_ext)?);
+        proof.extend(fri_roots);
+        for (i, layer) in fri_layers.iter().enumerate() {
+            let leaf_bits = m.steps[i + 1];
+            let n_x = 1usize << (m.steps[i] - leaf_bits);
+            let mask = (1u64 << leaf_bits) - 1;
+            let folded: Vec<u64> = positions.iter().map(|p| p & mask).collect();
+            let name = format!("fri_{i}");
+            let pos = art.upload_words(&folded, &in_spec(&format!("open_{name}"), "positions")?)?;
+            push_tree(&mut proof, self.open_tree(&name, n_x * 3, leaf_bits, layer, &pos)?);
+        }
+        proof.extend(final_pol);
+        proof.push(result.nonce);
+        if proof.len() != self.proof_words() || proof_out.len() < proof.len() {
+            return Err(format!("proof is {} words, layout says {}, buffer holds {}", proof.len(), self.proof_words(), proof_out.len()).into());
+        }
+        proof_out[..proof.len()].copy_from_slice(&proof);
+        Ok(result)
+    }
+}

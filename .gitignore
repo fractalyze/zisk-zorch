@@ -35,3 +35,7 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# Rust bridge: local cargo overrides and build tree
+bridge/.cargo/
+bridge/target/

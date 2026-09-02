@@ -87,7 +87,7 @@ def emit_wire_proof(
     proof = serialize_proof(
         src.si,
         airgroup_values=_dumped_airgroupvalues(claim),
-        air_values=np.asarray(claim.pil2.airvalues, dtype=np.uint64),
+        air_values=np.asarray(claim.airvalues, dtype=np.uint64),
         roots=[
             np.asarray(r).astype(np.uint64)
             for r in (claim.trace_root, claim.root2, claim.quotient_root)

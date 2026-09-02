@@ -1,0 +1,28 @@
+[package]
+name = "zisk-zorch-bridge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "pil2-proofman's gen_proof over zisk-zorch's exported StableHLO artifacts: the host half of genProof in Rust, the device half compiled from the manifest."
+
+[dependencies]
+# PJRT over the frx/jax CUDA plugin. Pinned to the fractalyze fork commit
+# that adds per-session client options (preallocate=false is what lets one
+# client per pil2 stream share the card).
+xla-pjrt = { git = "https://github.com/fractalyze/xla-pjrt", rev = "bb910e0" }
+# pil2's own Fiat-Shamir transcript (Poseidon1/2 over Goldilocks). The
+# proofman fork that consumes this crate patches every pil2-proofman crate
+# to one checkout, so `fields` resolves to the same crate proofman uses.
+fields = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git", tag = "v1.0.0-alpha" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Outside proofman's tree `fields` has no C backend to lean on; its pure-Rust
+# field arithmetic (the verifier's build) serves the standalone tool. Inside
+# a proofman build leave this off so `fields` stays the crate proofman uses.
+standalone = ["fields/verify"]
+
+[[bin]]
+name = "zz_prove"
+path = "src/bin/zz_prove.rs"

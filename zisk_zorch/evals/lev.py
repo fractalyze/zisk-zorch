@@ -106,6 +106,16 @@ def lev_constants(opening_points: list[int], n_bits: int) -> LevConstants:
 
 @shape_cache
 def _lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants:
+    return build_lev_constants(opening_points, n_bits)
+
+
+def build_lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants:
+    """The constant pack, built by whoever calls — uncached, so a trace that
+    calls it OWNS the arrays it produces. An exported program must build
+    its constants this way rather than close over the interned pack: a
+    device array captured from outside the trace lowers as an extra entry
+    parameter rather than an embedded constant, and the artifact's
+    signature then disagrees with its manifest."""
     n = 1 << n_bits
     w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
     shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
