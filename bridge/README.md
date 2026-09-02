@@ -18,8 +18,10 @@ cargo build --release --features standalone      # zz_prove, the byte-gate tool
 arithmetic; inside a proofman build (the crate's real consumer) leave the
 feature off so `fields` stays the copy proofman uses.
 
-Until the xla-pjrt session-options branch is merged, build against a
-working copy through `.cargo/config.toml` (gitignored):
+`Cargo.toml` pins `xla-pjrt` to a commit on the fractalyze fork's
+`feat/session-options` branch (per-session client options, executable
+serialize/deserialize). To build against a local checkout of that branch
+instead, add a gitignored `.cargo/config.toml`:
 
 ```toml
 [patch."https://github.com/fractalyze/xla-pjrt"]

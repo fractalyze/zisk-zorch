@@ -487,6 +487,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "xla-pjrt"
 version = "0.1.0"
+source = "git+https://github.com/fractalyze/xla-pjrt?rev=735a9c3#735a9c3d743ab5ede08d801cbbf542feac0d8b53"
 dependencies = [
  "bindgen",
  "libloading",
