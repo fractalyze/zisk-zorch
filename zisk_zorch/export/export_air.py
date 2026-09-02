@@ -31,6 +31,7 @@ import numpy as np
 from zk_dtypes import goldilocks as F
 
 import frx
+from frx._src.lib.mlir import passmanager
 from zisk_zorch.export.stages import AirPrograms, Program, raw_boundary
 from zisk_zorch.harness.pil2 import Pil2Key
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
@@ -89,8 +90,22 @@ def lower(program: Program) -> bytes:
             "a device array; compute it in-trace instead"
         )
     buf = io.BytesIO()
-    module.operation.write_bytecode(buf)
+    _without_locations(module).operation.write_bytecode(buf)
     return buf.getvalue()
+
+
+def _without_locations(module):
+    """The module with its debug locations stripped: jit lowers every op
+    with its Python call stack as the MLIR location, XLA keeps those as
+    per-op metadata, and deserializing a cached executable then spends
+    seconds re-formatting the stack frames of thousands of ops
+    (`SourceLocationVisitor` dominated the load profile). The locations
+    carry nothing the prover needs."""
+    with module.context:
+        passmanager.PassManager.parse("builtin.module(strip-debuginfo)").run(
+            module.operation
+        )
+    return module
 
 
 def _entry_arity(module) -> int:

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
-use zisk_zorch_bridge::artifact::{new_session, Artifact};
+use zisk_zorch_bridge::artifact::{new_client, Artifact};
 use zisk_zorch_bridge::driver::{AirDriver, FixedSections, InstanceInputs};
 use zisk_zorch_bridge::transcript::HostTranscript;
 
@@ -47,18 +47,43 @@ fn main() {
             d.sort();
             d
         };
-        let session = new_session(None);
-        for dir in dirs {
-            let t = Instant::now();
-            let art = Artifact::load(session.clone(), &dir, Some(&cache)).unwrap();
-            art.compile_all().unwrap();
-            eprintln!(
-                "warm {} ({} programs, {} from the cache) in {:.1} s",
-                dir.display(),
-                art.manifest.programs.len(),
-                art.cache_hits.load(std::sync::atomic::Ordering::Relaxed),
-                t.elapsed().as_secs_f64()
-            );
+        // ZZ_WARM_THREADS=N loads that many AIRs at once on the one client:
+        // the probe for how much concurrent deserialization the plugin takes.
+        let threads: usize = std::env::var("ZZ_WARM_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+        let client = new_client(None);
+        let queue = std::sync::Arc::new(std::sync::Mutex::new(dirs));
+        let t0 = Instant::now();
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                let client = client.clone();
+                let queue = queue.clone();
+                let cache = cache.clone();
+                std::thread::spawn(move || loop {
+                    let dir = match queue.lock().unwrap().pop() {
+                        Some(d) => d,
+                        None => return,
+                    };
+                    let t = Instant::now();
+                    let art = Artifact::load(client.clone(), &dir, Some(&cache)).unwrap();
+                    art.compile_all().unwrap();
+                    eprintln!(
+                        "warm {} ({} programs, {} from the cache) in {:.1} s",
+                        dir.display(),
+                        art.manifest.programs.len(),
+                        art.cache_hits.load(std::sync::atomic::Ordering::Relaxed),
+                        t.elapsed().as_secs_f64()
+                    );
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        eprintln!("warm total {:.1} s with {threads} thread(s)", t0.elapsed().as_secs_f64());
+        // ZZ_WARM_HOLD=<s>: stay alive with the executables loaded (to read
+        // their device footprint off nvidia-smi).
+        if let Some(secs) = std::env::var("ZZ_WARM_HOLD").ok().and_then(|s| s.parse::<u64>().ok()) {
+            std::thread::sleep(std::time::Duration::from_secs(secs));
         }
         return;
     }
@@ -83,8 +108,8 @@ fn main() {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| artifacts.join(".pjrt-cache"));
     let t = Instant::now();
-    let session = new_session(None);
-    let art = Artifact::load(session, &dir, Some(&cache)).unwrap();
+    let client = new_client(None);
+    let art = Artifact::load(client, &dir, Some(&cache)).unwrap();
     art.compile_all().unwrap();
     let m = art.manifest.clone();
     eprintln!(
@@ -105,7 +130,7 @@ fn main() {
         const_base: &const_base,
         custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect::<HashMap<_, _>>(),
     };
-    let mut driver = AirDriver::new(art);
+    let mut driver = AirDriver::new(std::sync::Arc::new(art));
     let t = Instant::now();
     driver.set_fixed(&fixed).unwrap();
     eprintln!("fixed sections in {:.2} s", t.elapsed().as_secs_f64());

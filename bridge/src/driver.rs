@@ -8,6 +8,7 @@
 //! prove uploads only the instance.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::artifact::{Artifact, Buf, Env};
 use crate::manifest::{Manifest, StageOnly};
@@ -44,7 +45,7 @@ pub struct ProveOutputs {
 }
 
 pub struct AirDriver {
-    artifact: Artifact,
+    artifact: Arc<Artifact>,
     fixed: Option<Env>,
 }
 
@@ -70,7 +71,7 @@ fn push_values3(out: &mut Vec<u64>, words: &[u64], stages: &[StageOnly]) {
 }
 
 impl AirDriver {
-    pub fn new(artifact: Artifact) -> AirDriver {
+    pub fn new(artifact: Arc<Artifact>) -> AirDriver {
         AirDriver { artifact, fixed: None }
     }
 
@@ -119,7 +120,10 @@ impl AirDriver {
 
     /// The flat wire proof's length in u64 words.
     pub fn proof_words(&self) -> usize {
-        let m = &self.artifact.manifest;
+        Self::proof_words_of(&self.artifact.manifest)
+    }
+
+    pub fn proof_words_of(m: &Manifest) -> usize {
         let per_level = (m.arity - 1) * DIGEST;
         let last_level = m.arity.pow(m.last_level_verification) * DIGEST;
         let llv = m.last_level_verification;

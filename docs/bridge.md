@@ -76,21 +76,41 @@ The in-process `ZZ_AB=1` variant reproduces the same verdict per instance
 but still crashes once the card fills; the dump comparison is the gate to
 quote.
 
-| | native (1 stream) | native (3 streams) | bridge (1 client) |
-|---|---|---|---|
-| `cargo-zisk prove` wall | 10.3 s | 16.8 s | 80.7 s |
-| `GENERATING_INNER_PROOFS` | — | — | 72.6 s |
-| per-instance `gen_proof` | 0.19–0.84 s (enqueue; proof lands later) | | 5.1–7.6 s |
-| of which executable load | — | | ~5 s per AIR (34 programs from the cache) |
-| of which prove, warm | pil2 `STARK_GPU_PROOF` 0.07–0.27 s | | RomData 0.15 s, Rom 0.37 s, Main 0.89 s (`zz_prove --repeat`) |
+| | native (1 stream) | native (3 streams) | bridge, first run | bridge, warm |
+|---|---|---|---|---|
+| `cargo-zisk prove` wall | 10.3 s | 16.8 s | 28.0 s | 21.6–23.0 s |
+| proofman init (both stacks) | ~8 s | ~9 s | ~9 s | ~5–9 s |
+| per-instance prove, warm | pil2 `STARK_GPU_PROOF` 0.07–0.27 s | | | RomData 0.15 s, Rom 0.37 s, Main 0.89 s |
+| fixed sections per AIR (const LDE + tree) | precomputed on disk | | | 0–1.6 s (88-column tables at 1.5 s) |
+| executable load per AIR | — | | 2.3–3 s, overlapped | hidden under init |
 
-Every AIR appears once in this guest, so each instance pays its AIR's
-executable load; a block with many instances per AIR amortizes it. The
-warm prove (the number the per-stage baseline in `docs/development.md`
-is about) is 2–4x pil2's on the same card with the current programs. The
+The bridge started at 80.7 s. Where the 59 s went, from a per-program
+profile (`ZZ_LOG=2`) and `perf` of a cached load:
+
+- **Executable loads** were 5.6 s per AIR and every instance paid one,
+  serially. Half of it was XLA re-formatting the Python stack frames jit
+  had left as MLIR locations on every op (`SourceLocationVisitor` in the
+  profile): the exporter now strips debug info. A third was 30–70 MB of
+  literals per commit program: XLA constant-folds the coset power series
+  from its scalar seed, so every LDE-bearing program carried a
+  2^nBitsExt table (and the fold its own); the seeds now cross an
+  optimization barrier. The rest is XLA rebuilding the optimized HLO,
+  which stays. Loads now run six in parallel and start at bridge
+  creation for the AIRs the previous run used (`.last-used` beside the
+  artifacts), so they finish under proofman's own initialization.
+- **The proofman worker was blocked.** pil2's GPU `gen_proof` returns
+  after enqueueing; ours ran the whole prove on proofman's single worker,
+  so recursion witnesses queued behind it (one waited 33 s). The bridge
+  now copies the instance out and proves on its own thread, firing the
+  completion callback itself, exactly pil2's contract.
+
+What remains above native is the bridge's own GPU time: about 10 s for
+this guest's 11 instances (fixed sections ~5 s, proves ~5 s) against
+pil2's ~2 s. That is zisk-zorch's per-stage kernel performance, the
+subject of the baseline in `docs/development.md`, not the bridge. The
 block-sized workload (the zec-reth example needs the ASM emulator with
-hints; it starts under it but the guest exits early) is the open item for
-the wall-clock comparison the issue asks for.
+hints; it starts under it but the guest exits early) is the open item
+for the wall-clock comparison the issue asks for.
 
 Facts the gate surfaced, all now handled by the bridge:
 
@@ -148,7 +168,13 @@ Facts the gate surfaced, all now handled by the bridge:
   constants per prove, drop digest layers after the openings) is the way
   to a second client here; a larger card needs nothing.
 - **Compile cost.** Compiling an AIR's programs takes minutes
-  (RomData: 244 s for 34 programs on an RTX 5090), so the bridge keeps
+  (RomData: 245 s for 34 programs on an RTX 5090), so the bridge keeps
   the serialized executables on disk and a later client loads them in
-  seconds (5.7 s for the same AIR). The cache is keyed by bytecode hash
-  and is plugin-version specific: drop it with the plugin.
+  2–3 s. The cache is keyed by bytecode hash and is plugin-version
+  specific: drop it with the plugin. `zz_prove --warm` fills it.
+- **Loads never overlap a prove.** A deserialization on a client while
+  one of its executions is in flight wedges both; deserializations
+  alongside each other are fine. The client gate admits loads together
+  and a prove alone, a pending prove holds new loads back, and the
+  background preload of the whole key (`ZZ_PRELOAD=all`) stops once
+  proving starts; requested AIRs still load on demand.

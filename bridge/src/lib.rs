@@ -15,13 +15,16 @@
 //!   ZZ_ARTIFACTS    directory of `<Air>_n<nBits>/` exports; unset = bridge off
 //!   XLA_PJRT_PLUGIN the frx/jax CUDA PJRT plugin .so (xla-pjrt reads it)
 //!   ZZ_CLIENTS      PJRT clients (default: the stream count proofman passes)
+//!   ZZ_PRELOAD      what loads at creation: the previous run's AIRs (default,
+//!                   `<ZZ_ARTIFACTS>/.last-used`), `all`, or `0` (only the
+//!                   instance list, once proofman has it); ZZ_PRELOAD_THREADS=6
 //!   ZZ_MEMORY_FRACTION  share of the card the clients claim up front, split
 //!                   evenly (unset: allocate on demand). pil2 sizes its own
 //!                   stream buffers from what is free at init, so this is
 //!                   what keeps it from taking the whole card first.
 //!   ZZ_AB=1         prove through pil2 too and compare (see `ab`)
 //!   ZZ_RESIDENT_AIRS  AIRs whose fixed sections stay on a client at once
-//!                   (default 2, least recently used evicted); a table AIR's
+//!                   (default 1, least recently used evicted); a table AIR's
 //!                   sections run to gigabytes and every AIR of a block
 //!                   cannot stay resident beside pil2's buffers
 //!   ZZ_COMPILE_CACHE  directory of serialized executables (default
@@ -37,22 +40,46 @@ pub mod transcript;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use xla_pjrt::Session;
 
 pub use driver::{FixedSections, InstanceInputs, ProveOutputs};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
-/// One PJRT client and its per-AIR drivers.
+/// One PJRT client's per-AIR drivers; proves on it run one at a time.
 pub struct Slot {
-    session: Arc<Session>,
     drivers: HashMap<String, driver::AirDriver>,
     /// Last use per AIR, for evicting resident fixed sections.
     last_used: HashMap<String, u64>,
     tick: u64,
+}
+
+/// Compiled artifacts per slot, filled by `preload` threads while proofman
+/// is still computing witnesses, so a prove finds its programs ready.
+struct Loaded {
+    ready: HashMap<String, Arc<artifact::Artifact>>,
+    /// Keys a preload thread is loading right now; a prove for one of these
+    /// waits on the condvar instead of loading a second copy.
+    in_flight: std::collections::HashSet<String>,
+}
+
+/// pil2's `StepsParams` inputs copied to owned words (unpacked, reduced),
+/// so a prove can outlive `gen_proof` (proofman frees the instance when
+/// it returns).
+pub struct OwnedRequest {
+    pub key: String,
+    pub const_pols_path: String,
+    pub custom_fixed_path: Option<String>,
+    pub stream_id: Option<usize>,
+    pub instance_id: u64,
+    pub trace: Vec<u64>,
+    pub publics: Vec<u64>,
+    pub airvalues: Vec<u64>,
+    pub proofvalues: Vec<u64>,
+    pub global_challenge: Vec<u64>,
+    pub proof_words: usize,
 }
 
 /// pil2's `StepsParams` host pointers, as canonical u64 words. Their
@@ -128,7 +155,14 @@ pub struct Bridge {
     artifacts: PathBuf,
     cache: PathBuf,
     resident_airs: usize,
+    /// One client per slot, reachable without the slot lock so a loader
+    /// never waits on a prove's slot while holding the client's gate.
+    clients: Vec<Arc<artifact::Client>>,
     slots: Vec<Mutex<Slot>>,
+    loaded: Vec<(Mutex<Loaded>, std::sync::Condvar)>,
+    preload_queue: Mutex<std::collections::VecDeque<(usize, String, bool)>>,
+    used: Mutex<std::collections::BTreeSet<String>>,
+    preload_threads: AtomicUsize,
     next: AtomicUsize,
     log: bool,
 }
@@ -161,9 +195,49 @@ impl Bridge {
                     .and_then(|s| s.parse::<usize>().ok())
                     .filter(|n| *n > 0)
                     .unwrap_or(n_streams.max(1));
-                Some(Arc::new(Bridge::new(Path::new(&dir), clients)))
+                let bridge = Arc::new(Bridge::new(Path::new(&dir), clients));
+                // Loads start now, under proofman's own initialization: by
+                // default the AIRs the previous run used (a workload's AIR set
+                // repeats), with ZZ_PRELOAD=all every AIR of the key, with
+                // ZZ_PRELOAD=0 none until proofman's instance list arrives.
+                match std::env::var("ZZ_PRELOAD").as_deref() {
+                    Ok("0") => {}
+                    Ok("all") => bridge.preload(bridge.all_keys()),
+                    _ => bridge.preload_with(bridge.last_used(), true),
+                }
+                Some(bridge)
             })
             .clone()
+    }
+
+    /// The AIRs the previous run on these artifacts proved (`.last-used`).
+    pub fn last_used(&self) -> Vec<String> {
+        std::fs::read_to_string(self.artifacts.join(".last-used"))
+            .map(|t| t.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Record `key` as used by this run (for the next run's preload).
+    fn note_used(&self, key: &str) {
+        let mut used = self.used.lock().unwrap();
+        if used.insert(key.to_string()) {
+            let text: String = used.iter().map(|k| format!("{k}\n")).collect();
+            let _ = std::fs::write(self.artifacts.join(".last-used"), text);
+        }
+    }
+
+    /// Every `<Air>_n<nBits>` directory under the artifacts root.
+    pub fn all_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = std::fs::read_dir(&self.artifacts)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .filter(|e| e.path().join("manifest.json").exists())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        keys.sort();
+        keys
     }
 
     pub fn new(artifacts: &Path, clients: usize) -> Bridge {
@@ -173,15 +247,10 @@ impl Bridge {
             .and_then(|s| s.parse::<f32>().ok())
             .filter(|f| *f > 0.0 && *f < 1.0)
             .map(|f| f / clients as f32);
+        let client_handles: Vec<Arc<artifact::Client>> =
+            (0..clients).map(|_| artifact::new_client(fraction)).collect();
         let slots = (0..clients)
-            .map(|_| {
-                Mutex::new(Slot {
-                    session: artifact::new_session(fraction),
-                    drivers: HashMap::new(),
-                    last_used: HashMap::new(),
-                    tick: 0,
-                })
-            })
+            .map(|_| Mutex::new(Slot { drivers: HashMap::new(), last_used: HashMap::new(), tick: 0 }))
             .collect();
         if log {
             eprintln!(
@@ -203,8 +272,28 @@ impl Bridge {
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
             .filter(|n| *n > 0)
-            .unwrap_or(2);
-        Bridge { artifacts: artifacts.to_path_buf(), cache, resident_airs, slots, next: AtomicUsize::new(0), log }
+            .unwrap_or(1);
+        let loaded = (0..clients)
+            .map(|_| {
+                (
+                    Mutex::new(Loaded { ready: HashMap::new(), in_flight: std::collections::HashSet::new() }),
+                    std::sync::Condvar::new(),
+                )
+            })
+            .collect();
+        Bridge {
+            artifacts: artifacts.to_path_buf(),
+            cache,
+            resident_airs,
+            clients: client_handles,
+            slots,
+            loaded,
+            preload_queue: Mutex::new(std::collections::VecDeque::new()),
+            used: Mutex::new(std::collections::BTreeSet::new()),
+            preload_threads: AtomicUsize::new(0),
+            next: AtomicUsize::new(0),
+            log,
+        }
     }
 
     pub fn artifacts(&self) -> &Path {
@@ -218,21 +307,162 @@ impl Bridge {
         self.slots.len()
     }
 
-    /// A streamed instance runs on its stream's slot; any other takes the
-    /// first idle slot, or waits on a fixed one so a burst of workers still
-    /// spreads across clients.
-    fn slot(&self, stream_id: Option<usize>, instance_id: u64) -> MutexGuard<'_, Slot> {
-        let n = self.slots.len();
-        if let Some(s) = stream_id {
-            return self.slots[s % n].lock().unwrap();
+    /// Load an AIR's programs on slot `slot_idx` (from the cache when
+    /// possible) unless another thread already has or is doing so.
+    fn artifact(&self, slot_idx: usize, key: &str) -> Result<Arc<artifact::Artifact>, Error> {
+        let (lock, cv) = &self.loaded[slot_idx];
+        {
+            let mut l = lock.lock().unwrap();
+            loop {
+                if let Some(a) = l.ready.get(key) {
+                    return Ok(a.clone());
+                }
+                if !l.in_flight.contains(key) {
+                    break;
+                }
+                l = cv.wait(l).unwrap();
+            }
+            l.in_flight.insert(key.to_string());
         }
-        let start = self.next.fetch_add(1, Ordering::Relaxed) % n;
-        for k in 0..n {
-            if let Ok(g) = self.slots[(start + k) % n].try_lock() {
-                return g;
+        let client = self.clients[slot_idx].clone();
+        let t = Instant::now();
+        let dir = self.artifacts.join(key);
+        let cache = self.cache.clone();
+        // A plugin failure panics inside xla-pjrt; it must still clear the
+        // in-flight mark or a prove waiting for this key waits forever.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _loading = client.enter_load();
+            artifact::Artifact::load(client.clone(), &dir, Some(&cache)).and_then(|a| a.compile_all().map(|_| a))
+        }))
+        .unwrap_or_else(|p| {
+            Err(p
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "load panicked".to_string())
+                .into())
+        });
+        let mut l = lock.lock().unwrap();
+        l.in_flight.remove(key);
+        let art = match result {
+            Ok(a) => Arc::new(a),
+            Err(e) => {
+                cv.notify_all();
+                return Err(e);
+            }
+        };
+        if self.log {
+            eprintln!(
+                "[zz] loaded {key} ({} programs, {} from the cache) in {:.1} s",
+                art.manifest.programs.len(),
+                art.cache_hits.load(Ordering::Relaxed),
+                t.elapsed().as_secs_f64()
+            );
+        }
+        l.ready.insert(key.to_string(), art.clone());
+        cv.notify_all();
+        Ok(art)
+    }
+
+    /// Start loading these AIRs' programs on every slot in the background
+    /// (`ZZ_PRELOAD_THREADS`, default 6), so proves that come later find
+    /// them ready. Keys are `<Air>_n<nBits>`.
+    pub fn preload(self: &Arc<Self>, keys: Vec<String>) {
+        self.preload_with(keys, false)
+    }
+
+    /// `preload`, and with `first` the keys go ahead of anything queued —
+    /// the instance list, once proofman knows it, ahead of the rest of the
+    /// key's AIRs.
+    pub fn preload_with(self: &Arc<Self>, keys: Vec<String>, first: bool) {
+        let work: Vec<(usize, String, bool)> =
+            (0..self.slots.len()).flat_map(|s| keys.iter().map(move |k| (s, k.clone(), first))).collect();
+        {
+            let mut q = self.preload_queue.lock().unwrap();
+            if first {
+                for w in work.into_iter().rev() {
+                    q.push_front(w);
+                }
+            } else {
+                q.extend(work);
             }
         }
-        self.slots[(instance_id as usize) % n].lock().unwrap()
+        let threads = std::env::var("ZZ_PRELOAD_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(6usize).max(1);
+        let running = self.preload_threads.fetch_add(0, Ordering::SeqCst);
+        for _ in running..threads {
+            self.preload_threads.fetch_add(1, Ordering::SeqCst);
+            let bridge = self.clone();
+            std::thread::spawn(move || loop {
+                let next = bridge.preload_queue.lock().unwrap().pop_front();
+                match next {
+                    // Background keys (the whole proving key) load only until
+                    // proving starts; requested keys always do.
+                    Some((slot, _, false)) if bridge.clients[slot].started_proving() => continue,
+                    Some((slot, key, _)) => {
+                        if let Err(e) = bridge.artifact(slot, &key) {
+                            eprintln!("[zz] preload {key}: {e}");
+                        }
+                    }
+                    None => {
+                        bridge.preload_threads.fetch_sub(1, Ordering::SeqCst);
+                        return;
+                    }
+                }
+            });
+        }
+    }
+
+    /// The `slot` index a request lands on (see `slot`).
+    fn slot_index(&self, stream_id: Option<usize>, instance_id: u64) -> usize {
+        let n = self.slots.len();
+        match stream_id {
+            Some(s) => s % n,
+            None => {
+                let start = self.next.load(Ordering::Relaxed) % n;
+                for k in 0..n {
+                    if self.slots[(start + k) % n].try_lock().is_ok() {
+                        return (start + k) % n;
+                    }
+                }
+                (instance_id as usize) % n
+            }
+        }
+    }
+
+    /// Copy the instance out of pil2's buffers (unpacked, reduced), ready to
+    /// prove after `gen_proof` returns.
+    ///
+    /// # Safety
+    /// `req.inputs` must point at buffers of the lengths the artifact's
+    /// manifest implies, valid during this call.
+    pub unsafe fn take(&self, req: &ProveRequest) -> Result<OwnedRequest, Error> {
+        let key = format!("{}_n{}", req.air, req.n_bits);
+        let m = manifest::Manifest::load(&self.artifacts.join(&key))?;
+        let n = 1usize << m.n_bits;
+        let p = &req.inputs;
+        let trace = match req.packed {
+            Some((words_per_row, bits)) => {
+                if bits.len() != m.widths.cm1 {
+                    return Err(format!("{key}: packing lists {} columns, cm1 has {}", bits.len(), m.widths.cm1).into());
+                }
+                unpack_trace(std::slice::from_raw_parts(p.trace, n * words_per_row), n, words_per_row, bits)
+            }
+            None => std::slice::from_raw_parts(p.trace, n * m.widths.cm1).to_vec(),
+        };
+        let proof_words = driver::AirDriver::proof_words_of(&m);
+        Ok(OwnedRequest {
+            key,
+            const_pols_path: req.const_pols_path.to_string(),
+            custom_fixed_path: req.custom_fixed_path.map(|s| s.to_string()),
+            stream_id: req.stream_id,
+            instance_id: req.instance_id,
+            trace: canonical(&trace).into_owned(),
+            publics: canonical(std::slice::from_raw_parts(p.publics, m.n_publics)).into_owned(),
+            airvalues: canonical(std::slice::from_raw_parts(p.airvalues, manifest::Manifest::packed_width(&m.airvalues))).into_owned(),
+            proofvalues: canonical(std::slice::from_raw_parts(p.proofvalues, manifest::Manifest::packed_width(&m.proofvalues))).into_owned(),
+            global_challenge: canonical(std::slice::from_raw_parts(p.global_challenge, 3)).into_owned(),
+            proof_words,
+        })
     }
 
     /// Prove one instance; writes the flat proof into `proof_out` (which
@@ -242,22 +472,47 @@ impl Bridge {
     /// `req.inputs` must point at buffers of the lengths the artifact's
     /// manifest implies, valid until this returns.
     pub unsafe fn prove(&self, req: &ProveRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+        let owned = self.take(req)?;
+        self.prove_owned(&owned, proof_out)
+    }
+
+    /// `prove` on a thread of its own: `done` receives the flat proof (or
+    /// the error) when it finishes. The bridge's client serializes proves,
+    /// so this frees the caller's thread rather than the GPU.
+    pub fn prove_async(self: &Arc<Self>, owned: OwnedRequest, done: Box<dyn FnOnce(Result<(Vec<u64>, ProveOutputs), String>) + Send + 'static>) {
+        let bridge = self.clone();
+        std::thread::spawn(move || {
+            let mut proof = vec![0u64; owned.proof_words];
+            // A PJRT failure surfaces as a panic inside xla-pjrt; turn it into
+            // the error path so the caller can stop the process instead of
+            // waiting forever on a completion that will not come.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                bridge.prove_owned(&owned, &mut proof).map_err(|e| e.to_string())
+            }));
+            let result = match result {
+                Ok(Ok(out)) => Ok((proof, out)),
+                Ok(Err(e)) => Err(e),
+                Err(p) => Err(p
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "prove panicked".to_string())),
+            };
+            done(result);
+        });
+    }
+
+    pub fn prove_owned(&self, req: &OwnedRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
         let t0 = Instant::now();
-        let mut slot = self.slot(req.stream_id, req.instance_id);
-        let key = format!("{}_n{}", req.air, req.n_bits);
+        let key = req.key.clone();
+        self.note_used(&key);
+        let slot_idx = self.slot_index(req.stream_id, req.instance_id);
+        let art = self.artifact(slot_idx, &key)?;
+        let mut slot = self.slots[slot_idx].lock().unwrap_or_else(|p| p.into_inner());
+        // No load may enter the plugin while this prove has work in flight.
+        let _exclusive = self.clients[slot_idx].enter_prove();
         if !slot.drivers.contains_key(&key) {
-            let t = Instant::now();
-            let art = artifact::Artifact::load(slot.session.clone(), &self.artifacts.join(&key), Some(&self.cache))?;
-            art.compile_all()?;
-            let n = art.manifest.programs.len();
-            let hits = art.cache_hits.load(Ordering::Relaxed);
             slot.drivers.insert(key.clone(), driver::AirDriver::new(art));
-            if self.log {
-                eprintln!(
-                    "[zz] loaded {key} ({n} programs, {hits} from the cache) in {:.1} s",
-                    t.elapsed().as_secs_f64()
-                );
-            }
         }
         // Keep at most `resident_airs` AIRs' fixed sections on this client:
         // evict the least recently used before this prove needs its own.
@@ -281,7 +536,7 @@ impl Bridge {
         let driver = slot.drivers.get_mut(&key).unwrap();
         if !driver.has_fixed() {
             let t = Instant::now();
-            load_fixed(driver, req.const_pols_path, req.custom_fixed_path)?;
+            load_fixed(driver, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
             if self.log {
                 eprintln!("[zz] fixed sections for {key} in {:.1} s", t.elapsed().as_secs_f64());
             }
@@ -295,34 +550,12 @@ impl Bridge {
             .into());
         }
         let m = driver.manifest();
-        let n = 1usize << m.n_bits;
-        let p = &req.inputs;
-        // pil2's Goldilocks accepts any u64 as a representative (its arithmetic
-        // reduces lazily) and a witness holds raw machine words, so a trace
-        // word above the modulus is that word's residue to pil2; our kernels
-        // read storage as canonical, so reduce on the way in.
-        let unpacked;
-        let trace_words: &[u64] = match req.packed {
-            Some((words_per_row, bits)) => {
-                if bits.len() != m.widths.cm1 {
-                    return Err(format!("{key}: packing lists {} columns, cm1 has {}", bits.len(), m.widths.cm1).into());
-                }
-                unpacked = unpack_trace(std::slice::from_raw_parts(p.trace, n * words_per_row), n, words_per_row, bits);
-                &unpacked
-            }
-            None => std::slice::from_raw_parts(p.trace, n * m.widths.cm1),
-        };
-        let trace = canonical(trace_words);
-        let publics = canonical(std::slice::from_raw_parts(p.publics, m.n_publics));
-        let airvalues = canonical(std::slice::from_raw_parts(p.airvalues, manifest::Manifest::packed_width(&m.airvalues)));
-        let proofvalues = canonical(std::slice::from_raw_parts(p.proofvalues, manifest::Manifest::packed_width(&m.proofvalues)));
-        let global_challenge = canonical(std::slice::from_raw_parts(p.global_challenge, 3));
         let inputs = InstanceInputs {
-            trace: &trace,
-            publics: &publics,
-            airvalues: &airvalues,
-            proofvalues: &proofvalues,
-            global_challenge: &global_challenge,
+            trace: &req.trace,
+            publics: &req.publics,
+            airvalues: &req.airvalues,
+            proofvalues: &req.proofvalues,
+            global_challenge: &req.global_challenge,
         };
         if let Ok(dir) = std::env::var("ZZ_DUMP_INPUTS") {
             // The instance exactly as received, for replaying it outside proofman.

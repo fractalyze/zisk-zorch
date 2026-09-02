@@ -347,9 +347,12 @@ class AirPrograms:
             # `zerofier._coset_points` / `inv_zerofier`, op for op: the
             # interned host copies cannot be closed over (they would lower as
             # in-graph literals), so the same arithmetic runs in the trace.
-            domain = _SHIFT * powers(_root(nb + bb), self.ne)
-            sn = fnp.power(_SHIFT, self.n)
-            period = one / (sn * powers(_root(bb), 1 << bb) - one)
+            # The seeds cross an optimization barrier so XLA does not fold
+            # the series back into literals at compile time.
+            shift = lax.optimization_barrier(_SHIFT)
+            domain = shift * powers(lax.optimization_barrier(_root(nb + bb)), self.ne)
+            sn = fnp.power(shift, self.n)
+            period = one / (sn * powers(lax.optimization_barrier(_root(bb)), 1 << bb) - one)
             return (fnp.tile(period, self.ne >> bb), domain)
 
         return Program("constants", fn, [], ["zi", "domain"])

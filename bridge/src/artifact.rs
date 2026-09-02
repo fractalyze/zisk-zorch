@@ -34,6 +34,12 @@ impl Drop for DeviceBuf {
 }
 
 pub type Buf = Arc<DeviceBuf>;
+
+/// `ZZ_LOG=2`: per-program and per-phase timing on stderr.
+pub fn trace_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZZ_LOG").map(|v| v.trim() >= "2").unwrap_or(false))
+}
 /// Inputs bound by manifest name.
 pub type Env = HashMap<String, Buf>;
 
@@ -41,6 +47,86 @@ pub type Env = HashMap<String, Buf>;
 /// demand and stays out of everyone's way; with one it claims that share
 /// of the card up front, so a co-tenant that sizes itself from free memory
 /// (pil2's stream buffers) leaves it room.
+/// One bridge client: the PJRT session plus the gate between loading and
+/// proving. A deserialization while an execution is in flight on the same
+/// client wedges both (the load synchronizes the device; the execution's
+/// completion needs what the load holds), while deserializations alongside
+/// each other are fine. So loads take the gate shared, per AIR, and a prove
+/// takes it exclusively for its whole run (`Bridge::prove_owned`).
+pub struct Client {
+    pub session: Arc<Session>,
+    gate: Mutex<GateState>,
+    gate_cv: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct GateState {
+    loads_in_flight: usize,
+    proving: bool,
+    /// Proves waiting to enter: new loads hold back for them, so a prove
+    /// waits at most for the loads already in flight.
+    proves_waiting: usize,
+    started_proving: bool,
+}
+
+/// Releases its side of the gate on drop.
+pub struct GatePass<'a> {
+    client: &'a Client,
+    load: bool,
+}
+
+impl Drop for GatePass<'_> {
+    fn drop(&mut self) {
+        let mut g = self.client.gate.lock().unwrap_or_else(|p| p.into_inner());
+        if self.load {
+            g.loads_in_flight -= 1;
+        } else {
+            g.proving = false;
+        }
+        self.client.gate_cv.notify_all();
+    }
+}
+
+impl Client {
+    /// Wait until no prove is running or waiting, then count this load in.
+    pub fn enter_load(&self) -> GatePass<'_> {
+        let mut g = self.gate.lock().unwrap_or_else(|p| p.into_inner());
+        while g.proving || g.proves_waiting > 0 {
+            g = self.gate_cv.wait(g).unwrap_or_else(|p| p.into_inner());
+        }
+        g.loads_in_flight += 1;
+        GatePass { client: self, load: true }
+    }
+
+    /// Wait until no load is in flight and no other prove runs, then own the
+    /// plugin for one prove.
+    pub fn enter_prove(&self) -> GatePass<'_> {
+        let mut g = self.gate.lock().unwrap_or_else(|p| p.into_inner());
+        g.proves_waiting += 1;
+        while g.proving || g.loads_in_flight > 0 {
+            g = self.gate_cv.wait(g).unwrap_or_else(|p| p.into_inner());
+        }
+        g.proves_waiting -= 1;
+        g.proving = true;
+        g.started_proving = true;
+        GatePass { client: self, load: false }
+    }
+
+    /// Whether a prove has ever run on this client (the background preload
+    /// of the whole key stops then; only requested AIRs load afterwards).
+    pub fn started_proving(&self) -> bool {
+        self.gate.lock().unwrap_or_else(|p| p.into_inner()).started_proving
+    }
+}
+
+pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
+    Arc::new(Client {
+        session: new_session(memory_fraction),
+        gate: Mutex::new(GateState::default()),
+        gate_cv: std::sync::Condvar::new(),
+    })
+}
+
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
     let options = match memory_fraction {
         Some(f) => SessionOptions { preallocate: Some(true), memory_fraction: Some(f) },
@@ -61,6 +147,7 @@ pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
 pub struct Artifact {
     pub manifest: Manifest,
     dir: PathBuf,
+    client: Arc<Client>,
     session: Arc<Session>,
     exes: Mutex<HashMap<String, Arc<Executable>>>,
     /// Serialized executables, keyed by the bytecode's hash: a compile costs
@@ -81,7 +168,7 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 impl Artifact {
-    pub fn load(session: Arc<Session>, dir: &Path, cache: Option<&Path>) -> Result<Artifact, Error> {
+    pub fn load(client: Arc<Client>, dir: &Path, cache: Option<&Path>) -> Result<Artifact, Error> {
         let cache = match cache {
             Some(c) => {
                 let sub = c.join(dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
@@ -93,7 +180,8 @@ impl Artifact {
         Ok(Artifact {
             manifest: Manifest::load(dir)?,
             dir: dir.to_path_buf(),
-            session,
+            session: client.session.clone(),
+            client,
             exes: Mutex::new(HashMap::new()),
             cache,
             cache_hits: std::sync::atomic::AtomicUsize::new(0),
@@ -116,10 +204,20 @@ impl Artifact {
         let path = self.dir.join(&info.file);
         let code = std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let cached = self.cache.as_ref().map(|c| c.join(format!("{name}-{:016x}.pjrt", fnv1a64(&code))));
+        let t = std::time::Instant::now();
         let exe = match cached.as_ref().and_then(|p| std::fs::read(p).ok()) {
             Some(bytes) => {
                 self.cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                unsafe { self.session.deserialize_and_load(&bytes) }
+                let read_ms = t.elapsed().as_secs_f64() * 1e3;
+                let exe = unsafe { self.session.deserialize_and_load(&bytes) };
+                if trace_enabled() {
+                    eprintln!(
+                        "[zz]   load {name}: {} KB, read {read_ms:.1} ms, deserialize {:.1} ms",
+                        bytes.len() / 1024,
+                        t.elapsed().as_secs_f64() * 1e3 - read_ms
+                    );
+                }
+                exe
             }
             None => {
                 let exe = unsafe { self.session.compile(&code) };
@@ -170,13 +268,21 @@ impl Artifact {
     }
 
     fn upload_bytes(&self, bytes: &[u8], spec: &Spec) -> Buf {
+        let t = std::time::Instant::now();
         let buf = unsafe { self.session.input_buffer(bytes, &spec.dims, spec.buffer_type()) };
+        if trace_enabled() && bytes.len() >= 1 << 20 {
+            eprintln!("[zz]   upload {}: {} MB, {:.2} ms", spec.name, bytes.len() >> 20, t.elapsed().as_secs_f64() * 1e3);
+        }
         Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(buf) })
     }
 
     /// A device buffer's words on the host (32-bit outputs widened).
     pub fn download_words(&self, buf: &Buf, spec: &Spec) -> Result<Vec<u64>, Error> {
+        let t = std::time::Instant::now();
         let bytes = unsafe { self.session.buffer_to_host(buf.raw()) };
+        if trace_enabled() {
+            eprintln!("[zz]   download {}: {} KB, {:.2} ms (waits for the work before it)", spec.name, bytes.len() / 1024, t.elapsed().as_secs_f64() * 1e3);
+        }
         if bytes.len() != spec.elems() * spec.elem_bytes() {
             return Err(format!("{}: device buffer is {} bytes, spec says {}", spec.name, bytes.len(), spec.elems() * spec.elem_bytes()).into());
         }
@@ -195,7 +301,11 @@ impl Artifact {
             args.push(buf.raw());
         }
         let exe = self.executable(name)?;
+        let t = std::time::Instant::now();
         let outs = unsafe { self.session.run_buffers_to_device(&exe, &args, info.outputs.len()) };
+        if trace_enabled() {
+            eprintln!("[zz]   run {name}: enqueue {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
+        }
         Ok(outs
             .into_iter()
             .map(|b| Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(b) }))
