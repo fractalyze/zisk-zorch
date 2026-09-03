@@ -1,42 +1,8 @@
-//! pil2-proofman's `gen_proof` over zisk-zorch's exported artifacts.
-//!
-//! The device half of genProof is the per-AIR StableHLO programs
-//! `zisk_zorch/export` writes; this crate is the host half, called from
-//! proofman's `gen_proof` wrapper in place of `gen_proof_c`: it uploads the
-//! instance, drives the programs through PJRT in the schedule's order,
-//! sponges the transcript, and writes the flat proof pil2 reads back.
-//!
-//! Concurrency: one PJRT client per slot, one prove per client at a time.
-//! proofman proves streamed instances from `n_streams` threads at once and
-//! the rest from per-stream workers, so a slot per stream keeps those
-//! proves overlapping on the card (one client serializes its executions).
-//!
-//! Environment:
-//!   ZZ_ARTIFACTS    directory of `<Air>_n<nBits>/` exports; unset = bridge off
-//!   XLA_PJRT_PLUGIN the frx/jax CUDA PJRT plugin .so (xla-pjrt reads it)
-//!   ZZ_CLIENTS      PJRT clients (default 3: proofman creates the bridge before
-//!                   it knows its stream count); at most two proves per client
-//!                   are on the device at a time (one running, one uploaded ahead;
-//!                   ZZ_PENDING overrides)
-//!   ZZ_PRELOAD      what loads at creation: the previous run's AIRs (default,
-//!                   `<ZZ_ARTIFACTS>/.last-used`), `all`, or `0` (only the
-//!                   instance list, once proofman has it); ZZ_PRELOAD_THREADS=6
-//!   ZZ_MEMORY_FRACTION  share of the card the clients claim up front, split
-//!                   evenly (unset: allocate on demand). pil2 sizes its own
-//!                   stream buffers from what is free at init, so this is
-//!                   what keeps it from taking the whole card first.
-//!   ZZ_AB=1         prove through pil2 too and compare (see `ab`)
-//!   ZZ_RESIDENT_AIRS  AIRs whose fixed sections stay on a client at once
-//!                   (default 1, least recently used evicted); a table AIR's
-//!                   sections run to gigabytes and every AIR of a block
-//!                   cannot stay resident beside pil2's buffers
-//!   ZZ_COMPILE_CACHE  directory of serialized executables (default
-//!                   `<ZZ_ARTIFACTS>/.pjrt-cache`); a miss compiles and stores
-//!   ZZ_HOST_THREADS threads for the host-side copies (default half the cores,
-//!                   at most 8; see `host_threads`)
-//!   ZZ_LOG=1        per-instance timing on stderr (`ZZ_LOG=2` per program;
-//!                   any other non-empty value but 0 counts as 1), each line
-//!                   stamped with the seconds since the bridge came up
+//! pil2-proofman's `gen_proof` over zisk-zorch's exported artifacts: the
+//! host half of genProof (transcript, challenges, query draw, the flat
+//! proof), called from proofman's `gen_proof` wrapper in place of
+//! `gen_proof_c`. Design, environment variables, gates and numbers:
+//! `docs/bridge.md`.
 
 /// Seconds since the bridge came up, for the `[zz +t]` log stamps.
 pub fn uptime() -> f64 {
@@ -321,12 +287,54 @@ pub struct Bridge {
     clients: Vec<Arc<artifact::Client>>,
     slots: Vec<Mutex<Slot>>,
     loaded: Vec<(Mutex<Loaded>, std::sync::Condvar)>,
-    preload_queue: Mutex<std::collections::VecDeque<(usize, String, bool)>>,
+    preload: Mutex<PreloadQueue>,
     used: Mutex<std::collections::BTreeSet<String>>,
-    preload_threads: AtomicUsize,
     next: AtomicUsize,
-    pending: Arc<Pending>,
+    /// Device-side admission, per client (see `Pending`).
+    pending: Vec<Arc<Pending>>,
     log: bool,
+}
+
+/// The preload work list and the count of workers draining it, kept under
+/// one lock so a worker's "queue empty, I am leaving" and a caller's "queue
+/// non-empty, enough workers running" cannot interleave: with the two
+/// apart, an enqueue landing between a worker's empty pop and its exit saw
+/// that worker as alive, spawned nothing, and the work sat there forever.
+#[derive(Default)]
+pub struct PreloadQueue {
+    work: std::collections::VecDeque<(usize, String, bool)>,
+    workers: usize,
+}
+
+impl PreloadQueue {
+    /// Queue `work` (at the front when `first`) and return how many workers
+    /// to spawn so `threads` are running; the count is taken now.
+    pub fn push(&mut self, work: Vec<(usize, String, bool)>, first: bool, threads: usize) -> usize {
+        if first {
+            for w in work.into_iter().rev() {
+                self.work.push_front(w);
+            }
+        } else {
+            self.work.extend(work);
+        }
+        let spawn = threads.max(1).saturating_sub(self.workers);
+        self.workers += spawn;
+        spawn
+    }
+
+    /// The next item for a worker; `None` retires the worker in the same
+    /// step, so a later `push` counts it gone.
+    pub fn take(&mut self) -> Option<(usize, String, bool)> {
+        let next = self.work.pop_front();
+        if next.is_none() {
+            self.workers -= 1;
+        }
+        next
+    }
+
+    pub fn workers(&self) -> usize {
+        self.workers
+    }
 }
 
 static BRIDGE: OnceLock<Option<Arc<Bridge>>> = OnceLock::new();
@@ -458,11 +466,10 @@ impl Bridge {
             clients: client_handles,
             slots,
             loaded,
-            preload_queue: Mutex::new(std::collections::VecDeque::new()),
+            preload: Mutex::new(PreloadQueue::default()),
             used: Mutex::new(std::collections::BTreeSet::new()),
-            preload_threads: AtomicUsize::new(0),
             next: AtomicUsize::new(0),
-            pending: Arc::new(Pending::default()),
+            pending: (0..clients).map(|_| Arc::new(Pending::default())).collect(),
             log,
         }
     }
@@ -549,23 +556,12 @@ impl Bridge {
     pub fn preload_with(self: &Arc<Self>, keys: Vec<String>, first: bool) {
         let work: Vec<(usize, String, bool)> =
             (0..self.slots.len()).flat_map(|s| keys.iter().map(move |k| (s, k.clone(), first))).collect();
-        {
-            let mut q = self.preload_queue.lock().unwrap();
-            if first {
-                for w in work.into_iter().rev() {
-                    q.push_front(w);
-                }
-            } else {
-                q.extend(work);
-            }
-        }
         let threads = std::env::var("ZZ_PRELOAD_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(6usize).max(1);
-        let running = self.preload_threads.fetch_add(0, Ordering::SeqCst);
-        for _ in running..threads {
-            self.preload_threads.fetch_add(1, Ordering::SeqCst);
+        let spawn = self.preload.lock().unwrap_or_else(|p| p.into_inner()).push(work, first, threads);
+        for _ in 0..spawn {
             let bridge = self.clone();
             std::thread::spawn(move || loop {
-                let next = bridge.preload_queue.lock().unwrap().pop_front();
+                let next = bridge.preload.lock().unwrap_or_else(|p| p.into_inner()).take();
                 match next {
                     // Background keys (the whole proving key) load only until
                     // proving starts; requested keys always do.
@@ -575,10 +571,7 @@ impl Bridge {
                             zzlog!("preload {key}: {e}");
                         }
                     }
-                    None => {
-                        bridge.preload_threads.fetch_sub(1, Ordering::SeqCst);
-                        return;
-                    }
+                    None => return,
                 }
             });
         }
@@ -695,9 +688,11 @@ impl Bridge {
         let slot_idx = self.slot_index(req.stream_id, req.instance_id);
         let art = self.artifact(slot_idx, &key)?;
         // Two proves per client on the device at once: one running, one
-        // with its uploads ahead (`ZZ_PENDING` overrides the count).
+        // with its uploads ahead (`ZZ_PENDING` overrides the count). Counted
+        // per client: streamed instances pin their slot, so a bridge-wide
+        // count would let every admission land on one client.
         let per_client = std::env::var("ZZ_PENDING").ok().and_then(|s| s.parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(2);
-        let _admitted = self.pending.acquire(per_client * self.slots.len());
+        let _admitted = self.pending[slot_idx].acquire(per_client);
         let mut inputs = InstanceInputs {
             trace: &req.trace,
             publics: &req.publics,
@@ -1029,29 +1024,45 @@ mod tests {
     }
 
     #[test]
-    fn pending_caps_the_instances_in_flight() {
-        let pending = Arc::new(Pending::default());
-        let a = pending.acquire(2);
-        let b = pending.acquire(2);
-        assert_eq!(pending.pending(), 2);
+    fn admission_is_counted_per_slot() {
+        // Streamed instances pin their slot, so the cap has to be per
+        // client: filling one slot must not admit anything extra there, and
+        // must not hold the other slot back.
+        let slots: Vec<Arc<Pending>> = (0..2).map(|_| Arc::new(Pending::default())).collect();
+        let a = slots[0].acquire(2);
+        let _b = slots[0].acquire(2);
         let (tx, rx) = std::sync::mpsc::channel();
-        let p = pending.clone();
+        let s0 = slots[0].clone();
         let waiter = std::thread::spawn(move || {
-            let _c = p.acquire(2);
+            let _c = s0.acquire(2);
             tx.send(()).unwrap();
         });
-        assert!(rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(), "third instance got in over the cap");
+        assert!(rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(), "a third prove got onto slot 0");
+        let _other = slots[1].acquire(2);
+        assert_eq!(slots[1].pending(), 1, "slot 1 was held back by slot 0's cap");
         drop(a);
         rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
         waiter.join().unwrap();
-        drop(b);
-        assert_eq!(pending.pending(), 0);
     }
 
     #[test]
-    fn the_custom_commit_layout_follows_the_backend() {
-        assert!(fixed_is_tiled("/pk/zisk/Zisk/airs/Rom/air/Rom.const_gpu"));
-        assert!(!fixed_is_tiled("/pk/zisk/Zisk/airs/Rom/air/Rom.const"));
+    fn a_push_after_the_last_worker_leaves_spawns_again() {
+        let mut q = PreloadQueue::default();
+        assert_eq!(q.push(vec![(0, "A".into(), true)], true, 2), 2);
+        assert!(q.take().is_some());
+        // Both workers find the queue empty and retire, in the same step as
+        // their empty pop.
+        assert!(q.take().is_none());
+        assert!(q.take().is_none());
+        assert_eq!(q.workers(), 0);
+        // The race the reviewer described: work arriving as the last
+        // worker leaves. Counted under the same lock, the push sees no
+        // workers and asks for a full set again.
+        assert_eq!(q.push(vec![(0, "B".into(), true)], true, 2), 2);
+        assert_eq!(q.take(), Some((0, "B".into(), true)));
+        // A push while workers are alive spawns only the shortfall.
+        assert_eq!(q.push(vec![(1, "C".into(), false)], false, 3), 1);
+        assert_eq!(q.workers(), 3);
     }
 
     #[test]

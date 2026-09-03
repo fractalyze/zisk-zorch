@@ -1,25 +1,16 @@
-"""The pil2 schedule as per-AIR device programs — what `gen_proof` dispatches.
-
-The C entry point (`bridge/`) replaces pil2-stark's `gen_proof` and runs
-the schedule host-side with pil2's own `TranscriptGL`, so what has to cross
-to the device is exactly the heavy, transcript-free work between two
-challenges: a commit, the stage-2 witness, the quotient, the openings, one
-FRI round. Each such step is one StableHLO program here, lowered from the
-very function the pil2-mode roles (`harness/pil2_prover.py`) run, so the
-binding and the Python prover cannot compute different things.
+"""The pil2 schedule as per-AIR device programs: each transcript-free step
+between two challenges (a commit, the stage-2 witness, the quotient, the
+openings, one FRI round) is one StableHLO program, lowered from the very
+function the pil2-mode roles (`harness/pil2_prover.py`) run.
 
 Every program takes positional arrays and returns a tuple of arrays; the
-exporter records both sides by name in the manifest, and the bridge binds
-buffers by name — adding an output cannot silently shift a decode. Values
-that cross to the host (roots, evals, the final polynomial, air values)
-leave as base limbs in pil2's packing; device-only intermediates (extended
-sections, codewords) keep their field dtype.
-
-Scalar sections enter as the same flat buffers pil2 hands `gen_proof`
-(`StepsParams`): publics as one word each, air/proof values in dumped
-packing (stage-1 one word, later stages three), challenges and airgroup
-values as ``(n, 3)`` limb rows — `traced_scalar_env` packs them into the SSA
-interpreter's environment inside the trace.
+exporter records both sides by name in the manifest and the bridge binds
+buffers by name, so adding an output cannot silently shift a decode.
+Values that cross to the host (roots, evals, the final polynomial, air
+values) leave as base limbs in pil2's packing; device-only intermediates
+keep their field dtype. Scalar sections enter as the flat buffers pil2
+hands `gen_proof` (`StepsParams`), packed as dumped; `traced_scalar_env`
+unpacks them inside the trace.
 
 Schedule source: ``gen_proof.hpp`` on the pinned fork
 (https://github.com/fractalyze/pil2-proofman/blob/11999a69/pil2-stark/src/starkpil/gen_proof.hpp).
@@ -252,7 +243,9 @@ class AirPrograms:
         self.avs = sum(w for _, _, w in value_offsets(si.get("airValuesMap") or []))
         self.pvs = sum(w for _, _, w in value_offsets(si.get("proofValuesMap") or []))
         self.custom_ids = sorted(key.custom_ext)
-        self.custom_widths = {ci: int(key.custom_ext[ci].shape[1]) for ci in self.custom_ids}
+        self.custom_widths = {
+            ci: int(key.custom_ext[ci].shape[1]) for ci in self.custom_ids
+        }
         self.n_ev = len(si["evMap"])
         self.tree = merkle_tree(self.arity, self.family)
         self.code = Pil2FriCode(tuple(self.steps))
@@ -287,7 +280,9 @@ class AirPrograms:
             challenges = fnp.zeros((self.n_ch, 3), F)
         if agv is None:
             agv = fnp.zeros((self.n_agv, 3), F)
-        return traced_scalar_env(self.si, publics, airvalues, proofvalues, challenges, agv)
+        return traced_scalar_env(
+            self.si, publics, airvalues, proofvalues, challenges, agv
+        )
 
     def _custom_specs(self, domain: str) -> list[Spec]:
         n = self.n if domain == "base" else self.ne
@@ -352,7 +347,9 @@ class AirPrograms:
             shift = lax.optimization_barrier(_SHIFT)
             domain = shift * powers(lax.optimization_barrier(_root(nb + bb)), self.ne)
             sn = fnp.power(shift, self.n)
-            period = one / (sn * powers(lax.optimization_barrier(_root(bb)), 1 << bb) - one)
+            period = one / (
+                sn * powers(lax.optimization_barrier(_root(bb)), 1 << bb) - one
+            )
             return (fnp.tile(period, self.ne >> bb), domain)
 
         return Program("constants", fn, [], ["zi", "domain"])
@@ -422,7 +419,10 @@ class AirPrograms:
         nc = len(self.custom_ids)
 
         def fn(trace, const_base, *rest):
-            customs, (publics, airvalues, proofvalues, challenges) = rest[:nc], rest[nc:]
+            customs, (publics, airvalues, proofvalues, challenges) = (
+                rest[:nc],
+                rest[nc:],
+            )
             matrix, result, airvalues_out = role.columns(
                 trace,
                 const_base,
@@ -488,7 +488,11 @@ class AirPrograms:
             publics, airvalues, proofvalues, challenges, agv, zi = rest[nc : nc + 6]
             window = rest[nc + 6] if rows is not None else None
             scalars = self._scalars(publics, airvalues, proofvalues, challenges, agv)
-            return (role.quotient(cm1, cm2, const, self._customs(customs), scalars, zi, rows=window),)
+            return (
+                role.quotient(
+                    cm1, cm2, const, self._customs(customs), scalars, zi, rows=window
+                ),
+            )
 
         inputs = self._quotient_inputs()
         name = "quotient"
@@ -509,7 +513,10 @@ class AirPrograms:
         return Program(
             "quotient_commit",
             fn,
-            [Spec(f"q_{k}", "goldilocksx3", (size,)) for k, size in enumerate(self.chunk_sizes)],
+            [
+                Spec(f"q_{k}", "goldilocksx3", (size,))
+                for k, size in enumerate(self.chunk_sizes)
+            ],
             ["qsec", "rootq", *(s.name for s in layers)],
         )
 
@@ -528,12 +535,19 @@ class AirPrograms:
 
         def fn(cm1, cm2, qsec, const, *rest):
             customs, (lev,) = rest[:nc], rest[nc:]
-            return (_limbs(role.evals_fn(self._bufs(cm1, cm2, qsec, const, list(customs)), lev)),)
+            return (
+                _limbs(
+                    role.evals_fn(self._bufs(cm1, cm2, qsec, const, list(customs)), lev)
+                ),
+            )
 
         return Program(
             "evals",
             fn,
-            [*self._section_specs(), Spec("lev", "goldilocksx3", (self.n, len(self.si["openingPoints"])))],
+            [
+                *self._section_specs(),
+                Spec("lev", "goldilocksx3", (self.n, len(self.si["openingPoints"]))),
+            ],
             ["evals"],
         )
 
@@ -580,7 +594,9 @@ class AirPrograms:
             return (leaves, root, *layers)
 
         n_x = 1 << (self.steps[i] - self.steps[i + 1])
-        layers = _layer_specs(self.tree, f"fri_layers_{i}", 1 << self.steps[i + 1], n_x * 3)
+        layers = _layer_specs(
+            self.tree, f"fri_layers_{i}", 1 << self.steps[i + 1], n_x * 3
+        )
         return Program(
             f"fri_commit_{i}",
             fn,
@@ -661,12 +677,18 @@ class AirPrograms:
         for i in range(len(self.steps) - 1):
             out += [self.fri_commit(i), self.fri_fold(i)]
         out += [self.fri_final(), self.grind()]
-        ext = lambda name, width: Spec(name, "goldilocks", (self.ne, width))  # noqa: E731
-        out.append(self.opening("const", ext("const_ext", self.n_const), "const_layers"))
+        ext = lambda name, width: Spec(
+            name, "goldilocks", (self.ne, width)
+        )  # noqa: E731
+        out.append(
+            self.opening("const", ext("const_ext", self.n_const), "const_layers")
+        )
         for ci in self.custom_ids:
             out.append(
                 self.opening(
-                    f"custom_{ci}", ext(f"custom_ext_{ci}", self.custom_widths[ci]), f"custom_layers_{ci}"
+                    f"custom_{ci}",
+                    ext(f"custom_ext_{ci}", self.custom_widths[ci]),
+                    f"custom_layers_{ci}",
                 )
             )
         out.append(self.opening("cm1", ext("cm1_ext", self.w1), "cm1_layers"))
@@ -677,7 +699,11 @@ class AirPrograms:
             out.append(
                 self.opening(
                     f"fri_{i}",
-                    Spec(f"fri_leaves_{i}", "goldilocks", (1 << self.steps[i + 1], n_x * 3)),
+                    Spec(
+                        f"fri_leaves_{i}",
+                        "goldilocks",
+                        (1 << self.steps[i + 1], n_x * 3),
+                    ),
                     f"fri_layers_{i}",
                 )
             )
@@ -713,10 +739,13 @@ class AirPrograms:
                 for i, c in enumerate(si["challengesMap"])
             ],
             "airvalues": [{"stage": v["stage"]} for v in si.get("airValuesMap") or []],
-            "airgroupvalues": [{"stage": v["stage"]} for v in si.get("airgroupValuesMap") or []],
-            "proofvalues": [{"stage": v["stage"]} for v in si.get("proofValuesMap") or []],
+            "airgroupvalues": [
+                {"stage": v["stage"]} for v in si.get("airgroupValuesMap") or []
+            ],
+            "proofvalues": [
+                {"stage": v["stage"]} for v in si.get("proofValuesMap") or []
+            ],
             "airgroupvalue_index": self.airgroupvalue_index,
             "quotient_chunks": self.chunk_sizes,
             "witness_calc": self.prover.witness.active,
         }
-

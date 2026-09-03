@@ -37,7 +37,6 @@ pub fn record(instance_id: usize, proof: Vec<u64>) {
     RECORDED.lock().unwrap().insert(instance_id, proof);
 }
 
-/// Outcome of one comparison pass.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Report {
     pub identical: usize,

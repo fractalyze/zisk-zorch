@@ -1,11 +1,7 @@
-//! genProof's schedule over one artifact — `zisk_zorch/export/replay.py`
-//! in Rust, step for step. The artifacts hold every device stage; this is
-//! the host half: the transcript, the challenge bookkeeping, the query
-//! draw, and the flat `proof2pointer` layout pil2 reads back.
-//!
-//! One `AirDriver` per (session, artifact): it keeps the key's fixed
-//! sections resident (the constant tree, the zerofier, the coset), so a
-//! prove uploads only the instance.
+//! genProof's schedule over one artifact, step for step the same as
+//! `zisk_zorch/export/replay.py`: one `AirDriver` per (session, artifact),
+//! keeping the key's fixed sections resident so a prove uploads only the
+//! instance.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -38,7 +34,6 @@ pub struct InstanceInputs<'a> {
     pub uploaded: Option<Uploaded>,
 }
 
-/// An instance's sections on the device.
 pub struct Uploaded {
     pub trace: Buf,
     pub publics: Buf,

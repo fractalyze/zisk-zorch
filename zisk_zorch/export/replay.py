@@ -1,19 +1,8 @@
-"""genProof's schedule over an exported artifact — the Rust bridge's
-driver, written once in Python against the same artifacts.
-
-The artifacts hold every device stage; what remains between them is the
-host protocol: the Fiat-Shamir transcript, the challenge bookkeeping, the
-query draw, and the wire layout. This module is that host half over
-`runtime.Artifact`, in exactly the order `gen_proof.hpp` runs it
-(non-recursive: seeded by the contributions-phase global challenge, root1
-never absorbed), producing the flat `proof2pointer` buffer the bridge
-writes into pil2's proof buffer.
-
-Its job is to be checkable: `stages_test` proves one instance twice — the
-Python prover (`Pil2InnerProver` + `emit_wire_proof`) and this replay —
-and compares the flat proofs bit-for-bit. `bridge/src/driver.rs` mirrors
-THIS file step for step, so the artifacts' correctness is settled here and
-the Rust only has to reproduce the host half.
+"""genProof's schedule over an exported artifact, in Python, so the
+artifacts can be checked without the Rust: `stages_test` proves one
+instance through the Python prover and through this replay and compares
+the flat proofs bit for bit. `bridge/src/driver.rs` mirrors this file
+step for step. Design: `docs/bridge.md`.
 """
 
 from __future__ import annotations
@@ -105,7 +94,9 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
         for ci in custom_ids
     }
     custom_base = {f"custom_base_{ci}": key.custom_base[ci] for ci in custom_ids}
-    custom_ext = {f"custom_ext_{ci}": customs[ci][f"custom_ext_{ci}"] for ci in custom_ids}
+    custom_ext = {
+        f"custom_ext_{ci}": customs[ci][f"custom_ext_{ci}"] for ci in custom_ids
+    }
 
     scalars = {
         "publics": inst.publics,
@@ -115,7 +106,11 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
     trace = art.place(inst.trace, art.inputs("commit1")[0])
     if sc["witness_calc"]:
         trace = art.run(
-            "witness_calc", trace=trace, const_base=key.const_base, **custom_base, **scalars
+            "witness_calc",
+            trace=trace,
+            const_base=key.const_base,
+            **custom_base,
+            **scalars,
         )["trace"]
 
     c1 = art.run("commit1", trace=trace)
@@ -212,7 +207,12 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
     def open_tree(name: str, width: int, n_bits: int, pos: np.ndarray, **buffers):
         out = art.run(f"open_{name}", **buffers, positions=pos)
         return _opening(
-            out[f"{name}_openings"], out[f"{name}_last_level"], width, n_bits, arity, llv
+            out[f"{name}_openings"],
+            out[f"{name}_last_level"],
+            width,
+            n_bits,
+            arity,
+            llv,
         )
 
     const_opening = open_tree(
@@ -230,22 +230,36 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
             nbe,
             positions,
             **{f"custom_ext_{ci}": customs[ci][f"custom_ext_{ci}"]},
-            **_layers(customs[ci], f"custom_setup_{ci}_layers_", f"custom_layers_{ci}_"),
+            **_layers(
+                customs[ci], f"custom_setup_{ci}_layers_", f"custom_layers_{ci}_"
+            ),
         )
         for ci in custom_ids
     ]
     stage_openings = [
         open_tree(
-            "cm1", sc["widths"]["cm1"], nbe, positions,
-            cm1_ext=c1["cm1_ext"], **_layers(c1, "cm1_layers_", "cm1_layers_"),
+            "cm1",
+            sc["widths"]["cm1"],
+            nbe,
+            positions,
+            cm1_ext=c1["cm1_ext"],
+            **_layers(c1, "cm1_layers_", "cm1_layers_"),
         ),
         open_tree(
-            "cm2", sc["widths"]["cm2"], nbe, positions,
-            cm2_ext=c2["cm2_ext"], **_layers(c2, "cm2_layers_", "cm2_layers_"),
+            "cm2",
+            sc["widths"]["cm2"],
+            nbe,
+            positions,
+            cm2_ext=c2["cm2_ext"],
+            **_layers(c2, "cm2_layers_", "cm2_layers_"),
         ),
         open_tree(
-            "qsec", sc["widths"]["qsec"], nbe, positions,
-            qsec=qc["qsec"], **_layers(qc, "qsec_layers_", "qsec_layers_"),
+            "qsec",
+            sc["widths"]["qsec"],
+            nbe,
+            positions,
+            qsec=qc["qsec"],
+            **_layers(qc, "qsec_layers_", "qsec_layers_"),
         ),
     ]
     fri_openings = []
