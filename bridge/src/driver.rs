@@ -33,6 +33,33 @@ pub struct InstanceInputs<'a> {
     /// dumped packing
     pub proofvalues: &'a [u64],
     pub global_challenge: &'a [u64],
+    /// The same sections already on the device (`upload_inputs`), when the
+    /// caller could upload them while another prove had the client.
+    pub uploaded: Option<Uploaded>,
+}
+
+/// An instance's sections on the device.
+pub struct Uploaded {
+    pub trace: Buf,
+    pub publics: Buf,
+    pub airvalues: Buf,
+    pub proofvalues: Buf,
+}
+
+/// Upload an instance's sections. Separate from `prove` so a prove queued
+/// behind another on the same client can have its uploads (a gigabyte for
+/// Main, staged through pinned memory) done before its turn.
+pub fn upload_inputs(art: &Artifact, inp: &InstanceInputs) -> Result<Uploaded, Error> {
+    let m = &art.manifest;
+    let spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
+        m.program(prog)?.input(input).cloned().ok_or_else(|| format!("{prog}: no input {input}").into())
+    };
+    Ok(Uploaded {
+        publics: art.upload_words(inp.publics, &spec("logup", "publics")?)?,
+        airvalues: art.upload_words(inp.airvalues, &spec("logup", "airvalues")?)?,
+        proofvalues: art.upload_words(inp.proofvalues, &spec("logup", "proofvalues")?)?,
+        trace: art.upload_words(inp.trace, &spec("commit1", "trace")?)?,
+    })
 }
 
 #[derive(Clone, Debug, Default)]
@@ -113,6 +140,18 @@ impl AirDriver {
             let from = format!("{prog}_layers_");
             let to = format!("custom_layers_{}_", cc.id);
             art.run_into(&prog, &mut env, Some((&from, &to)))?;
+        }
+        // The quotient's row windows are fixed per AIR: resident, so the
+        // chunks enqueue back to back instead of each waiting on an upload
+        // queued behind the previous chunk.
+        if m.quotient_chunks.len() > 1 {
+            let mut start = 0i32;
+            for (k, size) in m.quotient_chunks.iter().enumerate() {
+                let spec = m.program(&format!("quotient_{size}"))?.input("rows").cloned().ok_or("quotient: no rows input")?;
+                let rows: Vec<i32> = (start..start + *size as i32).collect();
+                env.insert(format!("rows_{k}"), art.upload_i32(&rows, &spec)?);
+                start += *size as i32;
+            }
         }
         self.fixed = Some(env);
         Ok(())
@@ -204,32 +243,39 @@ impl AirDriver {
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
         let mut env = fixed.clone();
-        env.insert("publics".into(), art.upload_words(inp.publics, &in_spec("logup", "publics")?)?);
-        env.insert("airvalues".into(), art.upload_words(inp.airvalues, &in_spec("logup", "airvalues")?)?);
-        env.insert("proofvalues".into(), art.upload_words(inp.proofvalues, &in_spec("logup", "proofvalues")?)?);
-        env.insert("trace".into(), art.upload_words(inp.trace, &in_spec("commit1", "trace")?)?);
+        let up = match &inp.uploaded {
+            Some(u) => Uploaded { trace: u.trace.clone(), publics: u.publics.clone(), airvalues: u.airvalues.clone(), proofvalues: u.proofvalues.clone() },
+            None => upload_inputs(art, inp)?,
+        };
+        env.insert("publics".into(), up.publics);
+        env.insert("airvalues".into(), up.airvalues);
+        env.insert("proofvalues".into(), up.proofvalues);
+        env.insert("trace".into(), up.trace);
+        // Non-recursive schedule: the seed already binds root1 through the
+        // contributions phase, so root1 itself is never absorbed, and the
+        // stage-2 challenges are known before commit1 runs. Everything up to
+        // commit2 is enqueued before the first wait: an upload or download
+        // here would sit behind the queued work, idling the device for one
+        // enqueue latency per stage.
+        transcript.put(inp.global_challenge);
+        let mut challenges = vec![0u64; m.challenges.len() * 3];
+        squeeze(transcript, &mut challenges, 2);
+        env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
         if m.witness_calc {
             let trace = art.run("witness_calc", &env)?.remove(0);
             env.insert("trace".into(), trace);
         }
         art.run_into("commit1", &mut env, None)?;
-        // Non-recursive schedule: the seed already binds root1 through the
-        // contributions phase, so root1 itself is never absorbed.
-        transcript.put(inp.global_challenge);
-
-        let mut challenges = vec![0u64; m.challenges.len() * 3];
-        squeeze(transcript, &mut challenges, 2);
-        env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
         art.run_into("logup", &mut env, None)?;
         // Nothing after logup reads the base trace, and nothing after
         // commit2 the base cm2: a gigabyte or more each on a wide AIR,
         // released before the quotient's peak (the plugin defers the free
         // until the enqueued work is done).
         env.remove("trace");
-        let mut result = ProveOutputs::default();
-        result.airvalues = art.download_words(&env["airvalues"], &out_spec("logup", "airvalues")?)?;
         art.run_into("commit2", &mut env, None)?;
         env.remove("cm2");
+        let mut result = ProveOutputs::default();
+        result.airvalues = art.download_words(&env["airvalues"], &out_spec("logup", "airvalues")?)?;
         let root2 = art.download_words(&env["root2"], &out_spec("commit2", "root2")?)?;
         transcript.put(&root2);
         for (i, (off, _)) in Manifest::value_offsets(&m.airvalues).into_iter().enumerate() {
@@ -253,13 +299,11 @@ impl AirDriver {
         if single {
             qenv.insert("q_0".into(), art.run("quotient", &env)?.remove(0));
         } else {
-            let mut start = 0i32;
             for (k, size) in m.quotient_chunks.iter().enumerate() {
                 let prog = format!("quotient_{size}");
-                let rows: Vec<i32> = (start..start + *size as i32).collect();
-                env.insert("rows".into(), art.upload_i32(&rows, &in_spec(&prog, "rows")?)?);
+                let rows = env.get(&format!("rows_{k}")).cloned().ok_or("set_fixed: quotient row windows missing")?;
+                env.insert("rows".into(), rows);
                 qenv.insert(format!("q_{k}"), art.run(&prog, &env)?.remove(0));
-                start += *size as i32;
             }
             env.remove("rows");
         }

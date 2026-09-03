@@ -150,6 +150,7 @@ fn main() {
         airvalues: &airvalues,
         proofvalues: &proofvalues,
         global_challenge: &global_challenge,
+        uploaded: None,
     };
     let mut proof = vec![0u64; driver.proof_words()];
     let t = Instant::now();

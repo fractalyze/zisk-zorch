@@ -82,13 +82,22 @@ take the second of two consecutive runs):
 
 | | native (1 stream) | bridge, warm |
 |---|---|---|
-| `cargo-zisk prove` wall | 10.7 s | 22.3 s |
-| proofman init | 2.9 s | 3.8 s (bridge up 0.5 s, then init beside six executable loads) |
-| inner-proof leg | 3.5 s | 13.1 s |
-| ├ proves, one client, back to back | | ~9.0 s (InputData 0.4, RomData 0.3, MemAlign 0.4, Mem 0.7, Arith 0.8, BinaryExtension 0.9, VirtualTableZisk1 1.0, Binary 1.1, Rom 1.1, Main 1.1, VirtualTableZisk0 1.3) |
-| ├ executable loads that did not finish under init | | ~3.3 s |
-| └ fixed sections, inside the proves above | precomputed on disk | 0.3–0.5 s for the three table AIRs, ≤0.1 s otherwise |
+| `cargo-zisk prove` wall | 10.7 s | 21.2–21.5 s |
+| proofman init | 2.9 s | 6.2 s (bridge up 0.5 s, then init beside the executable loads) |
+| inner-proof leg | 3.5 s (28 proofs on 3 basic + 1 recursive streams) | 9.9–10.1 s |
+| ├ proves, one client, back to back | | 9.1 s (RomData 0.4, MemAlign 0.5, InputData 0.6, VirtualTableZisk1 0.7, Arith 0.8, Mem 0.8, VirtualTableZisk0 0.9, Rom 0.9, BinaryExtension 1.1, Main 1.2, Binary 1.3) |
+| ├ gaps between proves | | 0.2 s |
+| └ recursion after the last basic proof | | 0.7 s |
+| fixed sections, inside the proves above | precomputed on disk | 0.45 s for the two 88-column tables, ≤0.2 s otherwise (the key read ahead of the slot) |
 | host copy of an instance (proofman's worker) | | 0.01–0.1 s |
+
+Native's leg holds the same 11 basic proofs plus 17 recursion proofs
+whose per-proof timers sum to 10.5 s, overlapped four-wide; ours runs the
+basic proves one at a time on one client (two do not fit beside pil2's
+14 GB: a table AIR's constant setup and logup are single 4.5–5.5 GiB
+allocations) with the tower interleaved on pil2's stream. Inside a prove
+the host no longer idles the device: Main's 1.2 s is kernel time end to
+end, against pil2's 0.15 s commit plus 0.27 s proof for the same instance.
 
 The bridge started at 80.7 s. Where the time went, in the order it was
 found (`ZZ_LOG=2` per-program timelines, stamped with the seconds since
@@ -115,6 +124,26 @@ the bridge came up, and `perf` on a cached load):
   so recursion witnesses queued behind it (one waited 33 s). The bridge
   now copies the instance out and proves on its own thread, firing the
   completion callback itself, exactly pil2's contract.
+- **The host ran in lockstep with the device.** Each prove started with
+  its trace upload and the key's read on a cold client, every stage
+  boundary waited on a download before enqueueing the next program, and
+  the quotient's eight windows each waited on a 2 MB upload queued behind
+  the previous chunk. Now a prove uploads its instance and reads its key
+  while the previous prove has the client, enqueues everything up to
+  commit2 before the first wait (the stage-2 challenges do not depend on
+  root1 in the non-recursive schedule), and keeps the row windows
+  resident; the proves' own time went from 9.9 s to 9.1 s and the gaps
+  between them to 0.2 s.
+- **Backpressure must not block proofman's worker.** Bounding the
+  instances in flight by blocking in `take` (on the worker) stalled
+  every recursion witness behind it by a whole prove, 2.3–3.2 s against
+  native's 50 ms: that one worker also proves the recursion, and witness
+  generation waits on a buffer pool only it releases. The fork's
+  `gen_proof` now keeps the instance's buffer in proofman's own trace
+  pool until the bridge's completion callback, so witness generation
+  throttles on the pool exactly as it does natively and the worker
+  never waits on the bridge; the bridge's own cap (two proves per client
+  on the device) is taken on the prove thread.
 - **The host side was single-threaded.** Copying an instance out of pil2's
   buffers (unpacking the bit-packed rows, reducing raw words) took 0.6–2 s
   per gigabyte on the one proof worker, and a table AIR's fixed sections
@@ -156,15 +185,16 @@ Facts the gate surfaced, all now handled by the bridge:
 
 ## Design notes
 
-- **Asynchronous, as pil2's GPU path is.** proofman frees the instance's
-  host trace right after `gen_proof` returns, so the bridge copies the
-  instance out first (`Bridge::take`, on proofman's worker), then proves
-  it on a thread of its own and fires the completion callback itself;
-  `gen_proof` returns at once, like pil2's, which enqueues and lets its
-  stream collectors deliver. pil2 throttles at its stream buffers; the
-  bridge throttles in `take`, which admits two instances per client (one
-  proving, one queued) and blocks the worker beyond that, so a block's
-  worth of widened traces never piles up on the host. Ours never touches
+- **Asynchronous, as pil2's GPU path is.** The bridge copies the
+  instance out first (`Bridge::take`, on proofman's worker, which never
+  waits on the bridge), then proves it on a thread of its own and fires
+  the completion callback itself; `gen_proof` returns at once, like
+  pil2's, which enqueues and lets its stream collectors deliver. The
+  instance's trace buffer stays in proofman's pool until that callback
+  (the fork's `gen_proof` defers the release), so witness generation
+  throttles on the pool exactly as it does natively; the bridge's own
+  cap, two proves per client on the device (one running, one with its
+  uploads done ahead), is taken on the prove thread. Ours never touches
   pil2's streams, and a streamed instance's stream is simply left free
   after its commit was collected. The completion side checks the proof's
   length against pil2's own size for the AIR before storing it, since

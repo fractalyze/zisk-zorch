@@ -15,8 +15,9 @@
 //!   ZZ_ARTIFACTS    directory of `<Air>_n<nBits>/` exports; unset = bridge off
 //!   XLA_PJRT_PLUGIN the frx/jax CUDA PJRT plugin .so (xla-pjrt reads it)
 //!   ZZ_CLIENTS      PJRT clients (default 3: proofman creates the bridge before
-//!                   it knows its stream count); at most two instances are taken
-//!                   per client at a time (one proving, one queued)
+//!                   it knows its stream count); at most two proves per client
+//!                   are on the device at a time (one running, one uploaded ahead;
+//!                   ZZ_PENDING overrides)
 //!   ZZ_PRELOAD      what loads at creation: the previous run's AIRs (default,
 //!                   `<ZZ_ARTIFACTS>/.last-used`), `all`, or `0` (only the
 //!                   instance list, once proofman has it); ZZ_PRELOAD_THREADS=6
@@ -31,6 +32,8 @@
 //!                   cannot stay resident beside pil2's buffers
 //!   ZZ_COMPILE_CACHE  directory of serialized executables (default
 //!                   `<ZZ_ARTIFACTS>/.pjrt-cache`); a miss compiles and stores
+//!   ZZ_HOST_THREADS threads for the host-side copies (default half the cores,
+//!                   at most 8; see `host_threads`)
 //!   ZZ_LOG=1        per-instance timing on stderr (`ZZ_LOG=2` per program;
 //!                   any other non-empty value but 0 counts as 1), each line
 //!                   stamped with the seconds since the bridge came up
@@ -113,8 +116,6 @@ pub struct OwnedRequest {
     pub proofvalues: Vec<u64>,
     pub global_challenge: Vec<u64>,
     pub proof_words: usize,
-    /// Held until this instance is proved; see `Pending`.
-    _pending: PendingPass,
 }
 
 /// pil2's `StepsParams` host pointers, as canonical u64 words. Their
@@ -159,7 +160,7 @@ where
     if n_rows == 0 || row_words == 0 {
         return out;
     }
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 32);
+    let threads = host_threads();
     let rows_per = n_rows.div_ceil(threads).max(1);
     let results: Vec<std::thread::Result<()>> = std::thread::scope(|scope| {
         let handles: Vec<_> = out
@@ -183,11 +184,14 @@ where
     out
 }
 
-/// Instances taken but not yet proved, bounded so proofman's worker cannot
-/// run ahead of the clients: each parked instance is a full widened trace
-/// on the host (a gigabyte for Main), and pil2's own path throttles at
-/// its stream buffers. `take` waits for a slot; the pass drops with the
-/// `OwnedRequest`, after its prove.
+/// Proves admitted to a client's queue at once (two per client: one
+/// proving, one with its uploads done ahead), so the instances proofman
+/// has handed over do not all stage their traces on the device together.
+/// This never blocks proofman's worker: `take` copies and returns, and the
+/// prove thread waits here. Host-side backpressure is proofman's own
+/// trace pool, which the fork's `gen_proof` keeps an instance's buffer in
+/// until the bridge's completion callback (pil2's contract: the worker
+/// returns at once, witness generation blocks on the pool).
 #[derive(Default)]
 pub struct Pending {
     count: Mutex<usize>,
@@ -217,6 +221,23 @@ impl Drop for PendingPass {
         *self.0.count.lock().unwrap_or_else(|p| p.into_inner()) -= 1;
         self.0.cv.notify_all();
     }
+}
+
+/// Threads for the host-side copies (`ZZ_HOST_THREADS`; default half the
+/// cores, at most 8). They are memory-bound, so more buys little, and
+/// they run beside proofman's own pools: taking every core stalls its
+/// recursion witnesses, which synchronize their threads at barriers and
+/// fall over under oversubscription (a 50 ms witness took 3 s).
+fn host_threads() -> usize {
+    static N: OnceLock<usize> = OnceLock::new();
+    *N.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+        std::env::var("ZZ_HOST_THREADS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or((cores / 2).clamp(1, 8))
+    })
 }
 
 /// A word reduced into `[0, p)`: pil2 reads a raw machine word as a residue.
@@ -592,8 +613,6 @@ impl Bridge {
         let m = manifest::Manifest::load(&self.artifacts.join(&key))?;
         let n = 1usize << m.n_bits;
         let p = &req.inputs;
-        // Two instances per client: one proving, one waiting behind it.
-        let pending = self.pending.acquire(2 * self.slots.len());
         let trace = match req.packed {
             Some((words_per_row, bits)) => {
                 if bits.len() != m.widths.cm1 {
@@ -629,7 +648,6 @@ impl Bridge {
             proofvalues: copy_canonical(std::slice::from_raw_parts(p.proofvalues, manifest::Manifest::packed_width(&m.proofvalues))),
             global_challenge: copy_canonical(std::slice::from_raw_parts(p.global_challenge, 3)),
             proof_words,
-            _pending: pending,
         })
     }
 
@@ -676,12 +694,40 @@ impl Bridge {
         self.note_used(&key);
         let slot_idx = self.slot_index(req.stream_id, req.instance_id);
         let art = self.artifact(slot_idx, &key)?;
+        // Two proves per client on the device at once: one running, one
+        // with its uploads ahead (`ZZ_PENDING` overrides the count).
+        let per_client = std::env::var("ZZ_PENDING").ok().and_then(|s| s.parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(2);
+        let _admitted = self.pending.acquire(per_client * self.slots.len());
+        let mut inputs = InstanceInputs {
+            trace: &req.trace,
+            publics: &req.publics,
+            airvalues: &req.airvalues,
+            proofvalues: &req.proofvalues,
+            global_challenge: &req.global_challenge,
+            uploaded: None,
+        };
+        // Ahead of the slot, while another prove may have the client: the
+        // instance's uploads (their transfers queue behind that prove's
+        // work) and, unless the AIR's fixed sections look resident, the
+        // key's files. A stale glance at residency only costs a read.
+        let t = Instant::now();
+        let uploaded = driver::upload_inputs(&art, &inputs)?;
+        let looks_resident = self.slots[slot_idx]
+            .try_lock()
+            .map(|s| s.drivers.get(&key).is_some_and(|d| d.has_fixed()))
+            .unwrap_or(false);
+        let prefetched = if looks_resident {
+            None
+        } else {
+            Some(read_fixed(&art.manifest, &req.const_pols_path, req.custom_fixed_path.as_deref())?)
+        };
+        let ahead = t.elapsed().as_secs_f64();
         let mut slot = self.slots[slot_idx].lock().unwrap_or_else(|p| p.into_inner());
         // No load may enter the plugin while this prove has work in flight.
         let _exclusive = self.clients[slot_idx].enter_prove();
         let waited = t0.elapsed().as_secs_f64();
         if !slot.drivers.contains_key(&key) {
-            slot.drivers.insert(key.clone(), driver::AirDriver::new(art));
+            slot.drivers.insert(key.clone(), driver::AirDriver::new(art.clone()));
         }
         // Keep at most `resident_airs` AIRs' fixed sections on this client:
         // evict the least recently used before this prove needs its own.
@@ -705,14 +751,24 @@ impl Bridge {
         let driver = slot.drivers.get_mut(&key).unwrap();
         if !driver.has_fixed() {
             let t = Instant::now();
-            let read_s = load_fixed(driver, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
+            let (const_base, customs) = match prefetched {
+                Some(sections) => sections,
+                None => read_fixed(&art.manifest, &req.const_pols_path, req.custom_fixed_path.as_deref())?,
+            };
+            let read_s = t.elapsed().as_secs_f64();
+            let fixed = FixedSections {
+                const_base: &const_base,
+                custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect(),
+            };
+            driver.set_fixed(&fixed)?;
             if self.log {
                 zzlog!(
-                    "fixed sections for {key} in {:.2} s ({read_s:.2} s reading the key, the rest upload and setup)",
+                    "fixed sections for {key} in {:.2} s ({read_s:.2} s reading the key under the slot, the rest upload and setup)",
                     t.elapsed().as_secs_f64()
                 );
             }
         }
+        inputs.uploaded = Some(uploaded);
         if proof_out.len() != driver.proof_words() {
             return Err(format!(
                 "{key}: proof buffer holds {} words, layout says {}",
@@ -722,13 +778,6 @@ impl Bridge {
             .into());
         }
         let m = driver.manifest();
-        let inputs = InstanceInputs {
-            trace: &req.trace,
-            publics: &req.publics,
-            airvalues: &req.airvalues,
-            proofvalues: &req.proofvalues,
-            global_challenge: &req.global_challenge,
-        };
         if let Ok(dir) = std::env::var("ZZ_DUMP_INPUTS") {
             // The instance exactly as received, as a `zz_prove` case
             // directory (the fixed sections and `case.json` included), for
@@ -758,7 +807,7 @@ impl Bridge {
         let out = driver.prove(&inputs, &mut transcript, proof_out)?;
         if self.log {
             zzlog!(
-                "instance {} {} ({}): {:.3} s, of which {:.3} s waiting for the client",
+                "instance {} {} ({}): {:.3} s, of which {:.3} s waiting for the client ({ahead:.3} s of uploads and reads done ahead)",
                 req.instance_id,
                 key,
                 if req.stream_id.is_some() { "streamed" } else { "worker" },
@@ -865,21 +914,6 @@ fn read_fixed(
         customs.push((cc.id, if fixed_is_tiled(const_pols_path) { tiled_to_row_major(&words, n, cc.width) } else { words }));
     }
     Ok((const_base, customs))
-}
-
-/// Read the key's fixed sections and hand them to the driver; returns the
-/// seconds spent reading (the rest is upload and the setup programs).
-fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixed_path: Option<&str>) -> Result<f64, Error> {
-    let t = Instant::now();
-    let m = driver.manifest().clone();
-    let (const_base, customs) = read_fixed(&m, const_pols_path, custom_fixed_path)?;
-    let read_s = t.elapsed().as_secs_f64();
-    let fixed = FixedSections {
-        const_base: &const_base,
-        custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect(),
-    };
-    driver.set_fixed(&fixed)?;
-    Ok(read_s)
 }
 
 #[cfg(test)]
