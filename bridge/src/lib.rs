@@ -29,7 +29,22 @@
 //!                   cannot stay resident beside pil2's buffers
 //!   ZZ_COMPILE_CACHE  directory of serialized executables (default
 //!                   `<ZZ_ARTIFACTS>/.pjrt-cache`); a miss compiles and stores
-//!   ZZ_LOG=1        per-instance timing on stderr
+//!   ZZ_LOG=1        per-instance timing on stderr (`ZZ_LOG=2` per program),
+//!                   each line stamped with the seconds since the bridge came up
+
+/// Seconds since the bridge came up, for the `[zz +t]` log stamps.
+pub fn uptime() -> f64 {
+    static T0: OnceLock<Instant> = OnceLock::new();
+    T0.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
+
+/// `eprintln!` with the bridge's `[zz +seconds]` stamp, so the lines of
+/// concurrent loads and proves can be ordered against proofman's own log.
+macro_rules! zzlog {
+    ($($arg:tt)*) => {
+        eprintln!("[zz +{:7.3}] {}", $crate::uptime(), format!($($arg)*))
+    };
+}
 
 pub mod ab;
 pub mod artifact;
@@ -114,40 +129,96 @@ pub struct ProveRequest<'a> {
     pub packed: Option<(usize, &'a [u64])>,
 }
 
-/// pil2's `unpack_trace`: bit-fields packed little-endian across
-/// `words_per_row` words per row, in column order, widened to one word
-/// per column.
-pub fn unpack_trace(packed: &[u64], n_rows: usize, words_per_row: usize, bits: &[u64]) -> Vec<u64> {
-    let n_cols = bits.len();
-    let mut out = vec![0u64; n_rows * n_cols];
-    for row in 0..n_rows {
-        let src = &packed[row * words_per_row..(row + 1) * words_per_row];
-        let (mut word_idx, mut bit_offset) = (0usize, 0u64);
-        let mut word = src[0];
-        for (c, nbits) in bits.iter().enumerate() {
-            let nbits = *nbits;
-            let bits_left = 64 - bit_offset;
-            let val;
-            if nbits <= bits_left {
-                let mask = if nbits == 64 { !0u64 } else { (1u64 << nbits) - 1 };
-                val = (word >> bit_offset) & mask;
-                bit_offset += nbits;
-                if bit_offset == 64 && word_idx + 1 < words_per_row {
-                    word_idx += 1;
-                    word = src[word_idx];
-                    bit_offset = 0;
-                }
-            } else {
-                let low = word >> bit_offset;
+/// Rows split across the host's cores: `f(first_row, rows_out)` fills the
+/// output words of a contiguous row range (`row_words` words per row).
+fn par_rows<F>(n_rows: usize, row_words: usize, f: F) -> Vec<u64>
+where
+    F: Fn(usize, &mut [u64]) + Sync,
+{
+    let mut out = vec![0u64; n_rows * row_words];
+    if n_rows == 0 || row_words == 0 {
+        return out;
+    }
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 32);
+    let rows_per = n_rows.div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        for (i, chunk) in out.chunks_mut(rows_per * row_words).enumerate() {
+            let f = &f;
+            scope.spawn(move || f(i * rows_per, chunk));
+        }
+    });
+    out
+}
+
+/// A word reduced into `[0, p)`: pil2 reads a raw machine word as a residue.
+#[inline]
+fn reduce(w: u64) -> u64 {
+    if w >= GOLDILOCKS_P {
+        w - GOLDILOCKS_P
+    } else {
+        w
+    }
+}
+
+/// One packed row (`src`, `words_per_row` words) widened into `out`, one
+/// reduced word per column.
+fn unpack_row(src: &[u64], bits: &[u64], out: &mut [u64]) {
+    let (mut word_idx, mut bit_offset) = (0usize, 0u64);
+    let mut word = src[0];
+    for (c, nbits) in bits.iter().enumerate() {
+        let nbits = *nbits;
+        let bits_left = 64 - bit_offset;
+        let val;
+        if nbits <= bits_left {
+            let mask = if nbits == 64 { !0u64 } else { (1u64 << nbits) - 1 };
+            val = (word >> bit_offset) & mask;
+            bit_offset += nbits;
+            if bit_offset == 64 && word_idx + 1 < src.len() {
                 word_idx += 1;
                 word = src[word_idx];
-                let high = word & ((1u64 << (nbits - bits_left)) - 1);
-                val = (high << bits_left) | low;
-                bit_offset = nbits - bits_left;
+                bit_offset = 0;
             }
-            out[row * n_cols + c] = val;
+        } else {
+            let low = word >> bit_offset;
+            word_idx += 1;
+            word = src[word_idx];
+            let high = word & ((1u64 << (nbits - bits_left)) - 1);
+            val = (high << bits_left) | low;
+            bit_offset = nbits - bits_left;
         }
+        out[c] = reduce(val);
     }
+}
+
+/// pil2's `unpack_trace`: bit-fields packed little-endian across
+/// `words_per_row` words per row, in column order, widened to one reduced
+/// word per column. Rows are split across the host's cores: a Main trace
+/// is over a gigabyte and this runs on proofman's proof worker.
+pub fn unpack_trace(packed: &[u64], n_rows: usize, words_per_row: usize, bits: &[u64]) -> Vec<u64> {
+    let n_cols = bits.len();
+    par_rows(n_rows, n_cols, |first_row, out| {
+        for (i, row_out) in out.chunks_mut(n_cols).enumerate() {
+            let row = first_row + i;
+            unpack_row(&packed[row * words_per_row..(row + 1) * words_per_row], bits, row_out);
+        }
+    })
+}
+
+/// `words` copied with every word reduced into `[0, p)`, across the host's
+/// cores; the unpacked-trace path for AIRs whose witness is not bit-packed.
+pub fn copy_canonical(words: &[u64]) -> Vec<u64> {
+    const CHUNK: usize = 1 << 16;
+    if words.len() <= CHUNK {
+        return words.iter().map(|w| reduce(*w)).collect();
+    }
+    let n_chunks = words.len().div_ceil(CHUNK);
+    let mut out = par_rows(n_chunks, CHUNK, |first, out| {
+        let src = &words[first * CHUNK..];
+        for (dst, w) in out.iter_mut().zip(src) {
+            *dst = reduce(*w);
+        }
+    });
+    out.truncate(words.len());
     out
 }
 
@@ -241,6 +312,7 @@ impl Bridge {
     }
 
     pub fn new(artifacts: &Path, clients: usize) -> Bridge {
+        uptime();
         let log = std::env::var("ZZ_LOG").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
         let fraction = std::env::var("ZZ_MEMORY_FRACTION")
             .ok()
@@ -253,8 +325,8 @@ impl Bridge {
             .map(|_| Mutex::new(Slot { drivers: HashMap::new(), last_used: HashMap::new(), tick: 0 }))
             .collect();
         if log {
-            eprintln!(
-                "[zz] bridge up: {clients} PJRT client(s){}, artifacts {}{}",
+            zzlog!(
+                "bridge up: {clients} PJRT client(s){}, artifacts {}{}",
                 match fraction {
                     Some(f) => format!(" each holding {:.0}% of the card", f * 100.0),
                     None => String::new(),
@@ -330,8 +402,9 @@ impl Bridge {
         let cache = self.cache.clone();
         // A plugin failure panics inside xla-pjrt; it must still clear the
         // in-flight mark or a prove waiting for this key waits forever.
+        // (Each program takes the client's load gate on its own, inside
+        // `compile_all`, so a prove waits for one program, not a whole AIR.)
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _loading = client.enter_load();
             artifact::Artifact::load(client.clone(), &dir, Some(&cache)).and_then(|a| a.compile_all().map(|_| a))
         }))
         .unwrap_or_else(|p| {
@@ -352,8 +425,8 @@ impl Bridge {
             }
         };
         if self.log {
-            eprintln!(
-                "[zz] loaded {key} ({} programs, {} from the cache) in {:.1} s",
+            zzlog!(
+                "loaded {key} ({} programs, {} from the cache) in {:.1} s",
                 art.manifest.programs.len(),
                 art.cache_hits.load(Ordering::Relaxed),
                 t.elapsed().as_secs_f64()
@@ -400,7 +473,7 @@ impl Bridge {
                     Some((slot, _, false)) if bridge.clients[slot].started_proving() => continue,
                     Some((slot, key, _)) => {
                         if let Err(e) = bridge.artifact(slot, &key) {
-                            eprintln!("[zz] preload {key}: {e}");
+                            zzlog!("preload {key}: {e}");
                         }
                     }
                     None => {
@@ -436,6 +509,7 @@ impl Bridge {
     /// `req.inputs` must point at buffers of the lengths the artifact's
     /// manifest implies, valid during this call.
     pub unsafe fn take(&self, req: &ProveRequest) -> Result<OwnedRequest, Error> {
+        let t0 = Instant::now();
         let key = format!("{}_n{}", req.air, req.n_bits);
         let m = manifest::Manifest::load(&self.artifacts.join(&key))?;
         let n = 1usize << m.n_bits;
@@ -447,20 +521,29 @@ impl Bridge {
                 }
                 unpack_trace(std::slice::from_raw_parts(p.trace, n * words_per_row), n, words_per_row, bits)
             }
-            None => std::slice::from_raw_parts(p.trace, n * m.widths.cm1).to_vec(),
+            None => copy_canonical(std::slice::from_raw_parts(p.trace, n * m.widths.cm1)),
         };
         let proof_words = driver::AirDriver::proof_words_of(&m);
+        if self.log {
+            zzlog!(
+                "took instance {} {key}: {} MB{} in {:.3} s",
+                req.instance_id,
+                (trace.len() * 8) >> 20,
+                if req.packed.is_some() { " (unpacked)" } else { "" },
+                t0.elapsed().as_secs_f64()
+            );
+        }
         Ok(OwnedRequest {
             key,
             const_pols_path: req.const_pols_path.to_string(),
             custom_fixed_path: req.custom_fixed_path.map(|s| s.to_string()),
             stream_id: req.stream_id,
             instance_id: req.instance_id,
-            trace: canonical(&trace).into_owned(),
-            publics: canonical(std::slice::from_raw_parts(p.publics, m.n_publics)).into_owned(),
-            airvalues: canonical(std::slice::from_raw_parts(p.airvalues, manifest::Manifest::packed_width(&m.airvalues))).into_owned(),
-            proofvalues: canonical(std::slice::from_raw_parts(p.proofvalues, manifest::Manifest::packed_width(&m.proofvalues))).into_owned(),
-            global_challenge: canonical(std::slice::from_raw_parts(p.global_challenge, 3)).into_owned(),
+            trace,
+            publics: copy_canonical(std::slice::from_raw_parts(p.publics, m.n_publics)),
+            airvalues: copy_canonical(std::slice::from_raw_parts(p.airvalues, manifest::Manifest::packed_width(&m.airvalues))),
+            proofvalues: copy_canonical(std::slice::from_raw_parts(p.proofvalues, manifest::Manifest::packed_width(&m.proofvalues))),
+            global_challenge: copy_canonical(std::slice::from_raw_parts(p.global_challenge, 3)),
             proof_words,
         })
     }
@@ -511,6 +594,7 @@ impl Bridge {
         let mut slot = self.slots[slot_idx].lock().unwrap_or_else(|p| p.into_inner());
         // No load may enter the plugin while this prove has work in flight.
         let _exclusive = self.clients[slot_idx].enter_prove();
+        let waited = t0.elapsed().as_secs_f64();
         if !slot.drivers.contains_key(&key) {
             slot.drivers.insert(key.clone(), driver::AirDriver::new(art));
         }
@@ -529,16 +613,19 @@ impl Bridge {
             for (_, k) in by_age.into_iter().take(evict) {
                 slot.drivers.get_mut(&k).unwrap().drop_fixed();
                 if self.log {
-                    eprintln!("[zz] released {k}'s fixed sections");
+                    zzlog!("released {k}'s fixed sections");
                 }
             }
         }
         let driver = slot.drivers.get_mut(&key).unwrap();
         if !driver.has_fixed() {
             let t = Instant::now();
-            load_fixed(driver, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
+            let read_s = load_fixed(driver, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
             if self.log {
-                eprintln!("[zz] fixed sections for {key} in {:.1} s", t.elapsed().as_secs_f64());
+                zzlog!(
+                    "fixed sections for {key} in {:.2} s ({read_s:.2} s reading the key, the rest upload and setup)",
+                    t.elapsed().as_secs_f64()
+                );
             }
         }
         if proof_out.len() != driver.proof_words() {
@@ -575,12 +662,13 @@ impl Bridge {
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
         let out = driver.prove(&inputs, &mut transcript, proof_out)?;
         if self.log {
-            eprintln!(
-                "[zz] instance {} {} ({}): {:.3} s",
+            zzlog!(
+                "instance {} {} ({}): {:.3} s, of which {:.3} s waiting for the client",
                 req.instance_id,
                 key,
                 if req.stream_id.is_some() { "streamed" } else { "worker" },
-                t0.elapsed().as_secs_f64()
+                t0.elapsed().as_secs_f64(),
+                waited
             );
         }
         Ok(out)
@@ -594,31 +682,24 @@ const TILE_WIDTH: usize = 4;
 
 /// pil2's device layout (`getBufferOffset`: column-major within 256x4
 /// tiles, tiles of one column block contiguous down the rows) back to
-/// row-major `(n_rows, n_cols)`.
+/// row-major `(n_rows, n_cols)`. Row ranges go to separate cores; each
+/// walks its tiles column by column so the reads stay contiguous.
 pub fn tiled_to_row_major(tiled: &[u64], n_rows: usize, n_cols: usize) -> Vec<u64> {
-    let mut out = vec![0u64; n_rows * n_cols];
-    for col in 0..n_cols {
-        let block_y = col / TILE_WIDTH;
-        let n_cols_block = (n_cols - TILE_WIDTH * block_y).min(TILE_WIDTH);
-        let col_block = col % TILE_WIDTH;
-        for row in 0..n_rows {
-            let block_x = row / TILE_HEIGHT;
-            let row_block = row % TILE_HEIGHT;
-            let src = block_y * TILE_WIDTH * n_rows + block_x * n_cols_block * TILE_HEIGHT + col_block * TILE_HEIGHT + row_block;
-            out[row * n_cols + col] = tiled[src];
+    par_rows(n_rows, n_cols, |first_row, out| {
+        let rows = out.len() / n_cols;
+        for col in 0..n_cols {
+            let block_y = col / TILE_WIDTH;
+            let n_cols_block = (n_cols - TILE_WIDTH * block_y).min(TILE_WIDTH);
+            let col_block = col % TILE_WIDTH;
+            for i in 0..rows {
+                let row = first_row + i;
+                let block_x = row / TILE_HEIGHT;
+                let row_block = row % TILE_HEIGHT;
+                let src = block_y * TILE_WIDTH * n_rows + block_x * n_cols_block * TILE_HEIGHT + col_block * TILE_HEIGHT + row_block;
+                out[i * n_cols + col] = tiled[src];
+            }
         }
-    }
-    out
-}
-
-/// Every word reduced into `[0, p)`. Borrows when nothing needs reducing
-/// (the common case for a table's small values); copies otherwise.
-fn canonical(words: &[u64]) -> std::borrow::Cow<'_, [u64]> {
-    if words.iter().all(|w| *w < GOLDILOCKS_P) {
-        std::borrow::Cow::Borrowed(words)
-    } else {
-        std::borrow::Cow::Owned(words.iter().map(|w| if *w >= GOLDILOCKS_P { w - GOLDILOCKS_P } else { *w }).collect())
-    }
+    })
 }
 
 /// `<stem>.const_gpu` (what proofman passes on GPU) -> `<stem>.const`, the
@@ -627,22 +708,43 @@ pub fn plain_const_path(path: &str) -> String {
     path.strip_suffix("_gpu").unwrap_or(path).to_string()
 }
 
-/// The first `n_words` little-endian words of `path` after `skip_bytes`.
-/// A longer file is fine: pil2's custom-commit fixed file carries the
-/// extended section and its tree behind the base rows.
+/// The first `n_words` little-endian words of `path` after `skip_bytes`,
+/// read straight into the word buffer (no byte-to-word pass) in parallel
+/// slices. A longer file is fine: pil2's custom-commit fixed file carries
+/// the extended section and its tree behind the base rows.
 fn read_words(path: &str, skip_bytes: usize, n_words: usize) -> Result<Vec<u64>, Error> {
-    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    use std::os::unix::fs::FileExt;
+    let file = std::fs::File::open(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let len = file.metadata().map_err(|e| format!("cannot stat {path}: {e}"))?.len() as usize;
     let end = skip_bytes + n_words * 8;
-    if bytes.len() < end {
-        return Err(format!("{path} is {} bytes, expected at least {end}", bytes.len()).into());
+    if len < end {
+        return Err(format!("{path} is {len} bytes, expected at least {end}").into());
     }
-    Ok(bytes[skip_bytes..end]
-        .chunks_exact(8)
-        .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
-        .collect())
+    const SLICE: usize = 8 << 20;
+    let n_slices = (n_words * 8).div_ceil(SLICE).max(1);
+    let mut words = par_rows(n_slices, SLICE / 8, |first, out| {
+        let offset = skip_bytes + first * SLICE;
+        let want = (n_words * 8 - first * SLICE).min(out.len() * 8);
+        // SAFETY: `out` is a live `[u64]`; its bytes are written, then read
+        // back as little-endian words below.
+        let bytes = unsafe { std::slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, want) };
+        if let Err(e) = file.read_exact_at(bytes, offset as u64) {
+            // Reported by the length check on the way in; a read that fails
+            // after that is an I/O fault, and zeros would prove a wrong key.
+            panic!("cannot read {path} at {offset}: {e}");
+        }
+    });
+    words.truncate(n_words);
+    for w in &mut words {
+        *w = u64::from_le(*w);
+    }
+    Ok(words)
 }
 
-fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixed_path: Option<&str>) -> Result<(), Error> {
+/// Read the key's fixed sections and hand them to the driver; returns the
+/// seconds spent reading (the rest is upload and the setup programs).
+fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixed_path: Option<&str>) -> Result<f64, Error> {
+    let t = Instant::now();
     let m = driver.manifest().clone();
     let n = 1usize << m.n_bits;
     let const_base = read_words(&plain_const_path(const_pols_path), 0, n * m.n_constants)?;
@@ -656,9 +758,124 @@ fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixe
         // the prover's tiled layout rather than row-major.
         customs.push((cc.id, tiled_to_row_major(&read_words(path, 32, n * cc.width)?, n, cc.width)));
     }
+    let read_s = t.elapsed().as_secs_f64();
     let fixed = FixedSections {
         const_base: &const_base,
         custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect(),
     };
-    driver.set_fixed(&fixed)
+    driver.set_fixed(&fixed)?;
+    Ok(read_s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A small deterministic generator (xorshift), so the tests need no crate.
+    fn rng(seed: u64) -> impl FnMut() -> u64 {
+        let mut x = seed | 1;
+        move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        }
+    }
+
+    /// pil2's packing, written the slow way: each column's `bits` low bits
+    /// appended little-endian across the row's words.
+    fn pack_rows(rows: &[Vec<u64>], bits: &[u64], words_per_row: usize) -> Vec<u64> {
+        let mut out = vec![0u64; rows.len() * words_per_row];
+        for (r, row) in rows.iter().enumerate() {
+            let dst = &mut out[r * words_per_row..(r + 1) * words_per_row];
+            let mut pos = 0u64;
+            for (c, nbits) in bits.iter().enumerate() {
+                for b in 0..*nbits {
+                    if (row[c] >> b) & 1 == 1 {
+                        let p = pos + b;
+                        dst[(p / 64) as usize] |= 1u64 << (p % 64);
+                    }
+                }
+                pos += nbits;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn unpack_matches_the_packer_and_reduces() {
+        let mut next = rng(7);
+        let bits: Vec<u64> = vec![1, 64, 17, 3, 64, 40, 12, 64, 5, 31];
+        let words_per_row = bits.iter().sum::<u64>().div_ceil(64) as usize;
+        let n_rows = 1000;
+        let rows: Vec<Vec<u64>> = (0..n_rows)
+            .map(|r| {
+                bits.iter()
+                    .enumerate()
+                    .map(|(c, b)| {
+                        let mask = if *b == 64 { !0u64 } else { (1u64 << b) - 1 };
+                        // A 64-bit column above the modulus on some rows.
+                        if *b == 64 && (r + c) % 3 == 0 { GOLDILOCKS_P + (next() % 1000) } else { next() & mask }
+                    })
+                    .collect()
+            })
+            .collect();
+        let packed = pack_rows(&rows, &bits, words_per_row);
+        let got = unpack_trace(&packed, n_rows, words_per_row, &bits);
+        let want: Vec<u64> = rows.iter().flatten().map(|w| reduce(*w)).collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn copy_canonical_reduces_large_and_small() {
+        let small = vec![0, 1, GOLDILOCKS_P - 1, GOLDILOCKS_P, GOLDILOCKS_P + 5, u64::MAX];
+        assert_eq!(copy_canonical(&small), vec![0, 1, GOLDILOCKS_P - 1, 0, 5, u64::MAX - GOLDILOCKS_P]);
+        let mut next = rng(3);
+        let big: Vec<u64> = (0..(3 << 16) + 17).map(|_| next()).collect();
+        let want: Vec<u64> = big.iter().map(|w| reduce(*w)).collect();
+        assert_eq!(copy_canonical(&big), want);
+    }
+
+    /// pil2's `getBufferOffset` for one element, the forward direction.
+    fn tiled_offset(row: usize, col: usize, n_rows: usize, n_cols: usize) -> usize {
+        let block_y = col / TILE_WIDTH;
+        let n_cols_block = (n_cols - TILE_WIDTH * block_y).min(TILE_WIDTH);
+        block_y * TILE_WIDTH * n_rows
+            + (row / TILE_HEIGHT) * n_cols_block * TILE_HEIGHT
+            + (col % TILE_WIDTH) * TILE_HEIGHT
+            + row % TILE_HEIGHT
+    }
+
+    #[test]
+    fn untile_inverts_the_device_layout() {
+        for (n_rows, n_cols) in [(512, 7), (1024, 4), (256 * 40, 13)] {
+            let row_major: Vec<u64> = (0..n_rows * n_cols as usize).map(|i| i as u64 * 31 + 1).collect();
+            let mut tiled = vec![0u64; n_rows * n_cols];
+            for row in 0..n_rows {
+                for col in 0..n_cols {
+                    tiled[tiled_offset(row, col, n_rows, n_cols)] = row_major[row * n_cols + col];
+                }
+            }
+            assert_eq!(tiled_to_row_major(&tiled, n_rows, n_cols), row_major, "{n_rows}x{n_cols}");
+        }
+    }
+
+    #[test]
+    fn read_words_skips_the_header_and_spans_slices() {
+        let dir = std::env::temp_dir().join(format!("zz-read-words-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("fixed.bin");
+        // Header of 32 bytes, then more words than the caller asks for,
+        // and enough of them to cross the 8 MB read slices.
+        let n = (9 << 20) / 8 + 5;
+        let words: Vec<u64> = (0..n as u64).map(|i| i.wrapping_mul(0x9E37_79B9_7F4A_7C15)).collect();
+        let mut bytes = vec![0xAAu8; 32];
+        bytes.extend(words.iter().flat_map(|w| w.to_le_bytes()));
+        std::fs::write(&path, &bytes).unwrap();
+        let p = path.to_str().unwrap();
+        assert_eq!(read_words(p, 32, n - 3).unwrap(), words[..n - 3]);
+        assert_eq!(read_words(p, 0, 4).unwrap(), vec![0xAAAA_AAAA_AAAA_AAAA; 4]);
+        assert!(read_words(p, 32, n + 1).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -65,7 +65,7 @@ cargo-zisk prove -e guest.elf -i input.bin -k $PK -g -y -o proof
 `ZZ_ARTIFACTS` unset means pil2's own `gen_proof` runs: the fork is a
 drop-in cargo-zisk with the bridge dormant.
 
-## Status (2026-09-02, RTX 5090, go hello-world guest)
+## Status (2026-09-03, RTX 5090, go hello-world guest)
 
 `cargo-zisk prove -g -y` through the bridge completes and its final proof
 verifies. All 11 basic instances (Rom, Main, Mem, InputData, RomData,
@@ -76,16 +76,23 @@ The in-process `ZZ_AB=1` variant reproduces the same verdict per instance
 but still crashes once the card fills; the dump comparison is the gate to
 quote.
 
-| | native (1 stream) | native (3 streams) | bridge, first run | bridge, warm |
-|---|---|---|---|---|
-| `cargo-zisk prove` wall | 10.3 s | 16.8 s | 28.0 s | 21.6–23.0 s |
-| proofman init (both stacks) | ~8 s | ~9 s | ~9 s | ~5–9 s |
-| per-instance prove, warm | pil2 `STARK_GPU_PROOF` 0.07–0.27 s | | | RomData 0.15 s, Rom 0.37 s, Main 0.89 s |
-| fixed sections per AIR (const LDE + tree) | precomputed on disk | | | 0–1.6 s (88-column tables at 1.5 s) |
-| executable load per AIR | — | | 2.3–3 s, overlapped | hidden under init |
+Warm, on an otherwise idle host (a run right after another process has
+churned the page cache adds 4–5 s of file reading to either stack's init;
+take the second of two consecutive runs):
 
-The bridge started at 80.7 s. Where the 59 s went, from a per-program
-profile (`ZZ_LOG=2`) and `perf` of a cached load:
+| | native (1 stream) | bridge, warm |
+|---|---|---|
+| `cargo-zisk prove` wall | 10.7 s | 22.3 s |
+| proofman init | 2.9 s | 3.8 s (bridge up 0.5 s, then init beside six executable loads) |
+| inner-proof leg | 3.5 s | 13.1 s |
+| ├ proves, one client, back to back | | ~9.0 s (InputData 0.4, RomData 0.3, MemAlign 0.4, Mem 0.7, Arith 0.8, BinaryExtension 0.9, VirtualTableZisk1 1.0, Binary 1.1, Rom 1.1, Main 1.1, VirtualTableZisk0 1.3) |
+| ├ executable loads that did not finish under init | | ~3.3 s |
+| └ fixed sections, inside the proves above | precomputed on disk | 0.3–0.5 s for the three table AIRs, ≤0.1 s otherwise |
+| host copy of an instance (proofman's worker) | | 0.01–0.1 s |
+
+The bridge started at 80.7 s. Where the time went, in the order it was
+found (`ZZ_LOG=2` per-program timelines, stamped with the seconds since
+the bridge came up, and `perf` on a cached load):
 
 - **Executable loads** were 5.6 s per AIR and every instance paid one,
   serially. Half of it was XLA re-formatting the Python stack frames jit
@@ -94,23 +101,41 @@ profile (`ZZ_LOG=2`) and `perf` of a cached load:
   literals per commit program: XLA constant-folds the coset power series
   from its scalar seed, so every LDE-bearing program carried a
   2^nBitsExt table (and the fold its own); the seeds now cross an
-  optimization barrier. The rest is XLA rebuilding the optimized HLO,
-  which stays. Loads now run six in parallel and start at bridge
-  creation for the AIRs the previous run used (`.last-used` beside the
-  artifacts), so they finish under proofman's own initialization.
+  optimization barrier. What stays is XLA rebuilding the executable from
+  its HLO on every load: 0.5–0.7 s for each of an AIR's ten large
+  programs, about 4.5 CPU-seconds per AIR and 50 per run for this guest.
+  Loads run six in parallel and start at bridge creation for the AIRs the
+  previous run used (`.last-used` beside the artifacts); six finish under
+  proofman's own initialization, the rest share the client with the
+  proves (a load and a prove cannot overlap on one client, see the design
+  notes), which is the 3.3 s in the table. More load threads do not help:
+  the work is CPU-bound and slows proofman's init by as much as it gains.
 - **The proofman worker was blocked.** pil2's GPU `gen_proof` returns
   after enqueueing; ours ran the whole prove on proofman's single worker,
   so recursion witnesses queued behind it (one waited 33 s). The bridge
   now copies the instance out and proves on its own thread, firing the
   completion callback itself, exactly pil2's contract.
+- **The host side was single-threaded.** Copying an instance out of pil2's
+  buffers (unpacking the bit-packed rows, reducing raw words) took 0.6–2 s
+  per gigabyte on the one proof worker, and a table AIR's fixed sections
+  cost 0.8–1.6 s of client time, almost all of it reading the 1.2 GB
+  constant file byte by byte into words and untiling the custom commit.
+  Both now run across the host's cores and the key is read straight into
+  the word buffer; the copy is 0.1 s for Main and the sections 0.3–0.5 s.
+  On a host whose CPUs another build was using (load average 40 on 16
+  cores) this was the difference between a 63 s and a 25 s run.
 
-What remains above native is the bridge's own GPU time: about 10 s for
-this guest's 11 instances (fixed sections ~5 s, proves ~5 s) against
-pil2's ~2 s. That is zisk-zorch's per-stage kernel performance, the
-subject of the baseline in `docs/development.md`, not the bridge. The
+What remains above native is on the device: the proves themselves, 2–3×
+pil2's per instance. Main's 1.1 s is the trace upload (0.06–0.1 s for
+1.2 GB), commit1 0.38 s, logup and commit2 0.21 s, the quotient 0.2 s and
+the rest 0.15 s, against pil2's 0.15 s commit plus 0.27 s proof. The
+exported commit program is 746 kernels and some 27k HLO instructions
+(the Merkle levels and NTT stages unrolled), which is both the GPU time
+and the load cost above; that is zisk-zorch's per-stage kernel structure,
+the subject of the baseline in `docs/development.md`, not the bridge. The
 block-sized workload (the zec-reth example needs the ASM emulator with
-hints; it starts under it but the guest exits early) is the open item
-for the wall-clock comparison the issue asks for.
+hints; it starts under it but the guest exits early) is the open item for
+the wall-clock comparison the issue asks for.
 
 Facts the gate surfaced, all now handled by the bridge:
 
@@ -175,6 +200,14 @@ Facts the gate surfaced, all now handled by the bridge:
 - **Loads never overlap a prove.** A deserialization on a client while
   one of its executions is in flight wedges both; deserializations
   alongside each other are fine. The client gate admits loads together
-  and a prove alone, a pending prove holds new loads back, and the
+  and a prove alone, taken per program rather than per AIR so a prove
+  that arrives mid-load waits for one program (well under a second), not
+  an AIR's thirty; a pending prove holds new loads back, and the
   background preload of the whole key (`ZZ_PRELOAD=all`) stops once
   proving starts; requested AIRs still load on demand.
+- **Host copies run across cores.** The instance leaves pil2's buffers on
+  proofman's proof worker (`Bridge::take`), before `gen_proof` returns;
+  unpacking and reducing a gigabyte there single-threaded held the worker
+  for seconds per instance, so the row work is split over the host's
+  cores, and the fixed sections are read from the key straight into word
+  buffers in parallel slices, the custom commit untiled the same way.

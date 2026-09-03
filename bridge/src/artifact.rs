@@ -51,12 +51,21 @@ pub type Env = HashMap<String, Buf>;
 /// proving. A deserialization while an execution is in flight on the same
 /// client wedges both (the load synchronizes the device; the execution's
 /// completion needs what the load holds), while deserializations alongside
-/// each other are fine. So loads take the gate shared, per AIR, and a prove
-/// takes it exclusively for its whole run (`Bridge::prove_owned`).
+/// each other are fine. So loads take the gate shared, per program
+/// (`Artifact::executable`), and a prove takes it exclusively for its
+/// whole run (`Bridge::prove_owned`).
 pub struct Client {
     pub session: Arc<Session>,
-    gate: Mutex<GateState>,
-    gate_cv: std::sync::Condvar,
+    gate: Gate,
+}
+
+/// The load/prove gate, on its own so it can be exercised without a
+/// plugin: loads enter shared, a prove enters alone, and a prove that is
+/// waiting holds new loads back.
+#[derive(Default)]
+pub struct Gate {
+    state: Mutex<GateState>,
+    cv: std::sync::Condvar,
 }
 
 #[derive(Default)]
@@ -71,59 +80,72 @@ struct GateState {
 
 /// Releases its side of the gate on drop.
 pub struct GatePass<'a> {
-    client: &'a Client,
+    gate: &'a Gate,
     load: bool,
 }
 
 impl Drop for GatePass<'_> {
     fn drop(&mut self) {
-        let mut g = self.client.gate.lock().unwrap_or_else(|p| p.into_inner());
+        let mut g = self.gate.state.lock().unwrap_or_else(|p| p.into_inner());
         if self.load {
             g.loads_in_flight -= 1;
         } else {
             g.proving = false;
         }
-        self.client.gate_cv.notify_all();
+        self.gate.cv.notify_all();
     }
 }
 
-impl Client {
+impl Gate {
     /// Wait until no prove is running or waiting, then count this load in.
     pub fn enter_load(&self) -> GatePass<'_> {
-        let mut g = self.gate.lock().unwrap_or_else(|p| p.into_inner());
+        let mut g = self.state.lock().unwrap_or_else(|p| p.into_inner());
         while g.proving || g.proves_waiting > 0 {
-            g = self.gate_cv.wait(g).unwrap_or_else(|p| p.into_inner());
+            g = self.cv.wait(g).unwrap_or_else(|p| p.into_inner());
         }
         g.loads_in_flight += 1;
-        GatePass { client: self, load: true }
+        GatePass { gate: self, load: true }
     }
 
     /// Wait until no load is in flight and no other prove runs, then own the
     /// plugin for one prove.
     pub fn enter_prove(&self) -> GatePass<'_> {
-        let mut g = self.gate.lock().unwrap_or_else(|p| p.into_inner());
+        let mut g = self.state.lock().unwrap_or_else(|p| p.into_inner());
         g.proves_waiting += 1;
         while g.proving || g.loads_in_flight > 0 {
-            g = self.gate_cv.wait(g).unwrap_or_else(|p| p.into_inner());
+            g = self.cv.wait(g).unwrap_or_else(|p| p.into_inner());
         }
         g.proves_waiting -= 1;
         g.proving = true;
         g.started_proving = true;
-        GatePass { client: self, load: false }
+        GatePass { gate: self, load: false }
     }
 
     /// Whether a prove has ever run on this client (the background preload
     /// of the whole key stops then; only requested AIRs load afterwards).
     pub fn started_proving(&self) -> bool {
-        self.gate.lock().unwrap_or_else(|p| p.into_inner()).started_proving
+        self.state.lock().unwrap_or_else(|p| p.into_inner()).started_proving
+    }
+}
+
+impl Client {
+    pub fn enter_load(&self) -> GatePass<'_> {
+        self.gate.enter_load()
+    }
+
+    pub fn enter_prove(&self) -> GatePass<'_> {
+        self.gate.enter_prove()
+    }
+
+    pub fn started_proving(&self) -> bool {
+        self.gate.started_proving()
     }
 }
 
 pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
     Arc::new(Client {
         session: new_session(memory_fraction),
-        gate: Mutex::new(GateState::default()),
-        gate_cv: std::sync::Condvar::new(),
+        gate: Gate::default(),
     })
 }
 
@@ -204,6 +226,9 @@ impl Artifact {
         let path = self.dir.join(&info.file);
         let code = std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let cached = self.cache.as_ref().map(|c| c.join(format!("{name}-{:016x}.pjrt", fnv1a64(&code))));
+        // One program at a time through the gate: a prove that arrives
+        // mid-load waits for this program, not for the AIR's whole set.
+        let _loading = self.client.enter_load();
         let t = std::time::Instant::now();
         let exe = match cached.as_ref().and_then(|p| std::fs::read(p).ok()) {
             Some(bytes) => {
@@ -211,8 +236,8 @@ impl Artifact {
                 let read_ms = t.elapsed().as_secs_f64() * 1e3;
                 let exe = unsafe { self.session.deserialize_and_load(&bytes) };
                 if trace_enabled() {
-                    eprintln!(
-                        "[zz]   load {name}: {} KB, read {read_ms:.1} ms, deserialize {:.1} ms",
+                    zzlog!(
+                        "  load {name}: {} KB, read {read_ms:.1} ms, deserialize {:.1} ms",
                         bytes.len() / 1024,
                         t.elapsed().as_secs_f64() * 1e3 - read_ms
                     );
@@ -271,7 +296,7 @@ impl Artifact {
         let t = std::time::Instant::now();
         let buf = unsafe { self.session.input_buffer(bytes, &spec.dims, spec.buffer_type()) };
         if trace_enabled() && bytes.len() >= 1 << 20 {
-            eprintln!("[zz]   upload {}: {} MB, {:.2} ms", spec.name, bytes.len() >> 20, t.elapsed().as_secs_f64() * 1e3);
+            zzlog!("  upload {}: {} MB, {:.2} ms", spec.name, bytes.len() >> 20, t.elapsed().as_secs_f64() * 1e3);
         }
         Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(buf) })
     }
@@ -281,7 +306,7 @@ impl Artifact {
         let t = std::time::Instant::now();
         let bytes = unsafe { self.session.buffer_to_host(buf.raw()) };
         if trace_enabled() {
-            eprintln!("[zz]   download {}: {} KB, {:.2} ms (waits for the work before it)", spec.name, bytes.len() / 1024, t.elapsed().as_secs_f64() * 1e3);
+            zzlog!("  download {}: {} KB, {:.2} ms (waits for the work before it)", spec.name, bytes.len() / 1024, t.elapsed().as_secs_f64() * 1e3);
         }
         if bytes.len() != spec.elems() * spec.elem_bytes() {
             return Err(format!("{}: device buffer is {} bytes, spec says {}", spec.name, bytes.len(), spec.elems() * spec.elem_bytes()).into());
@@ -304,7 +329,7 @@ impl Artifact {
         let t = std::time::Instant::now();
         let outs = unsafe { self.session.run_buffers_to_device(&exe, &args, info.outputs.len()) };
         if trace_enabled() {
-            eprintln!("[zz]   run {name}: enqueue {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
+            zzlog!("  run {name}: enqueue {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
         }
         Ok(outs
             .into_iter()
@@ -329,5 +354,43 @@ impl Artifact {
             env.insert(key, buf);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Gate;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn a_prove_waits_for_loads_in_flight_and_holds_new_loads_back() {
+        let gate = std::sync::Arc::new(Gate::default());
+        let load = gate.enter_load();
+        let (tx, rx) = mpsc::channel();
+        let g = gate.clone();
+        let prover = std::thread::spawn(move || {
+            let pass = g.enter_prove();
+            tx.send("proving").unwrap();
+            // Hold the prove until told to finish.
+            std::thread::sleep(Duration::from_millis(300));
+            drop(pass);
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(200)).is_err(), "prove entered under a load");
+        // With a prove waiting, a new load must not slip in first.
+        let (ltx, lrx) = mpsc::channel();
+        let g = gate.clone();
+        let loader = std::thread::spawn(move || {
+            let _pass = g.enter_load();
+            ltx.send("loaded").unwrap();
+        });
+        assert!(lrx.recv_timeout(Duration::from_millis(100)).is_err(), "load entered ahead of a waiting prove");
+        drop(load);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "proving");
+        // The new load waits for the prove to finish.
+        assert_eq!(lrx.recv_timeout(Duration::from_secs(5)).unwrap(), "loaded");
+        prover.join().unwrap();
+        loader.join().unwrap();
+        assert!(gate.started_proving());
     }
 }
