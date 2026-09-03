@@ -35,7 +35,11 @@ fn main() {
         // Compile (and cache) every program of the named AIR directories,
         // or of all of them, without proving anything.
         let artifacts = Path::new(&args[2]);
-        let cache = artifacts.join(".pjrt-cache");
+        let cache = std::env::var("ZZ_COMPILE_CACHE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| artifacts.join(".pjrt-cache"));
         let dirs: Vec<std::path::PathBuf> = if args.len() > 3 {
             args[3..].iter().map(|a| artifacts.join(a)).collect()
         } else {

@@ -147,18 +147,29 @@ Facts the gate surfaced, all now handled by the bridge:
 - **Custom-commit fixed file.** The `_gpu.bin` proofman hands over is a
   32-byte root, then the base section, extended section and tree in the
   prover's tiled device layout (256x4 column-major tiles); the bridge
-  untiles the base section and recomputes the rest.
+  untiles the base section and recomputes the rest. A CPU run (`prove`
+  without `-g`) writes the same file row-major and names its constants
+  `.const` rather than `.const_gpu`, which is what the bridge keys the
+  layout on.
 - **Out-of-range words.** A trace holds raw machine words, some above the
   modulus; they are reduced on the way in (pil2 reads them as residues).
 
 ## Design notes
 
-- **Synchronous by contract.** proofman frees the instance's host trace
-  right after `gen_proof` returns, so the bridge uploads and proves before
-  returning and fires the completion callback itself. pil2's GPU path is
-  asynchronous (proofs land through stream collectors); ours never
-  touches those streams, and a streamed instance's stream is simply left
-  free after its commit was collected.
+- **Asynchronous, as pil2's GPU path is.** proofman frees the instance's
+  host trace right after `gen_proof` returns, so the bridge copies the
+  instance out first (`Bridge::take`, on proofman's worker), then proves
+  it on a thread of its own and fires the completion callback itself;
+  `gen_proof` returns at once, like pil2's, which enqueues and lets its
+  stream collectors deliver. pil2 throttles at its stream buffers; the
+  bridge throttles in `take`, which admits two instances per client (one
+  proving, one queued) and blocks the worker beyond that, so a block's
+  worth of widened traces never piles up on the host. Ours never touches
+  pil2's streams, and a streamed instance's stream is simply left free
+  after its commit was collected. The completion side checks the proof's
+  length against pil2's own size for the AIR before storing it, since
+  the bridge sizes the proof from the manifest and a stale export would
+  otherwise hand the aggregation a wrong-sized buffer.
 - **One PJRT client per pil2 stream.** A client serializes its
   executions, so the streamed instances proofman proves concurrently get
   a client each. Slot choice: the stream's own slot for a streamed
@@ -195,8 +206,13 @@ Facts the gate surfaced, all now handled by the bridge:
 - **Compile cost.** Compiling an AIR's programs takes minutes
   (RomData: 245 s for 34 programs on an RTX 5090), so the bridge keeps
   the serialized executables on disk and a later client loads them in
-  2–3 s. The cache is keyed by bytecode hash and is plugin-version
-  specific: drop it with the plugin. `zz_prove --warm` fills it.
+  2–3 s. The cache is keyed by the bytecode's hash and the plugin's
+  identity (`XLA_PJRT_PLUGIN` path, size, mtime), an entry the plugin
+  rejects is recompiled in place, one client compiles an entry at a
+  time, and a directory that cannot be created (a read-only export)
+  means compiling without a cache, not failing. `zz_prove --warm` fills
+  it; a key scheme change (this one included) leaves the old entries
+  unused on disk, so delete the directory when reclaiming the space.
 - **Loads never overlap a prove.** A deserialization on a client while
   one of its executions is in flight wedges both; deserializations
   alongside each other are fine. The client gate admits loads together

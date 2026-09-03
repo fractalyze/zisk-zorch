@@ -125,8 +125,9 @@ impl AirDriver {
 
     pub fn proof_words_of(m: &Manifest) -> usize {
         let per_level = (m.arity - 1) * DIGEST;
-        let last_level = m.arity.pow(m.last_level_verification) * DIGEST;
         let llv = m.last_level_verification;
+        // pil2's `getProofSize`: a last level only when one is verified.
+        let last_level = if llv > 0 { m.arity.pow(llv) * DIGEST } else { 0 };
         let tree_block = |width: usize, n_bits: u32| {
             m.n_queries * (width + n_siblings(n_bits, m.arity, llv) * per_level) + last_level
         };
@@ -220,9 +221,15 @@ impl AirDriver {
         squeeze(transcript, &mut challenges, 2);
         env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
         art.run_into("logup", &mut env, None)?;
+        // Nothing after logup reads the base trace, and nothing after
+        // commit2 the base cm2: a gigabyte or more each on a wide AIR,
+        // released before the quotient's peak (the plugin defers the free
+        // until the enqueued work is done).
+        env.remove("trace");
         let mut result = ProveOutputs::default();
         result.airvalues = art.download_words(&env["airvalues"], &out_spec("logup", "airvalues")?)?;
         art.run_into("commit2", &mut env, None)?;
+        env.remove("cm2");
         let root2 = art.download_words(&env["root2"], &out_spec("commit2", "root2")?)?;
         transcript.put(&root2);
         for (i, (off, _)) in Manifest::value_offsets(&m.airvalues).into_iter().enumerate() {

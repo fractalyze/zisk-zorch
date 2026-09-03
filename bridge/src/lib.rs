@@ -14,7 +14,9 @@
 //! Environment:
 //!   ZZ_ARTIFACTS    directory of `<Air>_n<nBits>/` exports; unset = bridge off
 //!   XLA_PJRT_PLUGIN the frx/jax CUDA PJRT plugin .so (xla-pjrt reads it)
-//!   ZZ_CLIENTS      PJRT clients (default: the stream count proofman passes)
+//!   ZZ_CLIENTS      PJRT clients (default 3: proofman creates the bridge before
+//!                   it knows its stream count); at most two instances are taken
+//!                   per client at a time (one proving, one queued)
 //!   ZZ_PRELOAD      what loads at creation: the previous run's AIRs (default,
 //!                   `<ZZ_ARTIFACTS>/.last-used`), `all`, or `0` (only the
 //!                   instance list, once proofman has it); ZZ_PRELOAD_THREADS=6
@@ -29,13 +31,29 @@
 //!                   cannot stay resident beside pil2's buffers
 //!   ZZ_COMPILE_CACHE  directory of serialized executables (default
 //!                   `<ZZ_ARTIFACTS>/.pjrt-cache`); a miss compiles and stores
-//!   ZZ_LOG=1        per-instance timing on stderr (`ZZ_LOG=2` per program),
-//!                   each line stamped with the seconds since the bridge came up
+//!   ZZ_LOG=1        per-instance timing on stderr (`ZZ_LOG=2` per program;
+//!                   any other non-empty value but 0 counts as 1), each line
+//!                   stamped with the seconds since the bridge came up
 
 /// Seconds since the bridge came up, for the `[zz +t]` log stamps.
 pub fn uptime() -> f64 {
     static T0: OnceLock<Instant> = OnceLock::new();
     T0.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
+
+/// `ZZ_LOG` as a level: a number, 0 when unset or empty, 1 for any other
+/// value (so `ZZ_LOG=1` and `ZZ_LOG=true` agree, and `ZZ_LOG=10` is not
+/// below `2` the way a string comparison had it).
+pub fn log_level() -> u32 {
+    static L: OnceLock<u32> = OnceLock::new();
+    *L.get_or_init(|| parse_log_level(std::env::var("ZZ_LOG").ok().as_deref()))
+}
+
+fn parse_log_level(v: Option<&str>) -> u32 {
+    match v.map(str::trim) {
+        None | Some("") | Some("0") => 0,
+        Some(s) => s.parse().unwrap_or(1),
+    }
 }
 
 /// `eprintln!` with the bridge's `[zz +seconds]` stamp, so the lines of
@@ -95,6 +113,8 @@ pub struct OwnedRequest {
     pub proofvalues: Vec<u64>,
     pub global_challenge: Vec<u64>,
     pub proof_words: usize,
+    /// Held until this instance is proved; see `Pending`.
+    _pending: PendingPass,
 }
 
 /// pil2's `StepsParams` host pointers, as canonical u64 words. Their
@@ -141,13 +161,62 @@ where
     }
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 32);
     let rows_per = n_rows.div_ceil(threads).max(1);
-    std::thread::scope(|scope| {
-        for (i, chunk) in out.chunks_mut(rows_per * row_words).enumerate() {
-            let f = &f;
-            scope.spawn(move || f(i * rows_per, chunk));
-        }
+    let results: Vec<std::thread::Result<()>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = out
+            .chunks_mut(rows_per * row_words)
+            .enumerate()
+            .map(|(i, chunk)| {
+                let f = &f;
+                scope.spawn(move || f(i * rows_per, chunk))
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join()).collect()
     });
+    // A worker's panic carries its message (an I/O fault names its file and
+    // offset); re-raise that, not the scope's generic "a scoped thread
+    // panicked", so the caller's catch_unwind reports the cause.
+    for r in results {
+        if let Err(payload) = r {
+            std::panic::resume_unwind(payload);
+        }
+    }
     out
+}
+
+/// Instances taken but not yet proved, bounded so proofman's worker cannot
+/// run ahead of the clients: each parked instance is a full widened trace
+/// on the host (a gigabyte for Main), and pil2's own path throttles at
+/// its stream buffers. `take` waits for a slot; the pass drops with the
+/// `OwnedRequest`, after its prove.
+#[derive(Default)]
+pub struct Pending {
+    count: Mutex<usize>,
+    cv: std::sync::Condvar,
+}
+
+pub struct PendingPass(Arc<Pending>);
+
+impl Pending {
+    /// Wait until fewer than `cap` instances are pending, then count one in.
+    pub fn acquire(self: &Arc<Self>, cap: usize) -> PendingPass {
+        let mut n = self.count.lock().unwrap_or_else(|p| p.into_inner());
+        while *n >= cap {
+            n = self.cv.wait(n).unwrap_or_else(|p| p.into_inner());
+        }
+        *n += 1;
+        PendingPass(self.clone())
+    }
+
+    pub fn pending(&self) -> usize {
+        *self.count.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+impl Drop for PendingPass {
+    fn drop(&mut self) {
+        *self.0.count.lock().unwrap_or_else(|p| p.into_inner()) -= 1;
+        self.0.cv.notify_all();
+    }
 }
 
 /// A word reduced into `[0, p)`: pil2 reads a raw machine word as a residue.
@@ -235,6 +304,7 @@ pub struct Bridge {
     used: Mutex<std::collections::BTreeSet<String>>,
     preload_threads: AtomicUsize,
     next: AtomicUsize,
+    pending: Arc<Pending>,
     log: bool,
 }
 
@@ -313,12 +383,19 @@ impl Bridge {
 
     pub fn new(artifacts: &Path, clients: usize) -> Bridge {
         uptime();
-        let log = std::env::var("ZZ_LOG").map(|v| v != "0" && !v.is_empty()).unwrap_or(false);
-        let fraction = std::env::var("ZZ_MEMORY_FRACTION")
-            .ok()
-            .and_then(|s| s.parse::<f32>().ok())
-            .filter(|f| *f > 0.0 && *f < 1.0)
-            .map(|f| f / clients as f32);
+        let log = log_level() >= 1;
+        let fraction = match std::env::var("ZZ_MEMORY_FRACTION").ok().filter(|s| !s.is_empty()) {
+            None => None,
+            Some(text) => match text.parse::<f32>().ok().filter(|f| *f > 0.0 && *f < 1.0) {
+                Some(f) => Some(f / clients as f32),
+                None => {
+                    // Silently allocating on demand here would let pil2 take
+                    // the card first, the very thing the variable prevents.
+                    eprintln!("[zz] ZZ_MEMORY_FRACTION={text:?} is not a fraction in (0, 1); the clients allocate on demand");
+                    None
+                }
+            },
+        };
         let client_handles: Vec<Arc<artifact::Client>> =
             (0..clients).map(|_| artifact::new_client(fraction)).collect();
         let slots = (0..clients)
@@ -364,6 +441,7 @@ impl Bridge {
             used: Mutex::new(std::collections::BTreeSet::new()),
             preload_threads: AtomicUsize::new(0),
             next: AtomicUsize::new(0),
+            pending: Arc::new(Pending::default()),
             log,
         }
     }
@@ -491,7 +569,7 @@ impl Bridge {
         match stream_id {
             Some(s) => s % n,
             None => {
-                let start = self.next.load(Ordering::Relaxed) % n;
+                let start = self.next.fetch_add(1, Ordering::Relaxed) % n;
                 for k in 0..n {
                     if self.slots[(start + k) % n].try_lock().is_ok() {
                         return (start + k) % n;
@@ -514,10 +592,16 @@ impl Bridge {
         let m = manifest::Manifest::load(&self.artifacts.join(&key))?;
         let n = 1usize << m.n_bits;
         let p = &req.inputs;
+        // Two instances per client: one proving, one waiting behind it.
+        let pending = self.pending.acquire(2 * self.slots.len());
         let trace = match req.packed {
             Some((words_per_row, bits)) => {
                 if bits.len() != m.widths.cm1 {
                     return Err(format!("{key}: packing lists {} columns, cm1 has {}", bits.len(), m.widths.cm1).into());
+                }
+                let packed_bits: u64 = bits.iter().sum();
+                if packed_bits > 64 * words_per_row as u64 {
+                    return Err(format!("{key}: packing needs {packed_bits} bits per row, {words_per_row} words hold {}", 64 * words_per_row).into());
                 }
                 unpack_trace(std::slice::from_raw_parts(p.trace, n * words_per_row), n, words_per_row, bits)
             }
@@ -545,6 +629,7 @@ impl Bridge {
             proofvalues: copy_canonical(std::slice::from_raw_parts(p.proofvalues, manifest::Manifest::packed_width(&m.proofvalues))),
             global_challenge: copy_canonical(std::slice::from_raw_parts(p.global_challenge, 3)),
             proof_words,
+            _pending: pending,
         })
     }
 
@@ -645,19 +730,29 @@ impl Bridge {
             global_challenge: &req.global_challenge,
         };
         if let Ok(dir) = std::env::var("ZZ_DUMP_INPUTS") {
-            // The instance exactly as received, for replaying it outside proofman.
+            // The instance exactly as received, as a `zz_prove` case
+            // directory (the fixed sections and `case.json` included), for
+            // replaying it outside proofman.
             let d = std::path::PathBuf::from(dir).join(format!("{}_{}", req.instance_id, key));
             let _ = std::fs::create_dir_all(&d);
-            for (name, words) in [
-                ("trace", inputs.trace),
-                ("publics", inputs.publics),
-                ("airvalues", inputs.airvalues),
-                ("proofvalues", inputs.proofvalues),
-                ("global_challenge", inputs.global_challenge),
-            ] {
+            let (const_base, customs) = read_fixed(m, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
+            let mut files: Vec<(String, &[u64])> = vec![
+                ("trace".into(), inputs.trace),
+                ("publics".into(), inputs.publics),
+                ("airvalues".into(), inputs.airvalues),
+                ("proofvalues".into(), inputs.proofvalues),
+                ("global_challenge".into(), inputs.global_challenge),
+                ("const_base".into(), &const_base),
+            ];
+            files.extend(customs.iter().map(|(id, w)| (format!("custom_base_{id}"), w.as_slice())));
+            for (name, words) in files {
                 let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
                 let _ = std::fs::write(d.join(format!("{name}.bin")), bytes);
             }
+            let _ = std::fs::write(
+                d.join("case.json"),
+                format!("{{\"air\": \"{}\", \"n_bits\": {}}}\n", m.air, m.n_bits),
+            );
         }
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
         let out = driver.prove(&inputs, &mut transcript, proof_out)?;
@@ -741,11 +836,21 @@ fn read_words(path: &str, skip_bytes: usize, n_words: usize) -> Result<Vec<u64>,
     Ok(words)
 }
 
-/// Read the key's fixed sections and hand them to the driver; returns the
-/// seconds spent reading (the rest is upload and the setup programs).
-fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixed_path: Option<&str>) -> Result<f64, Error> {
-    let t = Instant::now();
-    let m = driver.manifest().clone();
+/// Whether pil2 wrote the custom-commit fixed file in its tiled device
+/// layout: its GPU backend does (`fromRowMajorToTiled`) and names the
+/// constant file `.const_gpu`; the CPU backend writes row-major and names
+/// it `.const`. The bridge serves both (proofman routes to it either way).
+fn fixed_is_tiled(const_pols_path: &str) -> bool {
+    const_pols_path.ends_with("_gpu")
+}
+
+/// The key's fixed sections as row-major words: the constants and each
+/// custom commit's base section.
+fn read_fixed(
+    m: &manifest::Manifest,
+    const_pols_path: &str,
+    custom_fixed_path: Option<&str>,
+) -> Result<(Vec<u64>, Vec<(usize, Vec<u64>)>), Error> {
     let n = 1usize << m.n_bits;
     let const_base = read_words(&plain_const_path(const_pols_path), 0, n * m.n_constants)?;
     let mut customs: Vec<(usize, Vec<u64>)> = Vec::new();
@@ -753,11 +858,21 @@ fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixe
         let path = custom_fixed_path
             .filter(|p| !p.is_empty())
             .ok_or_else(|| format!("{} has a custom commit but no fixed path", m.air))?;
-        // pil2 skips a 32-byte Merkle-root header (one custom commit per AIR)
-        // and copies the rest straight to the device, so the section sits in
-        // the prover's tiled layout rather than row-major.
-        customs.push((cc.id, tiled_to_row_major(&read_words(path, 32, n * cc.width)?, n, cc.width)));
+        // pil2 skips a 32-byte Merkle-root header (one custom commit per
+        // AIR); the GPU backend then copies the rest straight to the device,
+        // so that file holds the section in the prover's tiled layout.
+        let words = read_words(path, 32, n * cc.width)?;
+        customs.push((cc.id, if fixed_is_tiled(const_pols_path) { tiled_to_row_major(&words, n, cc.width) } else { words }));
     }
+    Ok((const_base, customs))
+}
+
+/// Read the key's fixed sections and hand them to the driver; returns the
+/// seconds spent reading (the rest is upload and the setup programs).
+fn load_fixed(driver: &mut driver::AirDriver, const_pols_path: &str, custom_fixed_path: Option<&str>) -> Result<f64, Error> {
+    let t = Instant::now();
+    let m = driver.manifest().clone();
+    let (const_base, customs) = read_fixed(&m, const_pols_path, custom_fixed_path)?;
     let read_s = t.elapsed().as_secs_f64();
     let fixed = FixedSections {
         const_base: &const_base,
@@ -858,6 +973,51 @@ mod tests {
             }
             assert_eq!(tiled_to_row_major(&tiled, n_rows, n_cols), row_major, "{n_rows}x{n_cols}");
         }
+    }
+
+    #[test]
+    fn log_level_reads_numbers_and_flags_alike() {
+        assert_eq!(parse_log_level(None), 0);
+        assert_eq!(parse_log_level(Some("")), 0);
+        assert_eq!(parse_log_level(Some("0")), 0);
+        assert_eq!(parse_log_level(Some("1")), 1);
+        assert_eq!(parse_log_level(Some(" 2 ")), 2);
+        assert_eq!(parse_log_level(Some("10")), 10);
+        assert_eq!(parse_log_level(Some("true")), 1);
+    }
+
+    #[test]
+    fn a_worker_panic_keeps_its_message() {
+        let caught = std::panic::catch_unwind(|| par_rows(64, 4, |first, _| if first > 0 { panic!("row {first} failed") }));
+        let payload = caught.err().expect("par_rows should propagate the panic");
+        let text = payload.downcast_ref::<String>().cloned().unwrap_or_default();
+        assert!(text.starts_with("row ") && text.ends_with(" failed"), "got {text:?}");
+    }
+
+    #[test]
+    fn pending_caps_the_instances_in_flight() {
+        let pending = Arc::new(Pending::default());
+        let a = pending.acquire(2);
+        let b = pending.acquire(2);
+        assert_eq!(pending.pending(), 2);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let p = pending.clone();
+        let waiter = std::thread::spawn(move || {
+            let _c = p.acquire(2);
+            tx.send(()).unwrap();
+        });
+        assert!(rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(), "third instance got in over the cap");
+        drop(a);
+        rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        waiter.join().unwrap();
+        drop(b);
+        assert_eq!(pending.pending(), 0);
+    }
+
+    #[test]
+    fn the_custom_commit_layout_follows_the_backend() {
+        assert!(fixed_is_tiled("/pk/zisk/Zisk/airs/Rom/air/Rom.const_gpu"));
+        assert!(!fixed_is_tiled("/pk/zisk/Zisk/airs/Rom/air/Rom.const"));
     }
 
     #[test]

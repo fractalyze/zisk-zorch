@@ -37,8 +37,7 @@ pub type Buf = Arc<DeviceBuf>;
 
 /// `ZZ_LOG=2`: per-program and per-phase timing on stderr.
 pub fn trace_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("ZZ_LOG").map(|v| v.trim() >= "2").unwrap_or(false))
+    crate::log_level() >= 2
 }
 /// Inputs bound by manifest name.
 pub type Env = HashMap<String, Buf>;
@@ -166,6 +165,53 @@ pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
     session
 }
 
+/// A hash of the PJRT plugin the executables are serialized by (its path,
+/// size and modification time), folded into the cache key. Zero when
+/// `XLA_PJRT_PLUGIN` is unset.
+fn plugin_identity() -> u64 {
+    static ID: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *ID.get_or_init(|| {
+        let Some(path) = std::env::var_os("XLA_PJRT_PLUGIN") else { return 0 };
+        let mut key = path.to_string_lossy().into_owned().into_bytes();
+        if let Ok(meta) = std::fs::metadata(&path) {
+            key.extend(meta.len().to_le_bytes());
+            if let Ok(t) = meta.modified().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).map_err(std::io::Error::other)) {
+                key.extend(t.as_secs().to_le_bytes());
+            }
+        }
+        fnv1a64(&key)
+    })
+}
+
+/// Process-wide exclusion per cache file, so the clients of one bridge do
+/// not compile (and write) the same entry at once.
+struct CacheEntryLock(PathBuf);
+
+impl CacheEntryLock {
+    fn state() -> &'static (Mutex<std::collections::HashSet<PathBuf>>, std::sync::Condvar) {
+        static S: std::sync::OnceLock<(Mutex<std::collections::HashSet<PathBuf>>, std::sync::Condvar)> = std::sync::OnceLock::new();
+        S.get_or_init(Default::default)
+    }
+
+    fn take(path: &Path) -> CacheEntryLock {
+        let (busy, cv) = Self::state();
+        let mut set = busy.lock().unwrap_or_else(|p| p.into_inner());
+        while set.contains(path) {
+            set = cv.wait(set).unwrap_or_else(|p| p.into_inner());
+        }
+        set.insert(path.to_path_buf());
+        CacheEntryLock(path.to_path_buf())
+    }
+}
+
+impl Drop for CacheEntryLock {
+    fn drop(&mut self) {
+        let (busy, cv) = Self::state();
+        busy.lock().unwrap_or_else(|p| p.into_inner()).remove(&self.0);
+        cv.notify_all();
+    }
+}
+
 pub struct Artifact {
     pub manifest: Manifest,
     dir: PathBuf,
@@ -194,8 +240,15 @@ impl Artifact {
         let cache = match cache {
             Some(c) => {
                 let sub = c.join(dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-                std::fs::create_dir_all(&sub).map_err(|e| format!("cannot create {}: {e}", sub.display()))?;
-                Some(sub)
+                match std::fs::create_dir_all(&sub) {
+                    Ok(()) => Some(sub),
+                    Err(e) => {
+                        // The cache is an optimization: a read-only or
+                        // shared artifacts directory proves without it.
+                        zzlog!("cannot create {}: {e}; compiling without the executable cache", sub.display());
+                        None
+                    }
+                }
             }
             None => None,
         };
@@ -225,30 +278,54 @@ impl Artifact {
         let info = self.manifest.program(name)?;
         let path = self.dir.join(&info.file);
         let code = std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let cached = self.cache.as_ref().map(|c| c.join(format!("{name}-{:016x}.pjrt", fnv1a64(&code))));
+        // Keyed by the bytecode and the plugin: an executable serialized by
+        // one plugin build is not one another accepts.
+        let cached = self.cache.as_ref().map(|c| c.join(format!("{name}-{:016x}.pjrt", fnv1a64(&code) ^ plugin_identity())));
         // One program at a time through the gate: a prove that arrives
         // mid-load waits for this program, not for the AIR's whole set.
         let _loading = self.client.enter_load();
+        // One compile per cache entry across clients: a second client for
+        // the same AIR waits here and then finds the first one's file.
+        let _entry = cached.as_ref().map(|p| CacheEntryLock::take(p));
         let t = std::time::Instant::now();
-        let exe = match cached.as_ref().and_then(|p| std::fs::read(p).ok()) {
-            Some(bytes) => {
-                self.cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut exe = None;
+        if let Some(p) = &cached {
+            if let Ok(bytes) = std::fs::read(p) {
                 let read_ms = t.elapsed().as_secs_f64() * 1e3;
-                let exe = unsafe { self.session.deserialize_and_load(&bytes) };
-                if trace_enabled() {
-                    zzlog!(
-                        "  load {name}: {} KB, read {read_ms:.1} ms, deserialize {:.1} ms",
-                        bytes.len() / 1024,
-                        t.elapsed().as_secs_f64() * 1e3 - read_ms
-                    );
+                // A stale entry (another plugin build, another GPU) makes
+                // the plugin fail its load, which xla-pjrt reports as a
+                // panic; that is a cache miss, not a fatal error.
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe { self.session.deserialize_and_load(&bytes) })) {
+                    Ok(e) => {
+                        self.cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if trace_enabled() {
+                            zzlog!(
+                                "  load {name}: {} KB, read {read_ms:.1} ms, deserialize {:.1} ms",
+                                bytes.len() / 1024,
+                                t.elapsed().as_secs_f64() * 1e3 - read_ms
+                            );
+                        }
+                        exe = Some(e);
+                    }
+                    Err(_) => {
+                        zzlog!("cached executable {} rejected by the plugin; recompiling {name}", p.display());
+                        let _ = std::fs::remove_file(p);
+                    }
                 }
-                exe
             }
+        }
+        let exe = match exe {
+            Some(e) => e,
             None => {
                 let exe = unsafe { self.session.compile(&code) };
                 if let Some(p) = &cached {
                     let bytes = unsafe { self.session.serialize(&exe) };
-                    let tmp = p.with_extension(format!("tmp{}", std::process::id()));
+                    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                    let tmp = p.with_extension(format!(
+                        "tmp{}-{}",
+                        std::process::id(),
+                        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ));
                     if std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, p)).is_err() {
                         let _ = std::fs::remove_file(&tmp);
                     }
@@ -359,9 +436,26 @@ impl Artifact {
 
 #[cfg(test)]
 mod tests {
-    use super::Gate;
+    use super::{CacheEntryLock, Gate};
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn one_compile_per_cache_entry_at_a_time() {
+        let path = std::path::Path::new("/nonexistent/zz-test/commit1-0.pjrt");
+        let held = CacheEntryLock::take(path);
+        let (tx, rx) = mpsc::channel();
+        let second = std::thread::spawn(move || {
+            let _l = CacheEntryLock::take(std::path::Path::new("/nonexistent/zz-test/commit1-0.pjrt"));
+            tx.send(()).unwrap();
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(200)).is_err(), "second compile of one entry ran concurrently");
+        // A different entry is independent.
+        let _other = CacheEntryLock::take(std::path::Path::new("/nonexistent/zz-test/commit2-0.pjrt"));
+        drop(held);
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        second.join().unwrap();
+    }
 
     #[test]
     fn a_prove_waits_for_loads_in_flight_and_holds_new_loads_back() {
