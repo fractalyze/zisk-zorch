@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import pathlib
 
+import frx
 import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
@@ -47,11 +48,14 @@ class GoldilocksPoseidon2Test(absltest.TestCase):
         # which the compiler applies via multiply-free add-chains, so the
         # block-structured widths lower to the dedicated poseidon2 emitter (the
         # fast commit-compile path). Width 4's plain single-block M4 is not
-        # marker-carried, so it stays on the generic fused region. This reads
-        # the marker hash-frx chose; whether the pinned plugin recognizes that
-        # marker is `commit:fusion_test`'s question.
+        # marker-carried, so it stays on the generic fused region. Off the GPU
+        # every width stays generic: the CPU plugin's sponge emitter is wrong
+        # at one leaf count (see `_Poseidon2`). This reads the marker hash-frx
+        # chose; whether the pinned plugin recognizes that marker is
+        # `commit:fusion_test`'s question.
+        on_gpu = frx.default_backend() == "gpu"
         for width in WIDTHS:
-            want = FusionPath.DEDICATED if width != 4 else FusionPath.GENERIC
+            want = FusionPath.DEDICATED if on_gpu and width != 4 else FusionPath.GENERIC
             self.assertIs(
                 goldilocks_perm(width).fusion_path, want, msg=f"width {width}"
             )
