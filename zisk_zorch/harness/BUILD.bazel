@@ -6,6 +6,7 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 # the pil2-mode prover and the byte-gates' reference reads.
 py_library(
     name = "pil2",
+    visibility = ["//zisk_zorch/export:__pkg__"],
     srcs = [
         "__init__.py",
         "pil2.py",
@@ -27,6 +28,7 @@ py_library(
 # wire-shaped query openings the prover's emit_wire path assembles.
 py_library(
     name = "proof_serializer",
+    visibility = ["//zisk_zorch/export:__pkg__"],
     srcs = ["proof_serializer.py"],
     deps = [
         ":pil2",
@@ -42,7 +44,10 @@ py_library(
 # lives here and not in the stage packages.
 py_library(
     name = "pil2_prover",
-    visibility = ["//zisk_zorch:__pkg__"],
+    visibility = [
+        "//zisk_zorch:__pkg__",
+        "//zisk_zorch/export:__pkg__",
+    ],
     srcs = ["pil2_prover.py"],
     deps = [
         ":proof_serializer",
@@ -204,7 +209,10 @@ py_test(
 # module's recursion_pil2_key, for the basic-AIR key tree).
 py_library(
     name = "zisk_key",
-    visibility = ["//zisk_zorch:__pkg__"],
+    visibility = [
+        "//zisk_zorch:__pkg__",
+        "//zisk_zorch/export:__pkg__",
+    ],
     srcs = ["zisk_key.py"],
     deps = [
         ":pil2",
@@ -271,6 +279,7 @@ py_library(
         "contributions.py",
         "global_constraints.py",
     ],
+    visibility = ["//zisk_zorch/export:__pkg__"],
     deps = [
         ":pil2",
         ":pil2_prover",
@@ -335,7 +344,10 @@ py_test(
 # the layout checker.
 py_library(
     name = "recursion",
-    visibility = ["//zisk_zorch:__pkg__"],
+    visibility = [
+        "//zisk_zorch:__pkg__",
+        "//zisk_zorch/export:__pkg__",
+    ],
     srcs = ["recursion.py"],
     deps = [
         ":pil2",

@@ -8,4 +8,5 @@ pointer).
 | --- | --- |
 | [architecture.md](architecture.md) | The inner proof over one Fiat-Shamir transcript: trace commit, constraint/interaction ingestion, quotient, DEEP, and FRI — and the pil2 vocabulary each stage mirrors. |
 | [development.md](development.md) | Environment setup, test `size`/`timeout` conventions and fixtures, and the per-stage baseline against native pil2. |
+| [bridge.md](bridge.md) | How cargo-zisk proves through zisk-zorch: the per-AIR StableHLO artifacts, the Rust `gen_proof` bridge, and the three byte-gates between pil2 and the bridge. |
 | [conventions.md](conventions.md) | Comment scoping (why-not-what), how pil2-proofman / ZisK references are pinned, and the golden-test rules. |

@@ -123,11 +123,15 @@ def extend(trace: Array, blowup: int) -> Array:
     """
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
+    # The shift crosses an optimization barrier so XLA cannot fold the coset
+    # power series it seeds into a 2^nBitsExt literal: every exported
+    # program that LDEs would otherwise carry its own copy (tens of MB each,
+    # on the device for as long as the program is loaded).
     rs = ReedSolomon(
         trace.shape[0],
         blowup,
         F,
-        coset_shift=fnp.asarray(COSET_SHIFT, F),
+        coset_shift=lax.optimization_barrier(fnp.asarray(COSET_SHIFT, F)),
         generator=_PIL2_GENERATOR,
     )
     return rs.extend(trace.T).T

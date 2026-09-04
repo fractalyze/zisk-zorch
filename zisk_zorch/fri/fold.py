@@ -32,6 +32,7 @@ from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zk_dtypes import pfinfo
 from zorch.coding.reed_solomon import fri_fold_k
+from zorch.poly.univariate import powers
 
 # Goldilocks field modulus and the LDE coset generator (`Goldilocks::SHIFT`).
 _GOLDILOCKS_P = int(pfinfo(F).modulus)
@@ -78,18 +79,14 @@ def _coset_domain(n_bits_ext: int, prev_bits: int, current_bits: int) -> Array:
 
 
 @functools.cache
-def _coset_inv_table(n_bits_ext: int, prev_bits: int, current_bits: int) -> np.ndarray:
-    """The per-group inverse coset scales `s_g^-1 = shift_eff^-1 * w^-g` for
-    `g` in `[0, 2^current_bits)`, canonical u64. Fixed by the static bit
-    sizes, and the object-int power loop is ~200 ms at `2^19` groups — cached
-    host-side so a prove pays it once per layer shape, not once per fold."""
+def _coset_inv_seeds(n_bits_ext: int, prev_bits: int, current_bits: int) -> tuple[int, int]:
+    """The two scalars the per-group inverse coset scales
+    `s_g^-1 = shift_eff^-1 * w^-g` (`g` in `[0, 2^current_bits)`) are a
+    power series of: `shift_eff^-1` and `w^-1`, canonical u64. Fixed by the
+    static bit sizes."""
     shift_eff = pow(_COSET_SHIFT, 1 << (n_bits_ext - prev_bits), _GOLDILOCKS_P)
     w = pow(_TWO_ADIC_ROOT, 1 << (32 - prev_bits), _GOLDILOCKS_P)
-    s_inv = (
-        pow(shift_eff, -1, _GOLDILOCKS_P)
-        * _powers(pow(w, -1, _GOLDILOCKS_P), 1 << current_bits)
-    ) % _GOLDILOCKS_P
-    return s_inv.astype(np.uint64)
+    return pow(shift_eff, -1, _GOLDILOCKS_P), pow(w, -1, _GOLDILOCKS_P)
 
 
 def fold(
@@ -120,8 +117,13 @@ def fold(
     # `W[prev_bits - current_bits]`, reached through `_PIL2_GENERATOR`; only
     # the per-group `s_g^-1` varies.
     group = pol.reshape(-1, cur_n).T
-    coset_inv = fnp.array(
-        _coset_inv_table(n_bits_ext, prev_bits, current_bits), dtype=F
+    # The table is a power series from two field scalars, built in the
+    # trace behind an optimization barrier: as a host table it would ride
+    # into every exported fold program as a literal (8 MB at 2^20 groups),
+    # and unbarriered XLA folds the series back into one.
+    shift_inv, w_inv = _coset_inv_seeds(n_bits_ext, prev_bits, current_bits)
+    coset_inv = lax.optimization_barrier(fnp.array(shift_inv, dtype=F)) * powers(
+        lax.optimization_barrier(fnp.array(w_inv, dtype=F)), cur_n
     )
     return fri_fold_k(group, challenge, coset=(coset_inv, _PIL2_GENERATOR))
 

@@ -34,7 +34,7 @@ from dataclasses import dataclass
 import frx
 import frx.numpy as fnp
 import numpy as np
-from frx import Array
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zorch.poly.univariate import powers
@@ -106,6 +106,16 @@ def lev_constants(opening_points: list[int], n_bits: int) -> LevConstants:
 
 @shape_cache
 def _lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants:
+    return build_lev_constants(opening_points, n_bits)
+
+
+def build_lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants:
+    """The constant pack, built by whoever calls — uncached, so a trace that
+    calls it OWNS the arrays it produces. An exported program must build
+    its constants this way rather than close over the interned pack: a
+    device array captured from outside the trace lowers as an extra entry
+    parameter rather than an embedded constant, and the artifact's
+    signature then disagrees with its manifest."""
     n = 1 << n_bits
     w = _fpow(np.array(_TWO_ADIC_ROOT, dtype=F), 1 << (32 - n_bits))
     shift_inv = _ONE / np.array(_COSET_SHIFT, dtype=F)
@@ -113,7 +123,9 @@ def _lev_constants(opening_points: tuple[int, ...], n_bits: int) -> LevConstants
         one=_CUBIC_ONE,
         inv_n=fnp.array(_ONE / np.array(n, dtype=F)),
         # w^-j over the base domain — the per-coefficient evaluation points.
-        wj_inv=powers(fnp.array(_fpow(w, -1)), n),
+        # Under a trace the seed crosses an optimization barrier so XLA
+        # keeps the series a computation rather than a 2^nBits literal.
+        wj_inv=powers(lax.optimization_barrier(fnp.array(_fpow(w, -1))), n),
         g_shifts=fnp.stack(
             [fnp.array(_fpow(w, p) * shift_inv) for p in opening_points]
         ),

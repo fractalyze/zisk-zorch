@@ -6,6 +6,7 @@ this file is just the map plus the rules every change must respect.
 - **Project overview & quick start:** [`README.md`](README.md)
 - **Architecture:** [`docs/architecture.md`](docs/architecture.md) — the inner proof over one transcript: commit, constraint ingestion, DEEP.
 - **Development:** [`docs/development.md`](docs/development.md) — env setup, testing, and the per-stage baseline any perf number must trace to.
+- **The gen_proof bridge:** [`docs/bridge.md`](docs/bridge.md) — how cargo-zisk proves through zisk-zorch: exported artifacts, the Rust bridge crate, the three byte-gates.
 - **Coding conventions:** [`docs/conventions.md`](docs/conventions.md)
 
 ## Non-negotiables
