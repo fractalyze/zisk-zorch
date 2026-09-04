@@ -50,7 +50,11 @@ bazel test //...     # hermetic, sandboxed; FRX_PLATFORMS=cpu by default
 [`.bazelrc`](../.bazelrc) pins `FRX_PLATFORMS=cpu` so a plain `bazel test` is
 deterministic on any machine — CPU is the default, not a requirement. CI
 overrides it per matrix leg. `//...` is the whole suite on either backend; the
-`-gpu` tag filter currently matches nothing.
+`-gpu` tag filter drops the targets that only mean something on the card —
+`//zisk_zorch/commit:fusion_test`, which compiles a commit and asserts the
+pinned plugin turned each hash marker into one custom fusion (the CPU backend
+routes Poseidon1 to the generic marker by design, so there is nothing to
+recognize there).
 
 ### Test sizing & timeouts
 

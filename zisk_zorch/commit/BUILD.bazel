@@ -61,6 +61,24 @@ py_test(
 )
 
 py_test(
+    name = "fusion_test",
+    # The sparse-Poseidon emitter's compile dominates (~1 min for the leaf
+    # sponge, ~15 s per level); cold on the CI runner that passes `medium`.
+    size = "medium",
+    timeout = "long",
+    srcs = ["fusion_test.py"],
+    # GPU-only: the CPU backend routes Poseidon1 to the generic marker by design.
+    tags = ["gpu"],
+    deps = [
+        ":trace_commit",
+        requirement("absl_py"),
+        requirement("frx"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
     name = "openings_test",
     # ~135 s warm, but a dependency bump invalidates the cache and the cold run
     # under CI's parallel load lands at ~300 s — right on the cap `medium` would
@@ -96,6 +114,10 @@ py_test(
 
 py_test(
     name = "poseidon1_commit_test",
+    # The stage-1 goldens compile the fused Poseidon1 sponge and one tree
+    # level per height (~75 s + 3 x 16 s each on the GPU; see docs/bridge.md
+    # "Compile cost"); the leaf-hash lengths take the generic route (see the
+    # test's docstring), or this would run ~1000 s.
     size = "large",
     srcs = ["poseidon1_commit_test.py"],
     data = [

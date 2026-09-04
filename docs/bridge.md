@@ -46,9 +46,16 @@ byte-gates (`docs/development.md`).
 ## Running
 
 ```bash
-# once per proving key: export every basic AIR (~4 min on an RTX 5090)
+# once per proving key: export every basic AIR (~5 min on an RTX 5090)
 FRX_PLATFORMS=cuda python -m zisk_zorch.export.export_air \
     --proving_key=$PK --air=all --out=$ARTIFACTS
+
+# once per export and plugin build: compile the AIRs a guest needs into the
+# cache. The fused Poseidon1 kernels compile slowly (about a minute for a
+# leaf sponge, 15 s per tree level; ~40 min for the 11 hello-world AIRs on
+# 11 threads), and a compile inside a prove trips proofman's 10-minute
+# watchdog, so fill the cache ahead of the first run.
+ZZ_WARM_THREADS=11 zz_prove --warm $ARTIFACTS Main_n22 Rom_n22 ...   # or no list: all
 
 # the bridge's inputs (the full list is the table below)
 export ZZ_ARTIFACTS=$ARTIFACTS
@@ -80,7 +87,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_DUMP_INPUTS` | write each instance as a `zz_prove` case directory under this one | off |
 | `ZZ_DUMP_TRACES` | (fork) write each host trace as `gen_proof` receives it | off |
 
-## Status (2026-09-03, RTX 5090, go hello-world guest)
+## Status (2026-09-04, RTX 5090, go hello-world guest)
 
 `cargo-zisk prove -g -y` through the bridge completes and its final proof
 verifies. All 11 basic instances (Rom, Main, Mem, InputData, RomData,
@@ -91,56 +98,44 @@ The in-process `ZZ_AB=1` variant reproduces the same verdict per instance
 but still crashes once the card fills; the dump comparison is the gate to
 quote.
 
-Warm, on an otherwise idle host (a run right after another process has
-churned the page cache adds 4–5 s of file reading to either stack's init;
-take the second of two consecutive runs):
+Quiet host, three consecutive runs per stack, the second and third quoted
+(a run right after another process has churned the page cache — a Bazel
+build, the other stack, a cache warm — adds 4–5 s of file reading to
+either stack's init):
 
-| | native (1 stream) | bridge, warm |
+| | native (3 basic streams + 1 recursive) | bridge (1 client) |
 |---|---|---|
-| `cargo-zisk prove` wall | 10.7 s | 21.2–21.5 s |
-| proofman init | 2.9 s | 6.2 s (bridge up 0.5 s, then init beside the executable loads) |
-| inner-proof leg | 3.5 s (28 proofs on 3 basic + 1 recursive streams) | 9.9–10.1 s |
-| ├ proves, one client, back to back | | 9.1 s (RomData 0.4, MemAlign 0.5, InputData 0.6, VirtualTableZisk1 0.7, Arith 0.8, Mem 0.8, VirtualTableZisk0 0.9, Rom 0.9, BinaryExtension 1.1, Main 1.2, Binary 1.3) |
-| ├ gaps between proves | | 0.2 s |
-| └ recursion after the last basic proof | | 0.7 s |
-| fixed sections, inside the proves above | precomputed on disk | 0.45 s for the two 88-column tables, ≤0.2 s otherwise (the key read ahead of the slot) |
-| host copy of an instance (proofman's worker) | | 0.01–0.1 s |
+| `cargo-zisk prove` wall | 11.2–11.6 s | 15.3–16.9 s |
+| proofman init | 3.0 s | 5.4 s (bridge up 0.2 s, then init beside the executable loads) |
+| inner-proof leg | 3.7 s (28 proofs) | 6.5 s |
+| ├ proves, one client, back to back, own time | | 5.45 s (InputData 0.17, RomData 0.30, MemAlign 0.32, Arith 0.42, VirtualTableZisk1 0.45, Rom 0.49, BinaryExtension 0.57, VirtualTableZisk0 0.57, Mem 0.62, Binary 0.75, Main 0.64–0.79) |
+| ├ waiting for the client, summed over the 11 instances | | 28 s (the serialization) |
+| └ executable loads, per AIR from the cache | | 0.52 s |
+| Main, single stream on both sides | 0.61 s (commit 0.165 + proof 0.444) | 0.64–0.79 s |
 
-Native's leg holds the same 11 basic proofs plus 17 recursion proofs
-whose per-proof timers sum to 10.5 s, overlapped four-wide; ours runs the
-basic proves one at a time on one client (two do not fit beside pil2's
-14 GB: a table AIR's constant setup and logup are single 4.5–5.5 GiB
-allocations) with the tower interleaved on pil2's stream. Inside a prove
-the host no longer idles the device: Main's 1.2 s is kernel time end to
-end, against pil2's 0.15 s commit plus 0.27 s proof for the same instance.
+Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
+leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
+per AIR. All of that difference was one cause: the hash-frx wheel pinned
+then emitted marker spellings the frx plugin had retired (fractalyze/xla#557),
+so every Poseidon permutation and sponge inlined into hundreds of loop
+fusions over the whole leaf set — Main's `commit1` held 2034 fusions, 44.5
+GiB of writes, and took 0.385 s where the fused kernel takes 0.08 s. Bytes
+never changed, so no golden noticed; `//zisk_zorch/commit:fusion_test` now
+compiles a commit on the GPU leg and asserts one custom fusion per level.
+The same `commit1` now holds 77 fusions (17 NTT passes, 13 hash kernels,
+the rest reshapes and slices) and loads in 75 ms.
 
-What remains above native is on the device, and a per-program profile
-(frx profiler over the Python replay, kernels attributed by execution
-order; pil2's own `TIMERS FOR INSTANCE` categories at `-vv`) says where.
-Main, single stream on both sides:
-
-| stage | bridge | pil2 |
-|---|---|---|
-| commit1 (LDE + Merkle of cm1) | 0.385 s | 0.165 s (Merkle 0.099, NTT 0.032, H2D 0.032) |
-| commit2, quotient_commit, fri_commit | 0.343 s | inside its 0.444 s proof: Merkle 0.165, NTT 0.068 |
-| const_setup (the constant tree) | 0.100 s | read from disk |
-| logup + quotient (expressions) | 0.096 s | 0.191 s |
-| evals, DEEP, folds, openings, grind | 0.024 s | small |
-
-Expressions and the NTT passes (36 ms in the whole prove) are ahead of
-pil2; the entire lag is the Merkle hashing in the commit programs, 0.83 s
-against pil2's 0.36 s of Merkle plus NTT. In commit1's optimized HLO the
-Poseidon linear layer is lowered as a sum of rank-1 outer products over
-the whole leaf set (`state + outer(column, row)` on a
-goldilocks[8388608,15] array, one full pass per term and per round): its
-484 fusions write 44.5 GiB, 24 GiB of it at the leaf level, for about
-4 GiB of unavoidable traffic, and XLA already runs them as CUDA graphs.
-That is zorch's Poseidon and tree lowering, not the bridge nor
-zisk-zorch's stages; the same HLO size is what makes each large
-executable 0.5–0.7 s to load. The block-sized workload (the zec-reth
-example needs the ASM emulator with hints; it starts under it but the
-guest exits early) is the open item for the wall-clock comparison the
-issue asks for.
+What remains above native is structural, tracked in #170: the bridge
+proves the 11 instances back to back on one client while pil2 overlaps
+three basic streams and its recursion (two clients did not fit beside
+pil2's 14 GB when a table AIR's `const_setup`/`logup` allocated 4.5–5.5 GiB
+in one piece; to be re-measured on the smaller executables); the bridge
+comes up beside proofman's init on the same cores; and `const_setup`
+recomputes each AIR's constant tree per run where pil2 reads it from disk.
+Per instance, Main is within 5–30 % of single-stream pil2. The block-sized
+workload (the zec-reth example needs the ASM emulator with hints; it starts
+under it but the guest exits early) is still the open item for the
+wall-clock comparison the issue asks for.
 
 Facts the gate surfaced, all now handled by the bridge:
 
@@ -215,18 +210,28 @@ Facts the gate surfaced, all now handled by the bridge:
   power series from its scalar seed into a 2^nBitsExt literal per
   LDE-bearing program (30–70 MB each) unless the seed crosses an
   optimization barrier, which it now does. Loads are CPU-bound (XLA
-  rebuilds the executable from its HLO, ~4.5 CPU-s per AIR); more preload
-  threads slow proofman's init by as much as they gain.
-- **Compile cost.** Compiling an AIR's programs takes minutes
-  (RomData: 245 s for 34 programs on an RTX 5090), so the bridge keeps
-  the serialized executables on disk and a later client loads them in
-  2–3 s. The cache is keyed by the bytecode's hash and the plugin's
-  identity (`XLA_PJRT_PLUGIN` path, size, mtime), an entry the plugin
-  rejects is recompiled in place, one client compiles an entry at a
-  time, and a directory that cannot be created (a read-only export)
-  means compiling without a cache, not failing. `zz_prove --warm` fills
-  it; a key scheme change (this one included) leaves the old entries
-  unused on disk, so delete the directory when reclaiming the space.
+  rebuilds the executable from its HLO) and scale with the instruction
+  count: an AIR's programs load in ~0.5 s with the hash kernels fused,
+  ~4.5 CPU-s when the markers inlined (#168); more preload threads slow
+  proofman's init by as much as they gain.
+- **Compile cost.** Compiling an AIR's programs takes many minutes:
+  the fused Poseidon1 sponge and permute kernels are each a fully
+  unrolled straight-line body (3358 multiplies, 1.9 MB of LLVM IR for one
+  width-16 permute against Poseidon2's 296 and 0.27 MB), which XLA and
+  LLVM optimize for ~1 min per leaf sponge and ~15 s per tree level while
+  ptxas itself takes 2 s — about 40 min for the 11 hello-world AIRs on
+  11 warm threads (`ZZ_WARM_THREADS`), 245 s for RomData's 34 programs
+  when the markers still inlined. So the bridge keeps the serialized
+  executables on disk and a later client loads them in ~0.5 s per AIR.
+  The cache is keyed by the bytecode's hash and the plugin's identity
+  (`XLA_PJRT_PLUGIN` path, size, mtime), an entry the plugin rejects is
+  recompiled in place, one compile per entry across clients, and a
+  directory that cannot be created (a read-only export) means compiling
+  without a cache, not failing. Fill it with `zz_prove --warm` before
+  the first run: a compile inside a prove trips proofman's 10-minute
+  watchdog. A key scheme change (this one included) leaves the old
+  entries unused on disk, so delete the directory when reclaiming the
+  space.
 - **Loads never overlap a prove.** A deserialization on a client while
   one of its executions is in flight wedges both; deserializations
   alongside each other are fine. The client gate admits loads together

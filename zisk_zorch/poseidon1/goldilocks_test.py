@@ -14,6 +14,7 @@ import pathlib
 import frx
 import frx.numpy as fnp
 from absl.testing import absltest
+from hash_frx.fusion import FusionPath
 
 from zisk_zorch.golden import load, u64
 from zisk_zorch.poseidon1.goldilocks import WIDTHS, goldilocks_perm
@@ -45,10 +46,16 @@ class GoldilocksPoseidon1Test(absltest.TestCase):
         # fallback is the correct answer and not a forfeit — routing a whole
         # permutation composite at a backend that can only inline it costs
         # minutes of compile (hash-frx#154), so both arms are pinned here.
-        want = frx.default_backend() == "gpu"
+        # This reads the marker hash-frx chose; whether the pinned plugin
+        # recognizes that marker is `commit:fusion_test`'s question.
+        want = (
+            FusionPath.DEDICATED
+            if frx.default_backend() == "gpu"
+            else FusionPath.GENERIC
+        )
         for width in WIDTHS:
-            self.assertEqual(
-                goldilocks_perm(width).has_dedicated_fusion, want, msg=f"width {width}"
+            self.assertIs(
+                goldilocks_perm(width).fusion_path, want, msg=f"width {width}"
             )
 
 
