@@ -223,6 +223,19 @@ provenance). Each row brackets a different span — FRI excludes the query phase
 
 How to read the table:
 
+- **The trace-commit row is the Poseidon2 path, which is not the family
+  native proves with.** `bench_inner_proof` commits through
+  `merkle_tree(arity)`, whose default is Poseidon2; the shipped ZisK key sets
+  no `hash`, so native commits with Poseidon1 (`commit.trace_commit`).
+  Re-measured 2026-09-04 at this row's own shape (N=2^22, 38+24 columns) on
+  the #171 pins: **Poseidon2 101.5 ms** (extend 47.4 + merkle 54.1), which
+  reproduces the 98.5 ms; **Poseidon1 162 ms** (47.2 + 114.8), 1.6x that,
+  since its sparse permutation is the more expensive of the two. Read the
+  ratio as a Poseidon2 comparison unless the native column is re-taken on a
+  known family. The gap #168 chased was neither: the exported programs ran
+  4x slower than either figure because their hash markers inlined, and the
+  bench never went through the export.
+
 - **The quotient row has no ratio and cannot get one from these tools** (#66):
   pil2's `MAIN_EXPR_PATTERN` hardcodes a density ~370× the real Main air, while
   ours is the real air through the production `quotient_from_constraints`
