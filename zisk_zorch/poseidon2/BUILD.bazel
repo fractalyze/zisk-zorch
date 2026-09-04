@@ -26,7 +26,7 @@ py_test(
     data = glob(["testdata/golden/**"]),
     deps = [
         ":goldilocks",
-        requirement("hash_frx"),
         requirement("absl_py"),
+        requirement("hash_frx"),
     ],
 )

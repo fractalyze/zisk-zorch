@@ -49,20 +49,25 @@ bazel test //...     # hermetic, sandboxed; FRX_PLATFORMS=cpu by default
 
 [`.bazelrc`](../.bazelrc) pins `FRX_PLATFORMS=cpu` so a plain `bazel test` is
 deterministic on any machine — CPU is the default, not a requirement. CI
-overrides it per matrix leg. `//...` is the whole suite on either backend; the
-`-gpu` tag filter drops the targets that only mean something on the card —
+overrides it per matrix leg. It also pins `--test_tag_filters=-gpu`, which
+drops the targets that only mean something on the card —
 `//zisk_zorch/commit:fusion_test`, which compiles a commit and asserts the
-pinned plugin turned each hash marker into one custom fusion (the CPU backend
-routes Poseidon1 to the generic marker by design, so there is nothing to
-recognize there).
+pinned plugin turned each hash marker into one custom fusion (off the GPU both
+hash families route to the generic marker by design, so there is nothing to
+recognize there). To run those too, clear the filter on the command line, which
+wins over `.bazelrc` — what CI's GPU leg does:
+
+```sh
+bazel test --test_env=FRX_PLATFORMS=cuda --test_tag_filters= -- //...
+```
 
 ### Test sizing & timeouts
 
 `size` and `timeout` are independent knobs: **`size`** (`small`/`medium`/`large`)
 is a resource hint governing parallelism; **`timeout`**
 (`short`/`moderate`/`long`/`eternal` = 60/300/900/3600 s) is the wall-clock cap,
-derived from `size` when unset. Every test here declares a `size`; three declare
-a `timeout` as well — `fri:verifier_test`, `commit:openings_test` and
+derived from `size` when unset. Every test here declares a `size`; several
+declare a `timeout` as well — `fri:verifier_test`, `commit:openings_test` and
 `commit:fullprogram_commit_test` sit at ~135 s warm but reach ~300 s cold, which
 is exactly the cap `medium` derives, and all three timed out on CI the first time
 a pin bump invalidated the cache. Declare a **`timeout` explicitly** for anything

@@ -43,22 +43,26 @@ class LinearHashTest(absltest.TestCase):
         # only a FRI layer of exactly 16 leaves reached before this test.
         # `goldilocks_perm` keeps the CPU on the generic marker for that
         # reason; this pins the bytes whichever route the backend takes.
+        #
+        # Both absorb regimes: one partial block (a FRI layer's digest rows)
+        # and two with a tail (a trace width like Main's 38 columns), because
+        # the multi-block chain carries state across the batched permutes and
+        # is where a batching bug has somewhere to hide.
         rng = np.random.default_rng(16)
         for width in (16, 8):
             hasher = LinearHash(poseidon2_perm(width))
-            for rows in (width - 1, width, width + 1):
-                matrix = fnp.array(
-                    rng.integers(
-                        0, 2**63, size=(rows, hasher.rate - 1), dtype=np.uint64
-                    ),
-                    dtype=F,
-                )
-                batched = frx.jit(frx.vmap(hasher.hash))(matrix)
-                for i in range(rows):
-                    self.assertTrue(
-                        bool(fnp.array_equal(batched[i], hasher.hash(matrix[i]))),
-                        msg=f"width {width}, {rows} rows, row {i}",
+            for cols in (hasher.rate - 1, hasher.rate + 1):
+                for rows in (width - 1, width, width + 1):
+                    matrix = fnp.array(
+                        rng.integers(0, 2**63, size=(rows, cols), dtype=np.uint64),
+                        dtype=F,
                     )
+                    batched = frx.jit(frx.vmap(hasher.hash))(matrix)
+                    for i in range(rows):
+                        self.assertTrue(
+                            bool(fnp.array_equal(batched[i], hasher.hash(matrix[i]))),
+                            msg=f"width {width}, {cols} cols, {rows} rows, row {i}",
+                        )
 
     def test_value_equality(self) -> None:
         # Fresh instances over the same permutation are one static jit-zone

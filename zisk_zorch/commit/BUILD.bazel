@@ -48,7 +48,12 @@ py_library(
 
 py_test(
     name = "linear_hash_test",
+    # `test_batched_rows_hash_like_single_rows` compiles a leaf hash per
+    # (width, block count, batch size); declared explicitly so a pin bump that
+    # invalidates the cache cannot push the cold run past what `medium`
+    # derives (see docs/development.md "Test sizing & timeouts").
     size = "medium",
+    timeout = "long",
     srcs = ["linear_hash_test.py"],
     data = ["testdata/golden/linear_hash.json"],
     deps = [
@@ -70,7 +75,8 @@ py_test(
     size = "medium",
     timeout = "long",
     srcs = ["fusion_test.py"],
-    # GPU-only: the CPU backend routes Poseidon1 to the generic marker by design.
+    # GPU-only: off the card both families route to the generic marker by
+    # design (Poseidon1 in hash-frx, Poseidon2 in `poseidon2.goldilocks`).
     tags = ["gpu"],
     deps = [
         ":trace_commit",
@@ -119,9 +125,15 @@ py_test(
     name = "poseidon1_commit_test",
     # The stage-1 goldens compile the fused Poseidon1 sponge and one tree
     # level per height (~75 s + 3 x 16 s each on the GPU; see docs/bridge.md
-    # "Compile cost"); the leaf-hash lengths take the generic route (see the
-    # test's docstring), or this would run ~1000 s.
+    # "Compile cost"), plus one sponge per `_DEDICATED_LENGTHS` entry; the
+    # remaining leaf-hash lengths take the generic route (see the test's
+    # docstring), or this would run ~1000 s. What is left still measures 378 s
+    # on a quiet card and 654 s while another job holds it, so it declares a
+    # timeout rather than sit under the 900 s `large` derives — a cold CI run
+    # under parallel load is the case that rule exists for, and there is no
+    # tier between 900 s and `eternal`.
     size = "large",
+    timeout = "eternal",
     srcs = ["poseidon1_commit_test.py"],
     data = [
         "testdata/golden/poseidon1_linear_hash.json",
@@ -133,6 +145,7 @@ py_test(
         "//zisk_zorch:golden",
         "//zisk_zorch/poseidon1:goldilocks",
         requirement("absl_py"),
+        requirement("hash_frx"),
     ],
 )
 

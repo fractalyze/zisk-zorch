@@ -24,8 +24,9 @@ The pil2 conventions these parameters encode on top of zorch's agnostic core:
   plain M4 at width 4), so the full matrix is passed explicitly per width.
   zorch#264 carries the base M4 as an `external_m4` marker attribute, which the
   compiler applies via multiply-free add-chains, so the block-structured widths
-  (8/16) lower to the dedicated `zorch.poseidon2` emitter — the fast
-  commit-compile path. Width 4's plain single-block M4 is
+  (8/16) lower to the dedicated `hash_frx.perm.poseidon2` emitter — the fast
+  commit-compile path — on the GPU (`_Poseidon2` keeps every other backend on
+  the generic marker). Width 4's plain single-block M4 is
   not marker-carried, so it stays on the generic fused region.
 - The internal layer is `Diag(d) + J` (pil2's `prodadd`: out_i = d_i*x_i +
   sum), i.e. zorch's `internal_diag = d`, `internal_j_scale = 1`.
@@ -506,7 +507,9 @@ def goldilocks_perm(width: int) -> Poseidon2:
     traceable as a single compiled function. Construction is forced eager so
     a cache miss under an ambient trace stores concrete constants, not that
     trace's tracers (the block composite's phase-1 commit traces
-    `merkle_tree` before anything else has warmed the cache).
+    `merkle_tree` before anything else has warmed the cache). The marker the
+    instance carries is chosen against the backend live at that first call
+    (`_Poseidon2`), so the cache freezes the routing along with it.
     """
     with frx.ensure_compile_time_eval():
         return _Poseidon2(goldilocks_params(width))

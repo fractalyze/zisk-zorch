@@ -16,10 +16,13 @@ suite by an order of magnitude — for a golden whose bytes are the same on
 either route. What the ten lengths pin is pil2's chaining convention (zero-pad
 the partial block, chain the digest through the capacity lanes, permute every
 block), and that convention lives in the sponge's Python body, which the
-generic route runs as-is. The fused kernel's own bytes are pinned where its
-shapes are production's: the stage-1 commits below (5 and 9 columns, partial
-tails), `fullprogram_commit_test` (real trace widths), and one whole-block
-length here (`_DEDICATED_LENGTHS`), the one tail case no other golden reaches.
+generic route runs as-is. The fused kernel's own bytes stay pinned on one
+length per absorb branch (`_DEDICATED_LENGTHS`): the other Poseidon1 fused
+goldens are all single partial blocks (5 and 9 columns in the stage-1 commits
+below, 9 in `fullprogram_commit_test`), so the multi-block branches — whole
+blocks with no tail, and the capacity chaining into a partial tail, which is
+what a production width like Main's 38 columns runs — reach the emitter only
+from here.
 """
 
 from __future__ import annotations
@@ -38,10 +41,12 @@ from zisk_zorch.poseidon1.goldilocks import goldilocks_params, goldilocks_perm
 
 _TESTDATA = pathlib.Path(__file__).parent / "testdata" / "golden"
 
-# Lengths hashed through the fused kernel as well: a whole number of rate
-# blocks with no tail, the branch of the emitter's absorb that every other
-# fused golden (5, 9, 38, ... columns) leaves untaken.
-_DEDICATED_LENGTHS = frozenset({24})
+# Lengths hashed through the fused kernel as well — one per absorb branch no
+# other Poseidon1 fused golden reaches, since those are all a single partial
+# block: 13 chains a second block over a 1-element tail, 24 is a whole number
+# of rate blocks with no tail. (Rate is 12 at the only width the golden
+# carries; a new width here would have to re-pick these.)
+_DEDICATED_LENGTHS = frozenset({13, 24})
 
 
 class _GenericRoute(SparsePoseidon):
@@ -60,19 +65,20 @@ class Poseidon1LinearHashTest(absltest.TestCase):
             # it stops applying, this fails here rather than silently paying
             # the fused compile per length again.
             self.assertIs(generic.fusion_path, FusionPath.GENERIC)
-            hashers = {"generic": LinearHash(generic)}
-            self.assertEqual(hashers["generic"].rate, entry["rate"])
+            generic_hasher = LinearHash(generic)
+            dedicated_hasher = LinearHash(goldilocks_perm(entry["width"]))
+            self.assertEqual(generic_hasher.rate, entry["rate"])
             for case in entry["cases"]:
                 row = u64(case["input"])
                 expected = u64(case["output"])[:4]
+                routes = [("generic", generic_hasher)]
                 if len(row) in _DEDICATED_LENGTHS:
-                    hashers["dedicated"] = LinearHash(goldilocks_perm(entry["width"]))
-                for route, hasher in hashers.items():
+                    routes.append(("dedicated", dedicated_hasher))
+                for route, hasher in routes:
                     self.assertTrue(
                         bool(fnp.array_equal(hasher.hash(row), expected)),
                         msg=f"width {entry['width']}, len {len(row)}, {route}",
                     )
-                hashers.pop("dedicated", None)
 
 
 class Poseidon1Stage1CommitTest(absltest.TestCase):

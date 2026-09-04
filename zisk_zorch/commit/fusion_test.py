@@ -9,8 +9,10 @@ the frx 0820 plugin had retired the marker spellings hash-frx 0817 emitted,
 and Main's commit1 grew to 746 kernels at 4x the baseline's time without a
 single test noticing. This test is the one that notices.
 
-GPU-only (`tags = ["gpu"]`): Poseidon1 routes to the generic marker on the CPU
-backend by design (hash-frx#147), so there is nothing to recognize there.
+GPU-only (`tags = ["gpu"]`): off the card both families route to the generic
+marker by design — Poseidon1 in hash-frx (hash-frx#147), Poseidon2 in
+`poseidon2.goldilocks._Poseidon2` (fractalyze/xla#653) — so there is nothing to
+recognize there.
 """
 
 from __future__ import annotations
