@@ -1,0 +1,28 @@
+#!/bin/bash
+# Prove one guest through native pil2 or the bridge and keep the log and the
+# per-instance proof dumps:  run.sh <tag> <native|bridge> [ENV=value ...]
+#
+# Required in the environment (see docs/bridge.md "Running"):
+#   ZISK_BIN  the bridged cargo-zisk        ZISK_ELF  the guest ELF
+#   ZISK_PK   the proving key directory     ZISK_IN   the input file
+#   ZZ_ARTIFACTS, XLA_PJRT_PLUGIN           for the bridge
+# Optional: ZZ_RUNS (output root, default ./zz-runs), ZISK_PROVE_FLAGS
+# (default "-a -u": the ASM emulator, mapped memory unlocked).
+set -u
+TAG=$1; MODE=$2; shift 2
+OUT=${ZZ_RUNS:-./zz-runs}/$TAG
+rm -rf "$OUT"; mkdir -p "$OUT/dumps"
+if [ "$MODE" = bridge ]; then
+  export ZZ_ARTIFACTS ZZ_CLIENTS=${ZZ_CLIENTS:-1} ZZ_MEMORY_FRACTION=${ZZ_MEMORY_FRACTION:-0.45} \
+         ZZ_GPU_HEADROOM_GB=${ZZ_GPU_HEADROOM_GB:-3} ZZ_LOG=${ZZ_LOG:-2}
+else
+  unset ZZ_ARTIFACTS
+fi
+export ZZ_DUMP_PROOFS="$OUT/dumps"
+{ uptime; nvidia-smi --query-gpu=memory.used --format=csv,noheader; } > "$OUT/host.txt"
+# shellcheck disable=SC2086
+env "$@" /usr/bin/time -v "$ZISK_BIN" prove -e "$ZISK_ELF" -i "$ZISK_IN" ${ZISK_PROVE_FLAGS:--a -u} \
+    -k "$ZISK_PK" -g -y -o "$OUT/proof" -vv > "$OUT/run.log" 2>&1
+echo "exit=$?" >> "$OUT/run.log"
+grep -E 'Elapsed|exit=|<<< (INITIALIZING_PROOFMAN|CALCULATING_CONTRIBUTIONS|GENERATING_INNER_PROOFS)|verified' \
+    "$OUT/run.log" | sed -E 's/^.*INFO: //; s/^\s+//'
