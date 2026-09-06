@@ -27,5 +27,6 @@ py_test(
     deps = [
         ":goldilocks",
         requirement("absl_py"),
+        requirement("hash_frx"),
     ],
 )

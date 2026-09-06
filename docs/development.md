@@ -49,16 +49,25 @@ bazel test //...     # hermetic, sandboxed; FRX_PLATFORMS=cpu by default
 
 [`.bazelrc`](../.bazelrc) pins `FRX_PLATFORMS=cpu` so a plain `bazel test` is
 deterministic on any machine — CPU is the default, not a requirement. CI
-overrides it per matrix leg. `//...` is the whole suite on either backend; the
-`-gpu` tag filter currently matches nothing.
+overrides it per matrix leg. It also pins `--test_tag_filters=-gpu`, which
+drops the targets that only mean something on the card —
+`//zisk_zorch/commit:fusion_test`, which compiles a commit and asserts the
+pinned plugin turned each hash marker into one custom fusion (off the GPU both
+hash families route to the generic marker by design, so there is nothing to
+recognize there). To run those too, clear the filter on the command line, which
+wins over `.bazelrc` — what CI's GPU leg does:
+
+```sh
+bazel test --test_env=FRX_PLATFORMS=cuda --test_tag_filters= -- //...
+```
 
 ### Test sizing & timeouts
 
 `size` and `timeout` are independent knobs: **`size`** (`small`/`medium`/`large`)
 is a resource hint governing parallelism; **`timeout`**
 (`short`/`moderate`/`long`/`eternal` = 60/300/900/3600 s) is the wall-clock cap,
-derived from `size` when unset. Every test here declares a `size`; three declare
-a `timeout` as well — `fri:verifier_test`, `commit:openings_test` and
+derived from `size` when unset. Every test here declares a `size`; several
+declare a `timeout` as well — `fri:verifier_test`, `commit:openings_test` and
 `commit:fullprogram_commit_test` sit at ~135 s warm but reach ~300 s cold, which
 is exactly the cap `medium` derives, and all three timed out on CI the first time
 a pin bump invalidated the cache. Declare a **`timeout` explicitly** for anything
@@ -213,6 +222,19 @@ provenance). Each row brackets a different span — FRI excludes the query phase
 | FRI total (queries excl.) | 7.88 ms | 6.5 ms | **0.83×** | goldens (`fri_*`) |
 
 How to read the table:
+
+- **The trace-commit row is the Poseidon2 path, which is not the family
+  native proves with.** `bench_inner_proof` commits through
+  `merkle_tree(arity)`, whose default is Poseidon2; the shipped ZisK key sets
+  no `hash`, so native commits with Poseidon1 (`commit.trace_commit`).
+  Re-measured 2026-09-04 at this row's own shape (N=2^22, 38+24 columns) on
+  the #171 pins: **Poseidon2 101.5 ms** (extend 47.4 + merkle 54.1), which
+  reproduces the 98.5 ms; **Poseidon1 162 ms** (47.2 + 114.8), 1.6x that,
+  since its sparse permutation is the more expensive of the two. Read the
+  ratio as a Poseidon2 comparison unless the native column is re-taken on a
+  known family. The gap #168 chased was neither: the exported programs ran
+  4x slower than either figure because their hash markers inlined, and the
+  bench never went through the export.
 
 - **The quotient row has no ratio and cannot get one from these tools** (#66):
   pil2's `MAIN_EXPR_PATTERN` hardcodes a density ~370× the real Main air, while

@@ -10,9 +10,11 @@ from __future__ import annotations
 import json
 import pathlib
 
+import frx
 import frx.numpy as fnp
 import numpy as np
 from absl.testing import absltest
+from hash_frx.fusion import FusionPath
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.poseidon2.goldilocks import WIDTHS, goldilocks_perm
@@ -44,14 +46,18 @@ class GoldilocksPoseidon2Test(absltest.TestCase):
     def test_dedicated_fusion_routing(self) -> None:
         # zorch#264 carries the HorizenLabs base M4 as an `external_m4` marker,
         # which the compiler applies via multiply-free add-chains, so the
-        # block-structured widths lower to the dedicated zorch.poseidon2 emitter
-        # (the fast commit-compile path). Width 4's plain single-block M4 is not
-        # marker-carried, so it stays on the generic fused region.
+        # block-structured widths lower to the dedicated poseidon2 emitter (the
+        # fast commit-compile path). Width 4's plain single-block M4 is not
+        # marker-carried, so it stays on the generic fused region. Off the GPU
+        # every width stays generic: the CPU plugin's sponge emitter is wrong
+        # at one leaf count (see `_Poseidon2`). This reads the marker hash-frx
+        # chose; whether the pinned plugin recognizes that marker is
+        # `commit:fusion_test`'s question.
+        on_gpu = frx.default_backend() == "gpu"
         for width in WIDTHS:
-            self.assertEqual(
-                goldilocks_perm(width).has_dedicated_fusion,
-                width != 4,
-                msg=f"width {width}",
+            want = FusionPath.DEDICATED if on_gpu and width != 4 else FusionPath.GENERIC
+            self.assertIs(
+                goldilocks_perm(width).fusion_path, want, msg=f"width {width}"
             )
 
 

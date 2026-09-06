@@ -14,7 +14,14 @@ zk-dtypes==0.0.16
 frxlib==0.10.2.dev20260820235505
 frx-cuda12-plugin==0.10.2.dev20260820235505
 frx-cuda12-pjrt==0.10.2.dev20260820235505
-hash-frx==0.2.0.dev20260817003244
+# hash-frx and the frx wheels are one pin: the marker names hash-frx emits
+# (`hash_frx.perm.*`, `hash_frx.digest.*`) have to be the spellings the frx
+# plugin's ZorchFusedRegionRewriter recognizes, and an unrecognized marker
+# inlines silently — right bytes, and every Merkle level as hundreds of loop
+# fusions instead of one kernel (#168). Take the hash-frx wheel built from the
+# commit that pinned this frx version; `//zisk_zorch/commit:fusion_test` fails
+# on the GPU leg when the pair drifts.
+hash-frx==0.2.0.dev20260821002042
 
 rw-constraints @ https://github.com/fractalyze/pypi/releases/download/riscv-witness-dev-20260809224945/rw_constraints-0.1.0.dev20260809224945-py3-none-any.whl
 

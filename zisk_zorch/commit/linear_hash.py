@@ -10,13 +10,14 @@ https://github.com/0xPolygonHermez/pil2-proofman/blob/v1.0.0-alpha/fields/src/me
 
 Fixes rate/out to pil2's convention (rate = width - 4, out = 4, so
 rate + out == width) and duck-types zorch's Merkle leaf-hasher surface (`hash`,
-`out`, `has_dedicated_fusion`), so `MerkleTree(LinearHash(perm), compressor)`
-builds exactly pil2's tree.
+`out`, `fusion_path`), so `MerkleTree(LinearHash(perm), compressor)` builds
+exactly pil2's tree.
 """
 
 from __future__ import annotations
 
 from frx import Array
+from hash_frx.fusion import FusionPath
 from hash_frx.poseidon2.poseidon2 import Poseidon2
 from hash_frx.sponge import Sponge, SpongeParams, SpongeType
 
@@ -52,14 +53,19 @@ class LinearHash:
         return hash(self._sponge)
 
     @property
-    def has_dedicated_fusion(self) -> bool:
-        return self._permutation.has_dedicated_fusion
+    def fusion_path(self) -> FusionPath:
+        """How the leaf hash lowers on this backend — the permutation's path,
+        as `Sponge.fusion_path` delegates. `DEDICATED` is what `hash` needs to
+        emit one `hash_frx.digest.field_sponge` kernel per leaf batch; anything
+        else absorbs block by block with the permutation inlined (right bytes,
+        one loop fusion per round over the whole leaf set)."""
+        return self._permutation.fusion_path
 
     def hash(self, input: Array) -> Array:
         """pil2 leaf digest of a row: (n,) over dtype -> (DIGEST_ELEMS,).
 
-        Emits the fused `zorch.sponge_hash` (merkle_damgard) region — one
-        register-resident kernel over all blocks — instead of a per-block
+        Emits the fused `hash_frx.digest.field_sponge` (merkle_damgard) region
+        — one register-resident kernel over all blocks — instead of a per-block
         permute+concatenate. `Sponge.hash(..., MERKLE_DAMGARD)` carries the same
         pil2 semantics (zero-pad partial tail; chain the prior digest through the
         capacity slots [rate, rate+DIGEST_ELEMS))."""

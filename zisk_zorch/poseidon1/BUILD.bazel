@@ -30,5 +30,6 @@ py_test(
         ":goldilocks",
         "//zisk_zorch:golden",
         requirement("absl_py"),
+        requirement("hash_frx"),
     ],
 )

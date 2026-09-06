@@ -16,6 +16,13 @@ build --incompatible_default_to_explicit_init_py
 # via --test_env (the GPU leg pins FRX_PLATFORMS=cuda).
 test --test_env=FRX_PLATFORMS=cpu
 
+# `gpu`-tagged targets assert something only the card can answer (that the
+# pinned plugin turned each hash marker into a custom fusion), so they fail
+# under the CPU default a plain `bazel test //...` runs on. Filtered out here;
+# CI's GPU leg clears the filter with `--test_tag_filters=` on the command
+# line (which wins over this file), and so does a local GPU run.
+test --test_tag_filters=-gpu
+
 # Local, machine-specific overrides (gitignored). For dev against a local zorch
 # working copy instead of the pinned git_override, add to .bazelrc.user:
 #   common --override_module=zorch=/abs/path/to/your/zorch/checkout

@@ -24,8 +24,9 @@ The pil2 conventions these parameters encode on top of zorch's agnostic core:
   plain M4 at width 4), so the full matrix is passed explicitly per width.
   zorch#264 carries the base M4 as an `external_m4` marker attribute, which the
   compiler applies via multiply-free add-chains, so the block-structured widths
-  (8/16) lower to the dedicated `zorch.poseidon2` emitter — the fast
-  commit-compile path. Width 4's plain single-block M4 is
+  (8/16) lower to the dedicated `hash_frx.perm.poseidon2` emitter — the fast
+  commit-compile path — on the GPU (`_Poseidon2` keeps every other backend on
+  the generic marker). Width 4's plain single-block M4 is
   not marker-carried, so it stays on the generic fused region.
 - The internal layer is `Diag(d) + J` (pil2's `prodadd`: out_i = d_i*x_i +
   sum), i.e. zorch's `internal_diag = d`, `internal_j_scale = 1`.
@@ -39,6 +40,7 @@ import frx
 import frx.numpy as fnp
 import numpy as np
 from frx import Array
+from hash_frx.fusion import FUSED_REGION_MARKER
 from hash_frx.poseidon2.params import Poseidon2Params
 from hash_frx.poseidon2.poseidon2 import Poseidon2
 from zk_dtypes import goldilocks as F
@@ -471,6 +473,27 @@ def goldilocks_params(width: int) -> Poseidon2Params:
     )
 
 
+class _Poseidon2(Poseidon2):
+    """hash-frx's Poseidon2, on the dedicated emitter only when the backend is
+    the GPU.
+
+    hash-frx routes Poseidon2 to the dedicated marker on the CPU backend too,
+    and the CPU plugin's `sponge_hash` emitter hashes a leaf batch wrong when
+    the number of leaves equals the permutation width (16 leaves at width 16,
+    8 at width 8; the first leaf is right, the rest are not — fractalyze/xla#653).
+    The CPU backend is where CI's byte goldens run, and a FRI layer of 16
+    leaves is exactly the shape they hit. The generic marker computes the same
+    bytes without that emitter, at the compile cost the CPU leg always paid
+    (the marker inlines there), so the CPU stays on it until the emitter is
+    fixed; the GPU, the production backend, keeps the fused kernels.
+    """
+
+    def _select_fused_region_name(self) -> str:
+        if frx.default_backend() != "gpu":
+            return FUSED_REGION_MARKER
+        return super()._select_fused_region_name()
+
+
 @functools.cache
 def goldilocks_perm(width: int) -> Poseidon2:
     """The pil2-stark permutation for `width` on zorch's Poseidon2 core.
@@ -484,7 +507,9 @@ def goldilocks_perm(width: int) -> Poseidon2:
     traceable as a single compiled function. Construction is forced eager so
     a cache miss under an ambient trace stores concrete constants, not that
     trace's tracers (the block composite's phase-1 commit traces
-    `merkle_tree` before anything else has warmed the cache).
+    `merkle_tree` before anything else has warmed the cache). The marker the
+    instance carries is chosen against the backend live at that first call
+    (`_Poseidon2`), so the cache freezes the routing along with it.
     """
     with frx.ensure_compile_time_eval():
-        return Poseidon2(goldilocks_params(width))
+        return _Poseidon2(goldilocks_params(width))
