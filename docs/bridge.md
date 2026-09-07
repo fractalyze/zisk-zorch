@@ -87,6 +87,64 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_DUMP_INPUTS` | write each instance as a `zz_prove` case directory under this one | off |
 | `ZZ_DUMP_TRACES` | (fork) write each host trace as `gen_proof` receives it | off |
 
+## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
+
+The wall-clock comparison the issue asks for, on the closest stand-in for
+block 21740136 this host can run: the `sha-hasher` example guest at
+14,000 iterations, hint-free, under the ASM emulator. Its 51.1 M steps plan
+into 38 instances across 16 families — 13 Main, 6 Binary, 5
+BinaryExtension, 2 BinaryAdd, and one each of Arith, Dma, Dma64AlignedMem,
+DmaPrePost, DmaUnaligned, InputData, Mem, MemAlign, Rom, RomData and the
+two virtual tables — where the block was 38 instances with 12 Main. (The
+block's captures and the zec-reth guest's hints are not on this host; the
+guest uses the `sha2` crate's software path, so no precompile family
+appears.) Same binary for both stacks, alternating runs, three per stack,
+proof dumps compared after every bridge run; every bridge run's 38 basic
+proofs were byte-identical to native's and its final proof verified.
+
+| | native (3 basic streams + 1 recursive) | bridge (1 client at 45 % of the card; pil2 on 1 basic stream, recursion on it too) |
+|---|---|---|
+| `cargo-zisk prove` wall | 31.3–31.9 s | 34.5–38.0 s |
+| proofman init | 5.2–7.2 s | 4.3–7.4 s |
+| contributions | 3.5–3.6 s | 4.1–4.3 s |
+| inner-proof leg (38 basic + their recursion) | 15.0–15.3 s | 20.3–20.7 s |
+| ├ the 38 proves' own time on the client | | 18.9–19.5 s (Main 0.53 s ×13, Binary 0.53 ×6, BinaryExtension 0.48 ×5, BinaryAdd 0.36 ×2, the rest 0.35–0.82 once each) |
+| ├ of which fixed sections rebuilt on family switches | | 4.5–5.0 s over 30–34 switches |
+| └ waiting for the client, summed over instances | | 147–157 s (the serialization) |
+
+So on a block-shaped mix the bridge's leg is 1.35× native's and its wall
+1.10–1.19×, against 1.75× / 1.4× on the hello-world guest: the fixed
+per-run costs amortize, and per instance the proves are where pil2's are
+(Main 0.53 s here against pil2's ~0.6 s single-stream). Two things
+separate the legs, both already named in #170:
+
+- **One client.** The 38 proves run back to back; pil2 overlaps three.
+  The instances' summed wait says the client is never idle from the first
+  prove to the last (19 s span for 19 s of proves).
+- **Family switches.** With `ZZ_RESIDENT_AIRS=1` (the default) every
+  switch re-uploads and re-hashes the incoming family's constants, ~4.7 s
+  per run — Main alone comes and goes 13 times. Raising the resident set
+  does not fit on a 32 GB card at this share: `ZZ_RESIDENT_AIRS=2`, 3, 4
+  and 8 all abort once the second or third family is resident (PJRT
+  `Out of memory` from the client's BFC pool, which xla-pjrt's `check`
+  turns into a panic rather than an error the bridge could evict on), and
+  a larger share (`ZZ_MEMORY_FRACTION=0.55`) leaves pil2 13.3 GB, below
+  the minimum it will start with. The lever is the resident-set trim
+  (drop digest layers after the openings, re-upload base constants per
+  prove) so that two or three families fit beside a prove's working set.
+
+Reproduce with the scripts in [`../bridge/bench/`](../bridge/bench/):
+`mk_input.py 14000 in.bin` for the guest's input (a ZiskStdin frame of a
+bincode-varint `u32`), `run.sh <tag> native|bridge` for a prove with its
+dumps, `compare_dumps.py` for the byte-gate, `summarize.py` for the table's
+rows. The guest builds with `cargo-zisk build --release` in
+`examples/sha-hasher/guest` of the ZisK checkout after
+`cargo-zisk toolchain install`; the bridge's cache needs BinaryAdd and the
+four Dma AIRs warmed beyond the hello-world set (58 min on 5 threads
+here). Start a run only once `nvidia-smi` shows the card empty: a
+process still releasing its memory makes pil2 size 20 streams from the
+1.6 GB it sees and exit.
+
 ## Status (2026-09-04, RTX 5090, go hello-world guest)
 
 `cargo-zisk prove -g -y` through the bridge completes and its final proof
@@ -132,10 +190,8 @@ pil2's 14 GB when a table AIR's `const_setup`/`logup` allocated 4.5–5.5 GiB
 in one piece; to be re-measured on the smaller executables); the bridge
 comes up beside proofman's init on the same cores; and `const_setup`
 recomputes each AIR's constant tree per run where pil2 reads it from disk.
-Per instance, Main is within 5–30 % of single-stream pil2. The block-sized
-workload (the zec-reth example needs the ASM emulator with hints; it starts
-under it but the guest exits early) is still the open item for the
-wall-clock comparison the issue asks for.
+Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
+comparison is the section above.
 
 Facts the gate surfaced, all now handled by the bridge:
 

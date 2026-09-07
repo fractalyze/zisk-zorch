@@ -1,0 +1,21 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@zisk_zorch_pip//:requirements.bzl", "requirement")
+
+# Bench tooling for the bridge: the guest input writer, the native <-> bridge
+# dump comparison and the log summarizer behind the numbers in
+# docs/bridge.md. run.sh drives one prove; see that page's "Running".
+
+py_library(
+    name = "mk_input",
+    srcs = ["mk_input.py"],
+)
+
+py_test(
+    name = "mk_input_test",
+    size = "small",
+    srcs = ["mk_input_test.py"],
+    deps = [
+        ":mk_input",
+        requirement("absl_py"),
+    ],
+)
