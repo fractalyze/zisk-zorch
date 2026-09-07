@@ -404,7 +404,10 @@ impl Artifact {
         }
         let exe = self.executable(name)?;
         let t = std::time::Instant::now();
-        let outs = unsafe { self.session.run_buffers_to_device(&exe, &args, info.outputs.len()) };
+        let outs = {
+            let _nvtx = crate::nvtx::Range::push(name);
+            unsafe { self.session.run_buffers_to_device(&exe, &args, info.outputs.len()) }
+        };
         if trace_enabled() {
             zzlog!("  run {name}: enqueue {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
         }

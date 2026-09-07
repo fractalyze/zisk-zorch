@@ -1,0 +1,262 @@
+2026-09-07T16:49:43.850766Z proofman_common::proof_ctx INFO: Using 1 streams per GPU for basic proofs and 1 streams per GPU for recursive proofs. Using 5.05 GB for fixed pols
+2026-09-07T16:49:45.186402Z proofman::proofman INFO: <<< INITIALIZING_PROOFMAN (3415ms)
+2026-09-07T16:49:46.407853Z proofman::utils INFO:     ► 11 Air instances found:
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 1 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_COMMIT : 0.150212 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         MERKLE_TREE    :  0.0840s (55.94%)
+[TRACE] PilStark:         NTT            :  0.0327s (21.78%)
+[TRACE] PilStark:         H2D_COPY       :  0.0317s (21.11%)
+[TRACE] PilStark:         UNPACK_TRACE   :  0.0017s (1.14%)
+[TRACE] PilStark:         OTHER          :  0.0000s (0.02%)
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 3 [0:4]
+[TRACE] PilStark: <-- STARK_GPU_COMMIT : 0.019420 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         MERKLE_TREE    :  0.0138s (70.84%)
+[TRACE] PilStark:         H2D_COPY       :  0.0035s (17.93%)
+[TRACE] PilStark:         NTT            :  0.0021s (10.67%)
+[TRACE] PilStark:         UNPACK_TRACE   :  0.0001s (0.48%)
+[TRACE] PilStark:         OTHER          :  0.0000s (0.08%)
+2026-09-07T16:49:47.137926Z proofman::proofman DEBUG: >>> GEN_PROOF_10 [0:33]
+2026-09-07T16:49:47.328433Z proofman::proofman DEBUG: >>> GEN_PROOF_9 [0:32]
+2026-09-07T16:49:47.378815Z proofman::proofman DEBUG: >>> GEN_PROOF_3 [0:4]
+2026-09-07T16:49:47.768239Z proofman::proofman DEBUG: >>> GEN_PROOF_0 [0:1]
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 3 [0:4]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.073162 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.000176 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.015661 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000897 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.014969 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.022242 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.004650 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.004179 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.014925 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.001969 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         MERKLE_TREE    :  0.0479s (65.50%)
+[TRACE] PilStark:         NTT            :  0.0090s (12.26%)
+[TRACE] PilStark:         EXPRESSIONS    :  0.0072s (9.79%)
+[TRACE] PilStark:         H2D_COPY       :  0.0047s (6.47%)
+[TRACE] PilStark:         FRI            :  0.0029s (3.95%)
+[TRACE] PilStark:         GRINDING       :  0.0008s (1.05%)
+[TRACE] PilStark:         LEV            :  0.0007s (1.00%)
+[TRACE] PilStark:         EVALS          :  0.0006s (0.80%)
+[TRACE] PilStark:         UNPACK_TRACE   :  0.0001s (0.12%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0000s (0.06%)
+[TRACE] PilStark:         OTHER          :  0.0000s (0.00%)
+2026-09-07T16:49:48.357145Z proofman::proofman DEBUG: >>> GEN_PROOF_4 [0:3]
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 3 [0:4]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.204686 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.005240 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.021004 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000914 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000015 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.007630 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.081344 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.046603 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.008497 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.079945 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.005554 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         MERKLE_TREE    :  0.0656s (32.04%)
+[TRACE] PilStark:         EXPRESSIONS    :  0.0528s (25.78%)
+[TRACE] PilStark:         NTT            :  0.0327s (16.00%)
+[TRACE] PilStark:         FRI            :  0.0286s (13.95%)
+[TRACE] PilStark:         GRINDING       :  0.0063s (3.08%)
+[TRACE] PilStark:         H2D_COPY       :  0.0053s (2.61%)
+[TRACE] PilStark:         EVALS          :  0.0004s (0.21%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0001s (0.06%)
+[TRACE] PilStark:         LEV            :  0.0001s (0.04%)
+[TRACE] PilStark:         OTHER          :  0.0128s (6.23%)
+2026-09-07T16:49:48.587150Z proofman::proofman DEBUG: >>> GEN_PROOF_7 [0:10]
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 0 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.173552 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.017504 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.050677 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000948 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.010629 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.076741 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.067322 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.005838 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.011168 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.002818 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.0710s (40.92%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.0404s (23.29%)
+[TRACE] PilStark:         NTT            :  0.0337s (19.43%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0081s (4.69%)
+[TRACE] PilStark:         H2D_COPY       :  0.0052s (3.00%)
+[TRACE] PilStark:         GRINDING       :  0.0014s (0.78%)
+[TRACE] PilStark:         FRI            :  0.0011s (0.65%)
+[TRACE] PilStark:         EVALS          :  0.0004s (0.24%)
+[TRACE] PilStark:         LEV            :  0.0001s (0.04%)
+[TRACE] PilStark:         OTHER          :  0.0121s (6.95%)
+2026-09-07T16:49:48.830160Z proofman::proofman DEBUG: >>> GEN_PROOF_1 [0:0]
+2026-09-07T16:49:49.467911Z proofman::proofman DEBUG: >>> GEN_PROOF_8 [0:9]
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 1 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.546010 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.027322 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.125785 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.019702 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.073031 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.254749 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.210375 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.012097 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.033245 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.011432 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.2404s (44.03%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.1866s (34.17%)
+[TRACE] PilStark:         NTT            :  0.0696s (12.75%)
+[TRACE] PilStark:         H2D_COPY       :  0.0361s (6.61%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0258s (4.73%)
+[TRACE] PilStark:         FRI            :  0.0049s (0.90%)
+[TRACE] PilStark:         EVALS          :  0.0040s (0.73%)
+[TRACE] PilStark:         UNPACK_TRACE   :  0.0014s (0.27%)
+[TRACE] PilStark:         LEV            :  0.0014s (0.26%)
+[TRACE] PilStark:         GRINDING       :  0.0008s (0.14%)
+[TRACE] PilStark:         OTHER          :  0.0000s (0.00%)
+2026-09-07T16:49:49.936718Z proofman::proofman DEBUG: >>> GEN_PROOF_5 [0:5]
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 1 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.228174 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.005273 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.021159 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000600 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.007609 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.097605 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.064278 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.006551 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.089327 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.003139 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         MERKLE_TREE    :  0.1019s (44.66%)
+[TRACE] PilStark:         EXPRESSIONS    :  0.0680s (29.78%)
+[TRACE] PilStark:         NTT            :  0.0318s (13.93%)
+[TRACE] PilStark:         H2D_COPY       :  0.0045s (1.97%)
+[TRACE] PilStark:         FRI            :  0.0038s (1.67%)
+[TRACE] PilStark:         GRINDING       :  0.0026s (1.14%)
+[TRACE] PilStark:         EVALS          :  0.0004s (0.19%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0001s (0.05%)
+[TRACE] PilStark:         LEV            :  0.0001s (0.03%)
+[TRACE] PilStark:         OTHER          :  0.0150s (6.57%)
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 1 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.131177 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.005708 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.036707 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.001979 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.010985 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.058791 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.049542 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.005791 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.011173 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.002820 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.0543s (41.37%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.0469s (35.73%)
+[TRACE] PilStark:         NTT            :  0.0138s (10.54%)
+[TRACE] PilStark:         H2D_COPY       :  0.0044s (3.32%)
+[TRACE] PilStark:         GRINDING       :  0.0014s (1.06%)
+[TRACE] PilStark:         FRI            :  0.0011s (0.86%)
+[TRACE] PilStark:         EVALS          :  0.0004s (0.32%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0001s (0.09%)
+[TRACE] PilStark:         LEV            :  0.0001s (0.06%)
+[TRACE] PilStark:         OTHER          :  0.0087s (6.65%)
+2026-09-07T16:49:50.276212Z proofman::proofman DEBUG: >>> GEN_PROOF_2 [0:2]
+2026-09-07T16:49:50.581429Z proofman::proofman DEBUG: >>> GEN_PROOF_6 [0:12]
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 2 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.249347 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.046672 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.029530 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000642 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.015727 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.126096 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.062033 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.008888 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.021739 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.003257 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.0659s (26.42%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.0481s (19.28%)
+[TRACE] PilStark:         NTT            :  0.0415s (16.63%)
+[TRACE] PilStark:         H2D_COPY       :  0.0044s (1.78%)
+[TRACE] PilStark:         GRINDING       :  0.0021s (0.85%)
+[TRACE] PilStark:         FRI            :  0.0019s (0.76%)
+[TRACE] PilStark:         EVALS          :  0.0015s (0.59%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0009s (0.37%)
+[TRACE] PilStark:         LEV            :  0.0009s (0.35%)
+[TRACE] PilStark:         OTHER          :  0.0822s (32.97%)
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 3 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.111909 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.005762 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.024134 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000754 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.007717 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.056344 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.047337 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.005796 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.011355 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.002787 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.0508s (45.41%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.0360s (32.21%)
+[TRACE] PilStark:         NTT            :  0.0084s (7.48%)
+[TRACE] PilStark:         H2D_COPY       :  0.0055s (4.95%)
+[TRACE] PilStark:         GRINDING       :  0.0014s (1.22%)
+[TRACE] PilStark:         FRI            :  0.0012s (1.09%)
+[TRACE] PilStark:         EVALS          :  0.0004s (0.38%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0002s (0.17%)
+[TRACE] PilStark:         LEV            :  0.0001s (0.07%)
+[TRACE] PilStark:         OTHER          :  0.0079s (7.03%)
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 4 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.109655 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.005225 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.021020 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000598 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.007589 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.057165 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.048064 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.005788 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.012228 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.002791 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.0514s (46.87%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.0331s (30.17%)
+[TRACE] PilStark:         NTT            :  0.0084s (7.63%)
+[TRACE] PilStark:         H2D_COPY       :  0.0043s (3.89%)
+[TRACE] PilStark:         GRINDING       :  0.0025s (2.27%)
+[TRACE] PilStark:         FRI            :  0.0011s (1.03%)
+[TRACE] PilStark:         EVALS          :  0.0004s (0.39%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0001s (0.10%)
+[TRACE] PilStark:         LEV            :  0.0001s (0.07%)
+[TRACE] PilStark:         OTHER          :  0.0083s (7.59%)
+[TRACE] PilStark: TIMERS FOR INSTANCE ID 0 [0:0]
+[TRACE] PilStark: <-- STARK_GPU_PROOF : 0.208852 s
+[TRACE] PilStark: <-- STARK_STEP_0 : 0.000862 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.053529 s
+[TRACE] PilStark: <-- STARK_CALCULATE_WITNESS_STD : 0.000410 s
+[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.000000 s
+[TRACE] PilStark: <-- STARK_COMMIT_STAGE_2 : 0.018037 s
+[TRACE] PilStark: <-- STARK_STEP_Q : 0.107449 s
+[TRACE] PilStark: <-- STARK_QUOTIENT_POLYNOMIAL : 0.089940 s
+[TRACE] PilStark: <-- STARK_STEP_EVALS : 0.005614 s
+[TRACE] PilStark: <-- STARK_STEP_FRI : 0.022916 s
+[TRACE] PilStark: <-- STARK_FRI_POLYNOMIAL : 0.005496 s
+[TRACE] PilStark:      KERNELS CONTRIBUTIONS:
+[TRACE] PilStark:         EXPRESSIONS    :  0.0958s (45.87%)
+[TRACE] PilStark:         MERKLE_TREE    :  0.0867s (41.53%)
+[TRACE] PilStark:         NTT            :  0.0511s (24.46%)
+[TRACE] PilStark:         GRINDING       :  0.0092s (4.39%)
+[TRACE] PilStark:         H2D_COPY       :  0.0023s (1.11%)
+[TRACE] PilStark:         FRI            :  0.0018s (0.84%)
+[TRACE] PilStark:         EVALS          :  0.0003s (0.16%)
+[TRACE] PilStark:         UNPACK_FIXED   :  0.0001s (0.03%)
+[TRACE] PilStark:         LEV            :  0.0000s (0.02%)
+[TRACE] PilStark:         OTHER          :  0.0000s (0.00%)

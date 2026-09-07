@@ -1,0 +1,142 @@
+{
+ "airs": [
+  [
+   {
+    "name": "Main",
+    "num_rows": 4194304
+   },
+   {
+    "name": "Rom",
+    "num_rows": 4194304
+   },
+   {
+    "name": "Mem",
+    "num_rows": 4194304
+   },
+   {
+    "name": "InputData",
+    "num_rows": 2097152
+   },
+   {
+    "name": "RomData",
+    "num_rows": 2097152
+   },
+   {
+    "name": "MemAlign",
+    "num_rows": 2097152
+   },
+   {
+    "name": "MemAlignByte",
+    "num_rows": 4194304
+   },
+   {
+    "name": "MemAlignReadByte",
+    "num_rows": 4194304
+   },
+   {
+    "name": "MemAlignWriteByte",
+    "num_rows": 4194304
+   },
+   {
+    "name": "Arith",
+    "num_rows": 2097152
+   },
+   {
+    "name": "Binary",
+    "num_rows": 4194304
+   },
+   {
+    "name": "BinaryAdd",
+    "num_rows": 4194304
+   },
+   {
+    "name": "BinaryExtension",
+    "num_rows": 4194304
+   },
+   {
+    "name": "Add256",
+    "num_rows": 1048576
+   },
+   {
+    "name": "ArithEq",
+    "num_rows": 1048576
+   },
+   {
+    "name": "ArithEq384",
+    "num_rows": 1048576
+   },
+   {
+    "name": "Keccakf",
+    "num_rows": 131072
+   },
+   {
+    "name": "Sha256f",
+    "num_rows": 262144
+   },
+   {
+    "name": "Poseidon",
+    "num_rows": 131072
+   },
+   {
+    "name": "Blake2br",
+    "num_rows": 262144
+   },
+   {
+    "name": "Dma",
+    "num_rows": 2097152
+   },
+   {
+    "name": "DmaMemCpy",
+    "num_rows": 2097152
+   },
+   {
+    "name": "DmaInputCpy",
+    "num_rows": 2097152
+   },
+   {
+    "name": "Dma64Aligned",
+    "num_rows": 2097152
+   },
+   {
+    "name": "Dma64AlignedInputCpy",
+    "num_rows": 2097152
+   },
+   {
+    "name": "Dma64AlignedMemSet",
+    "num_rows": 2097152
+   },
+   {
+    "name": "Dma64AlignedMem",
+    "num_rows": 2097152
+   },
+   {
+    "name": "Dma64AlignedMemCpy",
+    "num_rows": 2097152
+   },
+   {
+    "name": "DmaUnaligned",
+    "num_rows": 2097152
+   },
+   {
+    "name": "DmaPrePost",
+    "num_rows": 2097152
+   },
+   {
+    "name": "DmaPrePostMemCpy",
+    "num_rows": 2097152
+   },
+   {
+    "name": "DmaPrePostInputCpy",
+    "num_rows": 2097152
+   },
+   {
+    "name": "VirtualTableZisk0",
+    "num_rows": 2097152
+   },
+   {
+    "name": "VirtualTableZisk1",
+    "num_rows": 2097152
+   }
+  ]
+ ]
+}

@@ -22,6 +22,11 @@ serde_json = "1"
 # field arithmetic (the verifier's build) serves the standalone tool. Inside
 # a proofman build leave this off so `fields` stays the crate proofman uses.
 standalone = ["fields/verify"]
+# One NVTX range per program around its execution, so `nsys` can attribute
+# kernels program by program (`src/nvtx.rs`, docs/bridge.md "Profiling").
+# Links the CUDA toolkit's NVTX interop library; leave it off in proofman
+# builds, which have no reason to carry it.
+nvtx = []
 
 [[bin]]
 name = "zz_prove"
