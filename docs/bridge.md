@@ -239,7 +239,7 @@ the rest reshapes and slices) and loads in 75 ms.
 What remains above native is structural, tracked in #170: the bridge
 proves the 11 instances back to back on one client while pil2 overlaps
 three basic streams and its recursion (re-measured on the #171 artifacts,
-a second client is still 8.7 GiB more than this card has — "Memory budget"
+a second client is still 9.3 GiB more than this card has — "Memory budget"
 below); the bridge comes up beside proofman's init on the same cores; and
 `const_setup` recomputes each AIR's constant tree per run where pil2 reads
 it from disk.
@@ -307,18 +307,21 @@ Facts the gate surfaced, all now handled by the bridge:
   up front), `ZZ_GPU_HEADROOM_GB` (held back from pil2's sizing) and
   whatever is left (pil2's). The first two floors were measured on the
   hello-world key by walking the fraction down until a run failed
-  (2026-09-08, one client):
-  - **A client needs 12.1 GiB**, at headroom 3. 0.38 of the card proves
-    all 11 AIRs; 0.37 aborts on a single 4.88 GiB allocation. That
-    12.1 GiB is what a client holds at once — one AIR's fixed sections
+  (2026-09-08, one client, repeats at each fraction — a single run at the
+  boundary is a race and lands either way):
+  - **A client needs 12.4 GiB**, at headroom 3: 0.39 of the card proves
+    all 11 AIRs in seven runs out of seven, 0.38 in none out of four
+    (#188's table below is the whole walk). #177 first put this at
+    12.1 GiB — 0.38 — off one run per fraction; a fraction at the
+    boundary is a race, so the repeated figure supersedes it. That
+    12.4 GiB is what a client holds at once — one AIR's fixed sections
     (the extended constants, their tree, the base constants the stage-2
     hints read: 4.6 GB for a table AIR with 88 constant columns), the
     next AIR's sections read ahead of its slot, and a prove's working
     set (3-6 GB) — though the sweep measures the total, not the split.
-    Which AIR aborts is not fixed: it is whichever wide one first finds
-    the arena dry, `Binary_n22` at 0.37 and `VirtualTableZisk0_n21`
-    below that, so read the floor off the fraction rather than off the
-    AIR named in the log.
+    Which AIR aborts is not fixed, and at one fraction it varies run to
+    run: whichever wide one first finds the arena dry, so read the floor
+    off the fraction rather than off the AIR named in the log.
   - **pil2 needs 14.3 GiB left to it and refuses to start below that**,
     since `commit_witness` stays on the card. Left to it means the card
     minus the clients' share minus the headroom, so one fraction can go
@@ -336,20 +339,22 @@ Facts the gate surfaced, all now handled by the bridge:
     CUDA_ERROR_OUT_OF_MEMORY`, with the card at 31.4 GiB. The bench's 3
     is enough and 0 is not; the totals below budget ~2.
 
-  So one client's floors total 12.1 + 14.3 + ~2 = **28.4 GiB** of the
-  31.8 available, and a run at the bench's `ZZ_MEMORY_FRACTION=0.45`
-  (where the client claims 14.3 GiB rather than its 12.1 GiB floor) peaks
-  at 28.7 GiB. **Two clients need 2 × 12.1 + 14.3 + ~2 = 40.5 GiB and are
-  8.7 GiB short.** 6.7 GiB of that is the measured floors alone
-  (2 × 12.1 + 14.3 = 38.5 against 31.8, before any headroom at all); the
-  rest is the headroom, which is estimated but cannot be zero.
+  So one client's floors total 12.4 + 14.3 + ~2 = **28.7 GiB** of the
+  31.8 available. (A run at the bench's `ZZ_MEMORY_FRACTION=0.45` peaks
+  at the same 28.7 GiB, which is a coincidence of rounding rather than
+  the same quantity: there the client claims 14.3 GiB, well above its
+  floor, and pil2 sizes itself down to what is left.) **Two clients need
+  2 × 12.4 + 14.3 + ~2 = 41.1 GiB and are 9.3 GiB short.** 7.3 GiB of
+  that is the measured floors alone (2 × 12.4 + 14.3 = 39.1 against
+  31.8, before any headroom at all); the rest is the headroom, which is
+  estimated but cannot be zero.
 
   The runs bear it out: `ZZ_CLIENTS=2` aborts on `VirtualTableZisk1_n21`
   both at fraction 0.45 (headroom 3) and at 0.54 (headroom 0), and no
   fraction rescues it — pil2's floor caps the clients' total share near
-  0.55, so two clients can have at most ~8.8 GiB each, 3.3 GiB below the
+  0.55, so two clients can have at most ~8.8 GiB each, 3.6 GiB below the
   floor, and that ceiling leaves the module loads nothing. **The unset
-  default is 3**, which 3 × 12.1 = 36.3 GiB puts past the whole card
+  default is 3**, which 3 × 12.4 = 37.2 GiB puts past the whole card
   before pil2 gets any; the bench pins `ZZ_CLIENTS=1`, and every number
   here is from one client.
 
@@ -373,13 +378,12 @@ Facts the gate surfaced, all now handled by the bridge:
   at is lower than before. Read the columns as "not told apart at these
   counts" rather than as a gain — a fraction at the boundary is a race
   between the read-ahead's upload and the running prove's peak, which is
-  also why one run put this floor at 0.38 in #177 and seven put it at 0.39
-  here. Run repeats and quote the counts. The bench's 0.45 is unaffected in
-  every arm.
+  what the before column revises the floor above for. Run repeats and quote
+  the counts. The bench's 0.45 is unaffected in every arm.
 
   With the trim in full, `ZZ_CLIENTS=2` still fails 0/3 at fraction 0.45
   (headroom 3) and 0/3 at 0.54 (headroom 0). That arm frees strictly more
-  than what shipped, so the verdict is the conservative one and the 8.7 GiB
+  than what shipped, so the verdict is the conservative one and the 9.3 GiB
   shortfall above stands.
 
   What binds is the same allocation before and after, and the resident set
