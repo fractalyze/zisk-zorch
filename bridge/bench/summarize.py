@@ -29,6 +29,13 @@ FIXED = (
     r"\[zz \+\s*[\d.]+\] fixed sections for (\w+): ([\d.]+) s under the slot,"
     r" ([\d.]+) s ahead of it"
 )
+# A read-ahead upload the bridge caught and sent to the slot instead. The line
+# quotes PJRT's message verbatim, so it has to come out of the log before the
+# abort search below — a rescued run is one that finished, and reporting it as
+# ABORTED would name the success this fallback exists to produce as the
+# failure it exists to prevent.
+RESCUED = r"\[zz \+\s*[\d.]+\] (\w+): read-ahead upload gave way to the slot \([^\n]*\)"
+ABORT = r"PJRT error in \w+: (Out of memory[^\n]*)"
 
 
 def summarize(path: pathlib.Path) -> None:
@@ -47,8 +54,24 @@ def summarize(path: pathlib.Path) -> None:
     print(line)
     print("   " + "  ".join(f"{p.lower()} {v:.2f} s" for p, v in phases.items()))
     inst = re.findall(INSTANCE, log)
-    if not inst:
-        return
+    if inst:
+        report_bridge(log, inst)
+    # Outside the block above: a run can abort before its first instance
+    # finishes, and that is when it most often does, so neither of these may
+    # sit behind "no instances completed".
+    if rescued := re.findall(RESCUED, log):
+        by_air = collections.Counter(rescued)
+        print(
+            f"   read-ahead uploads sent to the slot: {len(rescued)}"
+            f" ({', '.join(f'{a} x{n}' for a, n in sorted(by_air.items()))})"
+            " — the card was full when they were tried, and the prove went on"
+        )
+    if oom := re.search(ABORT, re.sub(RESCUED, "", log)):
+        print(f"   ABORTED: {oom.group(1)}")
+
+
+def report_bridge(log: str, inst: list) -> None:
+    """The bridge's own per-instance and fixed-section totals."""
     own = collections.defaultdict(list)
     waited = 0.0
     for _, _, air, total, wait in inst:
@@ -72,8 +95,6 @@ def summarize(path: pathlib.Path) -> None:
             f"   fixed sections: {len(fixed)} builds, {slot:.2f} s under the slot,"
             f" {ahead:.2f} s read and uploaded ahead of it"
         )
-    if oom := re.search(r"PJRT error in \w+: (Out of memory[^\n]*)", log):
-        print(f"   ABORTED: {oom.group(1)}")
 
 
 if __name__ == "__main__":

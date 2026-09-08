@@ -361,6 +361,10 @@ struct AheadFixed {
     uploaded: Option<driver::UploadedFixed>,
     /// Held until the sections are installed on the driver.
     permit: Option<PendingPass>,
+    /// Set when this prove held the permit and its own read-ahead upload did
+    /// not go through, which is a different reason for uploading under the
+    /// slot than never having had the permit.
+    gave_way: bool,
     read_s: f64,
     upload_s: f64,
 }
@@ -375,6 +379,7 @@ impl AheadFixed {
             customs,
             uploaded: None,
             permit: None,
+            gave_way: false,
             read_s: t.elapsed().as_secs_f64(),
             upload_s: 0.0,
         })
@@ -404,6 +409,7 @@ impl AheadFixed {
             }
             Err(why) => {
                 self.permit = None;
+                self.gave_way = true;
                 Some(why)
             }
         }
@@ -415,6 +421,19 @@ impl AheadFixed {
             custom_base: self.customs.iter().map(|(id, w)| (*id, w.as_slice())).collect(),
             uploaded: self.uploaded.clone(),
         }
+    }
+}
+
+/// Why an AIR's fixed sections went up where they did, for the `ZZ_LOG=2`
+/// trace. Four ways in, and the arms are worth keeping distinct: a prove that
+/// never held the permit and one whose own upload gave way both end up
+/// uploading under the slot, but only the first is waiting on another AIR.
+fn ahead_trace_note(uploaded_ahead: bool, looked_resident: bool, gave_way: bool) -> &'static str {
+    match (uploaded_ahead, looked_resident, gave_way) {
+        (true, _, _) => "",
+        (_, true, _) => " (all under the slot: the sections were resident when this prove looked)",
+        (_, _, true) => " (uploaded under the slot: this prove's read-ahead upload gave way)",
+        _ => " (uploaded under the slot: another AIR's were already in flight)",
     }
 }
 
@@ -969,13 +988,7 @@ impl Bridge {
                 );
             }
             if artifact::trace_enabled() {
-                let why = if uploaded_ahead {
-                    ""
-                } else if looked_resident {
-                    " (all under the slot: the sections were resident when this prove looked)"
-                } else {
-                    " (uploaded under the slot: another AIR's were already in flight)"
-                };
+                let why = ahead_trace_note(uploaded_ahead, looked_resident, ahead.gave_way);
                 zzlog!(
                     "  fixed sections {key} ahead: {:.2} s reading the key, {:.2} s uploading{why}",
                     ahead.read_s,
@@ -1322,6 +1335,26 @@ mod tests {
     }
 
     #[test]
+    fn the_trace_names_the_reason_the_sections_went_up_under_the_slot() {
+        // A prove that never held the permit and one whose own upload gave
+        // way both upload under the slot; only the first waits on another
+        // AIR, and the trace has twice been caught saying otherwise.
+        assert_eq!(ahead_trace_note(true, false, false), "", "an upload ahead of the slot was explained at all");
+        assert!(
+            ahead_trace_note(false, false, false).contains("another AIR's"),
+            "a prove that never got the permit was not credited to the AIR ahead of it"
+        );
+        assert!(
+            ahead_trace_note(false, false, true).contains("this prove's read-ahead upload gave way"),
+            "a prove whose own upload gave way was blamed on another AIR"
+        );
+        assert!(
+            ahead_trace_note(false, true, false).contains("resident when this prove looked"),
+            "a prove that read under the slot was not told apart"
+        );
+    }
+
+    #[test]
     fn a_failed_read_ahead_upload_hands_the_permit_back() {
         let client = FixedAhead::default();
         let AheadPlan::ReadAndUpload(permit) = client.plan("Main_n22") else {
@@ -1332,6 +1365,7 @@ mod tests {
             customs: Vec::new(),
             uploaded: None,
             permit: Some(permit),
+            gave_way: false,
             read_s: 0.0,
             upload_s: 0.0,
         };
