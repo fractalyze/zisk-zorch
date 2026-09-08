@@ -133,6 +133,7 @@ fn main() {
     let fixed = FixedSections {
         const_base: &const_base,
         custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect::<HashMap<_, _>>(),
+        uploaded: None,
     };
     let mut driver = AirDriver::new(std::sync::Arc::new(art));
     let t = Instant::now();

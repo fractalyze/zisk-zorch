@@ -7,6 +7,21 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 # run.sh drives one prove; see the page's "Running".
 
 py_library(
+    name = "summarize",
+    srcs = ["summarize.py"],
+)
+
+py_test(
+    name = "summarize_test",
+    size = "small",
+    srcs = ["summarize_test.py"],
+    deps = [
+        ":summarize",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
     name = "mk_input",
     srcs = ["mk_input.py"],
 )
