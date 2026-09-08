@@ -344,5 +344,16 @@ Facts the gate surfaced, all now handled by the bridge:
   sections are read from the key straight into word buffers in parallel
   slices, the custom commit untiled the same way. The next instance's
   uploads and key read happen while the previous prove has the client,
-  and everything through commit2 is enqueued before the first transcript
-  wait (the stage-2 challenges do not depend on root1 in this schedule).
+  and so does the upload of the key's fixed sections, which leaves the
+  slot the setup programs alone instead of a table AIR's 1.2-1.4 GB
+  `const_base` out of pageable memory. One AIR's sections go up beyond
+  the running prove's at a time (a per-client permit, taken at the read
+  and handed on when they are installed), so the read-ahead costs the
+  card one key's worth of memory however many proves queue up; a prove
+  that finds the permit taken uploads under the slot. Running the setup
+  programs ahead as well does not fit: `logup` reads `const_base` through
+  the prove, so the next AIR's whole fixed set would have to live beside
+  the running prove's, and every hello-world run aborted with the client
+  out of memory. Everything through commit2 is then enqueued before the
+  first transcript wait (the stage-2 challenges do not depend on root1 in
+  this schedule).

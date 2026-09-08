@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Phase timings of `cargo-zisk prove -vv` logs (native or bridged), plus the
 bridge's per-instance totals from its `ZZ_LOG=2` lines: what each family's
-proves cost on the client, how long instances waited for it, and the fixed
-sections rebuilt on family switches. Usage: summarize.py <run.log>..."""
+proves cost on the client, how long instances waited for it, and what the fixed
+sections cost inside the prove slot against what was read and uploaded ahead
+of it. Usage: summarize.py <run.log>..."""
 from __future__ import annotations
 
 import collections
@@ -24,7 +25,10 @@ STREAMS = (
     r"Using (\d+) streams per GPU for basic proofs"
     r" and (\d+) streams per GPU for recursive"
 )
-FIXED = r"\[zz \+\s*[\d.]+\] fixed sections for (\w+) in ([\d.]+) s"
+FIXED = (
+    r"\[zz \+\s*[\d.]+\] fixed sections for (\w+): ([\d.]+) s under the slot,"
+    r" ([\d.]+) s ahead of it"
+)
 
 
 def summarize(path: pathlib.Path) -> None:
@@ -62,8 +66,12 @@ def summarize(path: pathlib.Path) -> None:
         print(f"     {air:24s} x{len(v):<3d} own {sum(v):6.2f} s  ({per:.2f}/instance)")
     fixed = re.findall(FIXED, log)
     if fixed:
-        secs = sum(float(s) for _, s in fixed)
-        print(f"   fixed sections: {len(fixed)} builds, {secs:.2f} s")
+        slot = sum(float(s) for _, s, _ in fixed)
+        ahead = sum(float(s) for _, _, s in fixed)
+        print(
+            f"   fixed sections: {len(fixed)} builds, {slot:.2f} s under the slot,"
+            f" {ahead:.2f} s read and uploaded ahead of it"
+        )
     if oom := re.search(r"PJRT error in \w+: (Out of memory[^\n]*)", log):
         print(f"   ABORTED: {oom.group(1)}")
 

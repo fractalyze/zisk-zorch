@@ -17,6 +17,40 @@ pub struct FixedSections<'a> {
     pub const_base: &'a [u64],
     /// commitId -> (2^nBits, width)
     pub custom_base: HashMap<usize, &'a [u64]>,
+    /// The same sections already on the device (`upload_fixed`), when the
+    /// caller could upload them while another prove had the client.
+    pub uploaded: Option<UploadedFixed>,
+}
+
+/// A key's fixed sections on the device, uploaded before the prove that
+/// needs them took the client.
+#[derive(Clone)]
+pub struct UploadedFixed {
+    const_base: Buf,
+    /// commitId -> the base section
+    custom_base: HashMap<usize, Buf>,
+}
+
+/// Upload the key's fixed sections, no more: a prove queued behind another
+/// on the same client can do this before its turn, so the slot pays only
+/// the setup programs over them. A table AIR's `const_base` is 1.2-1.4 GB
+/// read from pageable host memory, and under the slot the client idles for
+/// it. Running the setup programs ahead too does not fit — `logup` reads
+/// `const_base` through the prove, so a second AIR's sections would have to
+/// live beside the running prove's whole working set.
+pub fn upload_fixed(art: &Artifact, fixed: &FixedSections) -> Result<UploadedFixed, Error> {
+    let m = &art.manifest;
+    let const_base = art.upload_words(fixed.const_base, &m.program("const_setup")?.inputs[0])?;
+    let mut custom_base = HashMap::new();
+    for cc in &m.custom_commits {
+        let words = fixed
+            .custom_base
+            .get(&cc.id)
+            .ok_or_else(|| format!("upload_fixed: custom commit {} section missing", cc.id))?;
+        let spec = &m.program(&format!("custom_setup_{}", cc.id))?.inputs[0];
+        custom_base.insert(cc.id, art.upload_words(words, spec)?);
+    }
+    Ok(UploadedFixed { const_base, custom_base })
 }
 
 /// One `StepsParams` worth of host inputs, as canonical u64 words.
@@ -115,23 +149,26 @@ impl AirDriver {
         self.fixed = None;
     }
 
-    /// Upload the key's fixed sections and run the setup programs.
+    /// Run the setup programs over the key's fixed sections, uploading them
+    /// first unless the caller already did (`upload_fixed`).
     pub fn set_fixed(&mut self, fixed: &FixedSections) -> Result<(), Error> {
         let art = &self.artifact;
         let m = &art.manifest;
         let mut env = Env::new();
         art.run_into("constants", &mut env, None)?;
-        let spec = m.program("const_setup")?.inputs[0].clone();
-        env.insert("const_base".into(), art.upload_words(fixed.const_base, &spec)?);
+        let up = match &fixed.uploaded {
+            Some(u) => u.clone(),
+            None => upload_fixed(art, fixed)?,
+        };
+        env.insert("const_base".into(), up.const_base);
         art.run_into("const_setup", &mut env, Some(("const_setup_layers_", "const_layers_")))?;
         for cc in &m.custom_commits {
-            let words = fixed
+            let buf = up
                 .custom_base
                 .get(&cc.id)
-                .ok_or_else(|| format!("set_fixed: custom commit {} section missing", cc.id))?;
+                .ok_or_else(|| format!("set_fixed: custom commit {} was not uploaded", cc.id))?;
             let prog = format!("custom_setup_{}", cc.id);
-            let spec = m.program(&prog)?.inputs[0].clone();
-            env.insert(format!("custom_base_{}", cc.id), art.upload_words(words, &spec)?);
+            env.insert(format!("custom_base_{}", cc.id), buf.clone());
             let from = format!("{prog}_layers_");
             let to = format!("custom_layers_{}_", cc.id);
             art.run_into(&prog, &mut env, Some((&from, &to)))?;
