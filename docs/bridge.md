@@ -72,7 +72,7 @@ drop-in cargo-zisk with the bridge dormant.
 |---|---|---|
 | `ZZ_ARTIFACTS` | directory of `<Air>_n<nBits>/` exports | unset: bridge off |
 | `XLA_PJRT_PLUGIN` | the frx CUDA PJRT plugin `.so` (read by xla-pjrt) | required |
-| `ZZ_CLIENTS` | PJRT clients; proofman spawns this many basic-proof workers | 3 |
+| `ZZ_CLIENTS` | PJRT clients; proofman spawns this many basic-proof workers | 3 — more than this card fits, see "Memory budget" |
 | `ZZ_MEMORY_FRACTION` | share of the card the clients claim up front, split evenly, before pil2 sizes its buffers | unset: allocate on demand |
 | `ZZ_GPU_HEADROOM_GB` | (fork) GPU memory pil2 leaves out of its stream sizing | 0 |
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
@@ -214,6 +214,15 @@ either stack's init):
 | └ executable loads, per AIR from the cache | | 0.52 s |
 | Main, single stream on both sides | 0.61 s (commit 0.165 + proof 0.444) | 0.64–0.79 s |
 
+Reproduce with the same `bridge/bench/` scripts as the block-shaped
+section, minus the input: the guest takes none, and it needs
+`ZISK_PROVE_FLAGS=` (empty) on a host with no ASM emulator built, since
+run.sh's default is the ASM emulator's `-a -u`. So
+`ZISK_PROVE_FLAGS= run.sh <tag> native|bridge`, then `compare_dumps.py`
+for the byte-gate and `summarize.py` for the rows. "Memory budget" below
+was measured this way, adding `ZZ_MEMORY_FRACTION` and
+`ZZ_GPU_HEADROOM_GB` per run.
+
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
 per AIR. All of that difference was one cause: the hash-frx wheel pinned
@@ -228,11 +237,11 @@ the rest reshapes and slices) and loads in 75 ms.
 
 What remains above native is structural, tracked in #170: the bridge
 proves the 11 instances back to back on one client while pil2 overlaps
-three basic streams and its recursion (two clients did not fit beside
-pil2's 14 GB when a table AIR's `const_setup`/`logup` allocated 4.5–5.5 GiB
-in one piece; to be re-measured on the smaller executables); the bridge
-comes up beside proofman's init on the same cores; and `const_setup`
-recomputes each AIR's constant tree per run where pil2 reads it from disk.
+three basic streams and its recursion (re-measured on the #171 artifacts,
+a second client is still 8.7 GiB more than this card has — "Memory budget"
+below); the bridge comes up beside proofman's init on the same cores; and
+`const_setup` recomputes each AIR's constant tree per run where pil2 reads
+it from disk.
 Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
 comparison is the section above.
 
@@ -292,17 +301,58 @@ Facts the gate surfaced, all now handled by the bridge:
   stage-1 value, three for a later one); the stage-2 hints rewrite the
   air values inside the `logup` program and every later stage reads
   those, as pil2 does.
-- **Memory budget (RTX 5090, 32 GB).** pil2 keeps at least one basic
-  stream (7.85 GB) plus its constant areas (5 GB) even with the bridge on,
-  since `commit_witness` still runs there. A bridge client holds an AIR's
-  fixed sections resident (the extended constants, their tree, the base
-  constants the stage-2 hints read: 4.6 GB for a table AIR with 88
-  constant columns) plus one prove's working set (3-6 GB), so a client
-  needs 8-10 GB and this card fits ONE (`ZZ_CLIENTS=1
-  ZZ_MEMORY_FRACTION=0.55`). Two clients at 25% each ran out of memory on
-  `VirtualTableZisk0`. Trimming the resident set (re-upload the base
-  constants per prove, drop digest layers after the openings) is the way
-  to a second client here; a larger card needs nothing.
+- **Memory budget (RTX 5090, 31.8 GiB).** Three pools share the card,
+  and what each gets is `ZZ_MEMORY_FRACTION` (the clients' share, claimed
+  up front), `ZZ_GPU_HEADROOM_GB` (held back from pil2's sizing) and
+  whatever is left (pil2's). The first two floors were measured on the
+  hello-world key by walking the fraction down until a run failed
+  (2026-09-08, one client):
+  - **A client needs 12.1 GiB**, at headroom 3. 0.38 of the card proves
+    all 11 AIRs; 0.37 aborts on a single 4.88 GiB allocation. That
+    12.1 GiB is what a client holds at once — one AIR's fixed sections
+    (the extended constants, their tree, the base constants the stage-2
+    hints read: 4.6 GB for a table AIR with 88 constant columns), the
+    next AIR's sections read ahead of its slot, and a prove's working
+    set (3-6 GB) — though the sweep measures the total, not the split.
+    Which AIR aborts is not fixed: it is whichever wide one first finds
+    the arena dry, `Binary_n22` at 0.37 and `VirtualTableZisk0_n21`
+    below that, so read the floor off the fraction rather than off the
+    AIR named in the log.
+  - **pil2 needs 14.3 GiB left to it and refuses to start below that**,
+    since `commit_witness` stays on the card. Left to it means the card
+    minus the clients' share minus the headroom, so one fraction can go
+    either way: at headroom 0, fraction 0.55 leaves 14.3 GiB and pil2
+    comes up with one basic stream and 5.05 GB of fixed pols, while 0.58
+    leaves 13.4 GiB and it exits with `Not enough GPU memory to run the
+    proof`; at headroom 3 that same 0.55 leaves 11.3 GiB and it refuses.
+    (The block-shaped section above reports 0.55 leaving pil2 13.3 GB,
+    which this model reproduces at neither headroom; that run's headroom
+    is not recorded, so the two are not the same measurement. #170
+    carries the discrepancy.)
+  - **Module loads come out of neither**, which is what
+    `ZZ_GPU_HEADROOM_GB` buys: at headroom 0 a run both pools fit in
+    still dies on `Failed to get module function:
+    CUDA_ERROR_OUT_OF_MEMORY`, with the card at 31.4 GiB. The bench's 3
+    is enough and 0 is not; the totals below budget ~2.
+
+  So one client's floors total 12.1 + 14.3 + ~2 = **28.4 GiB** of the
+  31.8 available, and a run at the bench's `ZZ_MEMORY_FRACTION=0.45`
+  (where the client claims 14.3 GiB rather than its 12.1 GiB floor) peaks
+  at 28.7 GiB. **Two clients need 2 × 12.1 + 14.3 + ~2 = 40.5 GiB and are
+  8.7 GiB short.** 6.7 GiB of that is the measured floors alone
+  (2 × 12.1 + 14.3 = 38.5 against 31.8, before any headroom at all); the
+  rest is the headroom, which is estimated but cannot be zero.
+
+  The runs bear it out: `ZZ_CLIENTS=2` aborts on `VirtualTableZisk1_n21`
+  both at fraction 0.45 (headroom 3) and at 0.54 (headroom 0), and no
+  fraction rescues it — pil2's floor caps the clients' total share near
+  0.55, so two clients can have at most ~8.8 GiB each, 3.3 GiB below the
+  floor, and that ceiling leaves the module loads nothing. **The unset
+  default is 3**, which 3 × 12.1 = 36.3 GiB puts past the whole card
+  before pil2 gets any; the bench pins `ZZ_CLIENTS=1`, and every number
+  here is from one client. Two clients wait either on trimming the
+  resident set (re-upload the base constants per prove, drop digest
+  layers after the openings) or on a ~40 GB card, which needs nothing.
 - **Exports carry no debug info and no folded power tables.** XLA
   re-formats every op's source location on load (half of a 5.6 s load
   once), so the exporter strips them; and it constant-folds the coset

@@ -9,7 +9,8 @@
 # Optional: ZISK_IN (the input file, for a guest that reads one — the go
 # hello-world guest does not), ZZ_RUNS (output root, default ./zz-runs),
 # ZISK_PROVE_FLAGS (default "-a -u": the ASM emulator, mapped memory
-# unlocked).
+# unlocked; set it to the empty string for a host without the ASM
+# emulator built, which is what the hello-world guest runs on).
 set -u
 TAG=$1; MODE=$2; shift 2
 OUT=${ZZ_RUNS:-./zz-runs}/$TAG
@@ -23,7 +24,7 @@ fi
 export ZZ_DUMP_PROOFS="$OUT/dumps"
 { uptime; nvidia-smi --query-gpu=memory.used --format=csv,noheader; } > "$OUT/host.txt"
 # shellcheck disable=SC2086
-env "$@" /usr/bin/time -v "$ZISK_BIN" prove -e "$ZISK_ELF" ${ZISK_IN:+-i $ZISK_IN} ${ZISK_PROVE_FLAGS:--a -u} \
+env "$@" /usr/bin/time -v "$ZISK_BIN" prove -e "$ZISK_ELF" ${ZISK_IN:+-i $ZISK_IN} ${ZISK_PROVE_FLAGS--a -u} \
     -k "$ZISK_PK" -g -y -o "$OUT/proof" -vv > "$OUT/run.log" 2>&1
 echo "exit=$?" >> "$OUT/run.log"
 grep -E 'Elapsed|exit=|<<< (INITIALIZING_PROOFMAN|CALCULATING_CONTRIBUTIONS|GENERATING_INNER_PROOFS)|verified' \
