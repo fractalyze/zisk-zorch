@@ -179,10 +179,16 @@ fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option
 }
 
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
+    let eager = eager_module_loads();
+    if crate::log_level() >= 1 {
+        // A run's own log has to say which way this went: two runs that differ
+        // only by this option are otherwise indistinguishable after the fact.
+        zzlog!("eager module loads {}", if eager.is_some() { "on" } else { "off" });
+    }
     let options = SessionOptions {
         preallocate: Some(memory_fraction.is_some()),
         memory_fraction,
-        eager_load_executable_modules: eager_module_loads(),
+        eager_load_executable_modules: eager,
     };
     let session = Arc::new(unsafe { Session::with_options(options) });
     if memory_fraction.is_some() {
