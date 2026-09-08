@@ -148,10 +148,41 @@ pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
     })
 }
 
+/// Whether the plugin loads an executable's modules into the CUDA context as
+/// it is deserialized rather than on its first execution.
+///
+/// It pays when the loads land somewhere other than a prove slot, which is
+/// what `ZZ_PRELOAD` arranges, so it follows that by default. `ZZ_EAGER_MODULES`
+/// overrides either way — a measurement has to vary this without also varying
+/// what gets preloaded, or the two changes land in one number.
+///
+/// Off means sending no option at all, not `false`: PJRT rejects a create
+/// option a plugin does not know, so a plugin built before
+/// fractalyze/xla#664 fails client creation on the key whatever its value.
+fn eager_module_loads() -> Option<bool> {
+    // The same ZZ_PRELOAD the bridge acts on in `Bridge::global`; clients are
+    // built before that runs, so it is read here too.
+    eager_module_loads_from(
+        std::env::var("ZZ_EAGER_MODULES").ok().as_deref(),
+        std::env::var("ZZ_PRELOAD").ok().as_deref(),
+    )
+}
+
+/// The decision on its own, so the table in the tests can state it.
+fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option<bool> {
+    let on = match eager {
+        Some("0") => false,
+        Some(_) => true,
+        None => preload != Some("0"),
+    };
+    on.then_some(true)
+}
+
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
-    let options = match memory_fraction {
-        Some(f) => SessionOptions { preallocate: Some(true), memory_fraction: Some(f) },
-        None => SessionOptions { preallocate: Some(false), memory_fraction: None },
+    let options = SessionOptions {
+        preallocate: Some(memory_fraction.is_some()),
+        memory_fraction,
+        eager_load_executable_modules: eager_module_loads(),
     };
     let session = Arc::new(unsafe { Session::with_options(options) });
     if memory_fraction.is_some() {
@@ -439,9 +470,23 @@ impl Artifact {
 
 #[cfg(test)]
 mod tests {
-    use super::{CacheEntryLock, Gate};
+    use super::{eager_module_loads_from, CacheEntryLock, Gate};
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn eager_module_loads_follow_the_preload_unless_overridden() {
+        // Something preloads, so the loads happen off the prove path and may
+        // as well pull the modules across with them.
+        assert_eq!(eager_module_loads_from(None, None), Some(true));
+        assert_eq!(eager_module_loads_from(None, Some("all")), Some(true));
+        // Nothing preloads: every load is already inside a prove slot.
+        assert_eq!(eager_module_loads_from(None, Some("0")), None);
+        // The override moves this one thing on its own, which is what lets a
+        // run measure it without also changing what gets preloaded.
+        assert_eq!(eager_module_loads_from(Some("0"), None), None);
+        assert_eq!(eager_module_loads_from(Some("1"), Some("0")), Some(true));
+    }
 
     #[test]
     fn one_compile_per_cache_entry_at_a_time() {

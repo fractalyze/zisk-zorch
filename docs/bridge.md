@@ -77,6 +77,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_GPU_HEADROOM_GB` | (fork) GPU memory pil2 leaves out of its stream sizing | 0 |
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
 | `ZZ_PRELOAD_THREADS` | AIRs loading at once | 6 |
+| `ZZ_EAGER_MODULES` | executables load their modules into the CUDA context as they are deserialized, not on first execute | on unless `ZZ_PRELOAD=0` |
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
 | `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
 | `ZZ_HOST_THREADS` | threads for the host-side copies and key reads | half the cores, at most 8 |

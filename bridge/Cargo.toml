@@ -8,8 +8,9 @@ description = "pil2-proofman's gen_proof over zisk-zorch's exported StableHLO ar
 [dependencies]
 # PJRT over the frx/jax CUDA plugin. Pinned to the fractalyze fork commit
 # that adds per-session client options (preallocate=false is what lets one
-# client per pil2 stream share the card).
-xla-pjrt = { git = "https://github.com/fractalyze/xla-pjrt", rev = "735a9c3" }
+# client per pil2 stream share the card; eager_load_executable_modules is
+# what moves a loaded executable's module loads off the prove path).
+xla-pjrt = { git = "https://github.com/fractalyze/xla-pjrt", rev = "b9222fa" }
 # pil2's own Fiat-Shamir transcript (Poseidon1/2 over Goldilocks). The
 # proofman fork that consumes this crate patches every pil2-proofman crate
 # to one checkout, so `fields` resolves to the same crate proofman uses.
