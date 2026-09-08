@@ -154,29 +154,40 @@ fn main() {
         uploaded: None,
     };
     let mut proof = vec![0u64; driver.proof_words()];
-    let t = Instant::now();
-    let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-    let out = driver.prove(&inputs, &mut transcript, &mut proof).unwrap();
-    eprintln!("proved in {:.3} s (nonce {})", t.elapsed().as_secs_f64(), out.nonce);
-    for _ in 0..repeat {
+    let expected_path = case.join("expected_proof.bin");
+    // Every prove is compared, not just the last: a prove that comes out wrong
+    // only sometimes is invisible to a gate that overwrites the buffer
+    // `repeat` times and checks what is left.
+    let expected = expected_path.exists().then(|| words(&expected_path));
+    let mut wrong = Vec::new();
+    for i in 0..=repeat {
         let t = Instant::now();
         let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-        driver.prove(&inputs, &mut transcript, &mut proof).unwrap();
-        eprintln!("warm prove {:.3} s", t.elapsed().as_secs_f64());
-    }
-
-    let expected_path = case.join("expected_proof.bin");
-    if expected_path.exists() {
-        let expected = words(&expected_path);
+        let out = driver.prove(&inputs, &mut transcript, &mut proof).unwrap();
+        let label = if i == 0 { "proved" } else { "warm prove" };
+        eprintln!("{label} {:.3} s (nonce {})", t.elapsed().as_secs_f64(), out.nonce);
+        let Some(expected) = expected.as_ref() else { continue };
         if expected.len() != proof.len() {
             eprintln!("MISMATCH: proof has {} words, expected {}", proof.len(), expected.len());
             std::process::exit(1);
         }
-        let diff: Vec<usize> = (0..proof.len()).filter(|i| proof[*i] != expected[*i]).collect();
-        if diff.is_empty() {
-            println!("byte-identical: {} words", proof.len());
+        let diff: Vec<usize> = (0..proof.len()).filter(|k| proof[*k] != expected[*k]).collect();
+        if !diff.is_empty() {
+            eprintln!(
+                "MISMATCH on prove {}: {} of {} words differ, first at {:?}",
+                i + 1,
+                diff.len(),
+                proof.len(),
+                &diff[..diff.len().min(8)]
+            );
+            wrong.push(i + 1);
+        }
+    }
+    if expected.is_some() {
+        if wrong.is_empty() {
+            println!("byte-identical: {} words, {} prove(s)", proof.len(), repeat + 1);
         } else {
-            eprintln!("MISMATCH: {} of {} words differ, first at {:?}", diff.len(), proof.len(), &diff[..diff.len().min(8)]);
+            eprintln!("{} of {} proves wrong: {:?}", wrong.len(), repeat + 1, wrong);
             std::process::exit(1);
         }
     } else {
