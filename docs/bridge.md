@@ -167,7 +167,10 @@ separate the legs, both already named in #170:
   does not fit on a 32 GB card at this share: `ZZ_RESIDENT_AIRS=2`, 3, 4
   and 8 all abort once the second or third family is resident (PJRT
   `Out of memory` from the client's BFC pool, which xla-pjrt's `check`
-  turns into a panic rather than an error the bridge could evict on), and
+  turns into a panic rather than an error the bridge could evict on — the
+  read-ahead's upload catches that unwind and falls back to uploading
+  under the slot, so a full card costs it the head start rather than the
+  run), and
   a larger share (`ZZ_MEMORY_FRACTION=0.55`) leaves pil2 13.3 GB, below
   the minimum it will start with. The lever is the resident-set trim
   (drop digest layers after the openings, re-upload base constants per

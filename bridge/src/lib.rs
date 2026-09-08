@@ -390,12 +390,63 @@ impl AheadFixed {
         Ok(ahead)
     }
 
+    /// Record a read-ahead upload's outcome, returning why it failed.
+    ///
+    /// On failure the permit goes back at once — nothing of this AIR's is on
+    /// the card, so the next prove may still read ahead — and `uploaded`
+    /// stays `None`, which is what sends the same words up under the slot.
+    fn took_upload(&mut self, outcome: Result<driver::UploadedFixed, String>, took: f64) -> Option<String> {
+        match outcome {
+            Ok(uploaded) => {
+                self.uploaded = Some(uploaded);
+                self.upload_s = took;
+                None
+            }
+            Err(why) => {
+                self.permit = None;
+                Some(why)
+            }
+        }
+    }
+
     fn sections(&self) -> FixedSections<'_> {
         FixedSections {
             const_base: &self.const_base,
             custom_base: self.customs.iter().map(|(id, w)| (*id, w.as_slice())).collect(),
             uploaded: self.uploaded.clone(),
         }
+    }
+}
+
+/// Run a read-ahead upload, reporting **any** failure rather than raising it.
+///
+/// This upload is speculative: it runs while the prove ahead of this one
+/// holds the client and is at its memory peak, so it is the allocation most
+/// likely to fail and the one least worth failing a prove for. The same
+/// words go up under the slot instead, once that prove's working set is
+/// released — docs/bridge.md records a card with room for one family's
+/// constants and not two.
+///
+/// Catching the unwind is what makes that fallback real. A full card reaches
+/// us as a panic, not an error: xla-pjrt's `check` ends in `panic!("PJRT
+/// error in {ctx}: {msg}")` and `Artifact::upload_bytes` hands back a `Buf`
+/// rather than a `Result`, so the `Err` arm carries only our own spec
+/// mismatches — which the slot's upload raises again rather than swallowing.
+/// The panic starts in xla-pjrt's Rust after the FFI call has returned, so
+/// nothing unwinds across the C boundary, and buffers uploaded before the
+/// failing one drop normally on the way out. `prove_async` catches PJRT the
+/// same way.
+fn upload_ahead(
+    upload: impl FnOnce() -> Result<driver::UploadedFixed, Error>,
+) -> Result<driver::UploadedFixed, String> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(upload)) {
+        Ok(Ok(uploaded)) => Ok(uploaded),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(p) => Err(p
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_else(|| "upload panicked".to_string())),
     }
 }
 
@@ -822,12 +873,19 @@ impl Bridge {
             AheadPlan::ReadOnly => None,
         };
         let mut ahead = AheadFixed::read(&art.manifest, req)?;
-        if permit.is_some() {
-            let t = Instant::now();
-            ahead.uploaded = Some(driver::upload_fixed(art, &ahead.sections())?);
-            ahead.upload_s = t.elapsed().as_secs_f64();
-        }
         ahead.permit = permit;
+        if ahead.permit.is_some() {
+            let t = Instant::now();
+            let uploaded = {
+                let sections = ahead.sections();
+                upload_ahead(|| driver::upload_fixed(art, &sections))
+            };
+            if let Some(why) = ahead.took_upload(uploaded, t.elapsed().as_secs_f64()) {
+                if self.log {
+                    zzlog!("{}: read-ahead upload gave way to the slot ({why})", req.key);
+                }
+            }
+        }
         Ok(Some(ahead))
     }
 
@@ -1241,6 +1299,50 @@ mod tests {
         assert!(matches!(client.plan("Main_n22"), AheadPlan::Resident), "a resident AIR re-read its key");
         client.evicted("Main_n22");
         assert!(!matches!(client.plan("Main_n22"), AheadPlan::Resident), "an evicted AIR still looked resident");
+    }
+
+    #[test]
+    fn a_full_card_sends_the_read_ahead_upload_under_the_slot_instead_of_failing_the_prove() {
+        // The upload runs while the prove ahead of this one is at its memory
+        // peak, so it is the allocation most likely to fail. PJRT reports a
+        // full card by panicking (xla-pjrt's `check`), not by returning an
+        // error, so the panic is the arm that matters.
+        let quiet = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let oom = upload_ahead(|| panic!("PJRT error in BufferFromHostBuffer: Out of memory while trying to allocate 3.00GiB"));
+        let spec = upload_ahead(|| Err("const_base: 8 words for a [2, 2] buffer of 4".into()));
+        std::panic::set_hook(quiet);
+        // `UploadedFixed` holds device handles and has no `Debug`, so match
+        // rather than unwrap.
+        let Err(oom_why) = oom else {
+            panic!("a full card escaped the read-ahead and would have failed the prove")
+        };
+        assert_eq!(oom_why, "PJRT error in BufferFromHostBuffer: Out of memory while trying to allocate 3.00GiB");
+        assert!(spec.is_err(), "an upload error escaped the read-ahead");
+    }
+
+    #[test]
+    fn a_failed_read_ahead_upload_hands_the_permit_back() {
+        let client = FixedAhead::default();
+        let AheadPlan::ReadAndUpload(permit) = client.plan("Main_n22") else {
+            panic!("the first prove did not take the read-ahead")
+        };
+        let mut ahead = AheadFixed {
+            const_base: Vec::new(),
+            customs: Vec::new(),
+            uploaded: None,
+            permit: Some(permit),
+            read_s: 0.0,
+            upload_s: 0.0,
+        };
+        let why = ahead.took_upload(Err("PJRT error in BufferFromHostBuffer: Out of memory".into()), 1.5);
+        assert!(why.is_some(), "the failure was not reported to the caller");
+        assert!(ahead.uploaded.is_none(), "a failed upload still claimed to have uploaded");
+        assert_eq!(ahead.upload_s, 0.0, "a failed upload was billed to the ahead column");
+        assert_eq!(client.permit.pending(), 0, "a failed read-ahead upload kept the permit");
+        // With nothing uploaded the prove carries on: `set_fixed` uploads the
+        // same words once the slot is its own and the card has room.
+        assert!(ahead.sections().uploaded.is_none());
     }
 
     #[test]
