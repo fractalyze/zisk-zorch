@@ -36,6 +36,7 @@ FIXED = (
 # failure it exists to prevent.
 RESCUED = r"\[zz \+\s*[\d.]+\] (\w+): read-ahead upload gave way to the slot \([^\n]*\)"
 ABORT = r"PJRT error in \w+: (Out of memory[^\n]*)"
+VERIFIED = ("Proof verified successfully", "Vadcop Final proof was verified")
 
 
 def summarize(path: pathlib.Path) -> None:
@@ -47,7 +48,11 @@ def summarize(path: pathlib.Path) -> None:
     }
     wall = re.search(r"Elapsed \(wall clock\).*?(\d+):([\d.]+)", log)
     wall_s = int(wall.group(1)) * 60 + float(wall.group(2)) if wall else "?"
-    verified = "Proof verified successfully" in log
+    # Both phrases, because the two stacks this tool compares do not share
+    # one: a native pil2 run ends "Proof verified successfully", a bridged run
+    # "Vadcop Final proof was verified". Matching only the first reported
+    # every bridged run as unverified.
+    verified = any(p in log for p in VERIFIED)
     line = f"## {path}  wall {wall_s} s  verified={verified}"
     if streams := re.search(STREAMS, log):
         line += f"  pil2 streams basic/recursive {streams.group(1)}/{streams.group(2)}"

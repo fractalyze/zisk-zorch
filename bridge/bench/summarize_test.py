@@ -62,6 +62,14 @@ class SummarizeTest(absltest.TestCase):
     def test_an_abort_before_the_first_instance_is_still_reported(self):
         self.assertIn("ABORTED: Out of memory", run(ABORTED_BEFORE_ANY_INSTANCE))
 
+    def test_both_stacks_verification_phrases_are_recognised(self):
+        # The two stacks this tool compares do not share a phrase, and the
+        # summary compares them side by side, so missing either reports a good
+        # run as unverified.
+        self.assertIn("verified=True", run("Vadcop Final proof was verified\n"))
+        self.assertIn("verified=True", run("Proof verified successfully\n"))
+        self.assertIn("verified=False", run("something else entirely\n"))
+
     def test_a_run_with_neither_says_nothing_about_either(self):
         out = run("Elapsed (wall clock) time (h:mm:ss or m:ss): 0:20.29\n")
         self.assertNotIn("ABORTED", out)
