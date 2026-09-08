@@ -39,6 +39,12 @@ class Timers:
         self.seconds: dict[str, float] = collections.defaultdict(float)
         self.categories: dict[str, float] = collections.defaultdict(float)
 
+    def add(self, other: Timers) -> None:
+        for phase, secs in other.seconds.items():
+            self.seconds[phase] += secs
+        for name, secs in other.categories.items():
+            self.categories[name] += secs
+
     def total(self) -> float:
         return sum(self.seconds.values())
 
@@ -60,13 +66,15 @@ def air_names(global_info: pathlib.Path | None) -> dict[Air, str]:
     }
 
 
-def parse(log: str) -> tuple[dict[Air, Timers], Timers]:
-    """The basic instances by air, and the recursive proofs over them summed."""
+def parse(log: str) -> tuple[dict[Key, Timers], Timers]:
+    """Each basic instance's timers, and the recursive proofs over them
+    summed. Keyed by instance and not by air: a workload runs several
+    instances of the same air, and their timers are not one instance's."""
     instances: set[Key] = {
         (int(m.group(1)), (int(m.group(2)), int(m.group(3))))
         for m in GEN_PROOF.finditer(log)
     }
-    basic: dict[Air, Timers] = collections.defaultdict(Timers)
+    basic: dict[Key, Timers] = collections.defaultdict(Timers)
     recursive = Timers()
     proved: set[Key] = set()
     key: Key | None = None
@@ -79,7 +87,7 @@ def parse(log: str) -> tuple[dict[Air, Timers], Timers]:
             # Only a basic instance commits, and only its first proof is the
             # basic one; the rest of its blocks are recursive proofs.
             if key in instances and (phase == "COMMIT" or key not in proved):
-                timers = basic[key[1]]
+                timers = basic[key]
                 if phase == "PROOF":
                     proved.add(key)
             else:
@@ -90,6 +98,16 @@ def parse(log: str) -> tuple[dict[Air, Timers], Timers]:
         ):
             timers.categories[m.group(1)] += float(m.group(2))
     return basic, recursive
+
+
+def by_air(basic: dict[Key, Timers]) -> dict[Air, list[Timers]]:
+    """The instances of each air. A report row is one air, so it has to carry
+    how many instances it sums — the sha-hasher workload runs 13 Main, and a
+    13x sum printed bare reads as what one Main instance cost."""
+    airs: dict[Air, list[Timers]] = collections.defaultdict(list)
+    for (_, air), timers in basic.items():
+        airs[air].append(timers)
+    return airs
 
 
 def streams(log: str) -> int | None:
@@ -106,22 +124,26 @@ def report(path: pathlib.Path, names: dict[Air, str], top: int) -> None:
         warning = f"  WARNING: {n} streams — the blocks interleave, re-run on one"
     print(f"## {path}  {len(basic)} basic instances{warning}")
     whole = Timers()
-    for air, inst in sorted(basic.items(), key=lambda kv: -kv[1].total()):
-        for name, secs in inst.categories.items():
-            whole.categories[name] += secs
-        for phase, secs in inst.seconds.items():
-            whole.seconds[phase] += secs
-        commit, proof = inst.seconds["COMMIT"], inst.seconds["PROOF"]
+    rows: list[tuple[Air, int, Timers]] = []
+    for air, instances in by_air(basic).items():
+        row = Timers()
+        for inst in instances:
+            row.add(inst)
+        whole.add(row)
+        rows.append((air, len(instances), row))
+    for air, count, row in sorted(rows, key=lambda r: -r[2].total()):
+        commit, proof = row.seconds["COMMIT"], row.seconds["PROOF"]
         print(
-            f"   {names.get(air, 'air %d:%d' % air):20s}"
+            f"   {names.get(air, 'air %d:%d' % air):20s} x{count:<3d}"
             f" commit {commit:.3f} s  proof {proof:.3f} s"
-            f"  total {inst.total():.3f} s  {inst.hottest(top)}"
+            f"  total {row.total():.3f} s ({row.total() / count:.3f}/instance)"
+            f"  {row.hottest(top)}"
         )
     label = "all %d" % len(basic)
-    print(f"   {label:20s} total {whole.total():.3f} s  {whole.hottest(top)}")
+    print(f"   {label:25s} total {whole.total():.3f} s  {whole.hottest(top)}")
     if recursive.total():
-        total = recursive.total()
-        print(f"   recursive proofs      total {total:.3f} s  {recursive.hottest(top)}")
+        total, hot = recursive.total(), recursive.hottest(top)
+        print(f"   {'recursive proofs':25s} total {total:.3f} s  {hot}")
 
 
 def main(argv: list[str]) -> int:

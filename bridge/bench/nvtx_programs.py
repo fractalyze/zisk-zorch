@@ -73,19 +73,25 @@ def proves(progs: dict[str, Program]) -> int:
     return statistics.mode(sorted((p.runs for p in progs.values()), reverse=True))
 
 
+def per_prove(progs: dict[str, Program], n: int) -> list[tuple[str, Program, int]]:
+    """Every program with the share of the capture to divide its totals by:
+    the `n` proves, except for one that ran fewer times than that —
+    `const_setup` is a per-family cost, so its own total is the honest
+    number. A program that runs several times per prove, like the quotient
+    over its chunks, keeps all of them in one row. Costliest first."""
+    return sorted(
+        ((name, p, min(p.runs, n)) for name, p in progs.items()),
+        key=lambda row: -row[1].total_ns / row[2],
+    )
+
+
 def report(path: pathlib.Path, top: int, override: int | None) -> None:
     progs = read(path)
     if not progs:
         print(f"## {path}  no bridge ranges — was zz_prove built with --features nvtx?")
         return
     n = override or proves(progs)
-    # Each program's share of the capture: the proves, except for one that ran
-    # fewer times than that — `const_setup` is a per-family cost, so its own
-    # total is the honest number.
-    rows = sorted(
-        ((name, p, min(p.runs, n)) for name, p in progs.items()),
-        key=lambda row: -row[1].total_ns / row[2],
-    )
+    rows = per_prove(progs, n)
     print(
         f"## {path}  {n} proves, {len(rows)} programs,"
         f" {sum(p.total_ns / share for _, p, share in rows) / 1e9:.3f} s on the device"
@@ -94,7 +100,7 @@ def report(path: pathlib.Path, top: int, override: int | None) -> None:
     for name, p, share in rows:
         hot = sorted(p.by_kernel.items(), key=lambda kv: -kv[1])[:top]
         label = name if p.runs == n else f"{name} (x{p.runs})"
-        kernels = ", ".join(f"{family(k)} {ns / share / 1e9:.3f}" for k, ns in hot)
+        kernels = ", ".join(f"{k} {ns / share / 1e9:.3f}" for k, ns in hot)
         print(
             f"   {label:24s} {p.total_ns / share / 1e9:7.3f} s"
             f" {p.kernels / share:5.0f} kernels  {kernels}"

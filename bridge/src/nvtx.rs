@@ -8,8 +8,10 @@
 //! the bridge needs.
 
 /// An open NVTX range, closed where it goes out of scope. Without the
-/// feature it is inert, so callers need no `cfg` of their own.
-pub struct Range;
+/// feature it is inert, so callers need no `cfg` of their own. The private
+/// field is what keeps the pop in `drop` honest: only `push` can make a
+/// `Range`, so there is no value around that pops a range it never opened.
+pub struct Range(());
 
 #[cfg(feature = "nvtx")]
 #[link(name = "nvtx3interop")]
@@ -27,12 +29,12 @@ impl Range {
         let mut message: Vec<u8> = name.bytes().filter(|b| *b != 0).collect();
         message.push(0);
         unsafe { nvtxRangePushA(message.as_ptr().cast()) };
-        Range
+        Range(())
     }
 
     #[cfg(not(feature = "nvtx"))]
     pub fn push(_name: &str) -> Range {
-        Range
+        Range(())
     }
 }
 
