@@ -37,6 +37,23 @@ py_test(
 )
 
 py_library(
+    name = "compare_dumps",
+    srcs = ["compare_dumps.py"],
+    deps = [requirement("numpy")],
+)
+
+py_test(
+    name = "compare_dumps_test",
+    size = "small",
+    srcs = ["compare_dumps_test.py"],
+    deps = [
+        ":compare_dumps",
+        requirement("absl_py"),
+        requirement("numpy"),
+    ],
+)
+
+py_library(
     name = "nvtx_programs",
     srcs = ["nvtx_programs.py"],
 )
