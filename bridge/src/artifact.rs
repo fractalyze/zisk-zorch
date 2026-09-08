@@ -141,6 +141,46 @@ impl Client {
     }
 }
 
+/// Apply `f` to every item, `threads` at a time, and return the first error.
+///
+/// Threads share one queue rather than taking a slice each, because the items
+/// here are programs whose compile times differ by more than an order of
+/// magnitude -- a static split leaves one thread holding every slow one. A
+/// panic in a worker propagates, since callers wrap this in `catch_unwind` to
+/// clear their in-flight marks.
+fn each_parallel<T: Send + Sync>(
+    items: Vec<T>,
+    threads: usize,
+    f: impl Fn(&T) -> Result<(), Error> + Sync,
+) -> Result<(), Error> {
+    if threads <= 1 {
+        return items.iter().try_for_each(|i| f(i));
+    }
+    let queue = std::sync::Mutex::new(items.iter());
+    let mut first = Ok(());
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| loop {
+                    let next = queue.lock().unwrap_or_else(|p| p.into_inner()).next();
+                    match next {
+                        Some(item) => f(item)?,
+                        None => return Ok(()),
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            match worker.join() {
+                Ok(Err(e)) if first.is_ok() => first = Err(e),
+                Err(panic) => std::panic::resume_unwind(panic),
+                _ => {}
+            }
+        }
+    });
+    first
+}
+
 pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
     Arc::new(Client {
         session: new_session(memory_fraction),
@@ -376,12 +416,18 @@ impl Artifact {
     }
 
     /// Compile every program now rather than on first use.
-    pub fn compile_all(&self) -> Result<(), Error> {
-        let names: Vec<String> = self.manifest.programs.keys().cloned().collect();
-        for name in names {
-            self.executable(&name)?;
-        }
-        Ok(())
+    /// Compile (or load from the cache) every program, `threads` at a time.
+    ///
+    /// One thread is the default everywhere a prove might be waiting: each
+    /// program takes the client's load gate on its own, so a prove arriving
+    /// mid-load waits for one program rather than for `threads` of them, and
+    /// that is the latency guarantee the per-program gate exists for. Warming
+    /// a single AIR is the case that wants more — nothing is proving, and the
+    /// serial loop is otherwise about an hour and a half for ~34 programs.
+    pub fn compile_all(&self, threads: usize) -> Result<(), Error> {
+        each_parallel(self.manifest.programs.keys().cloned().collect(), threads, |name| {
+            self.executable(name).map(|_| ())
+        })
     }
 
     /// Host words -> a device buffer shaped and typed by `spec`. Field words
@@ -476,9 +522,43 @@ impl Artifact {
 
 #[cfg(test)]
 mod tests {
-    use super::{eager_module_loads_from, CacheEntryLock, Gate};
+    use super::{each_parallel, eager_module_loads_from, CacheEntryLock, Gate};
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn each_parallel_runs_every_item_once_on_every_thread_count() {
+        for threads in [1, 2, 8, 64] {
+            let seen = std::sync::Mutex::new(Vec::new());
+            let items: Vec<usize> = (0..50).collect();
+            each_parallel(items, threads, |i| {
+                seen.lock().unwrap().push(*i);
+                Ok(())
+            })
+            .unwrap();
+            let mut got = seen.into_inner().unwrap();
+            got.sort_unstable();
+            assert_eq!(got, (0..50).collect::<Vec<_>>(), "threads={threads}");
+        }
+    }
+
+    #[test]
+    fn each_parallel_reports_a_failure_and_still_drains_the_queue() {
+        // More threads than items, so the queue empties while workers are live.
+        let ran = std::sync::atomic::AtomicUsize::new(0);
+        let err = each_parallel((0..4).collect(), 8, |i| {
+            ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if *i == 2 {
+                return Err("program 2 failed".into());
+            }
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "program 2 failed");
+        // The other three still ran: one failure must not strand the rest,
+        // since the caller retries nothing.
+        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 4);
+    }
 
     #[test]
     fn eager_module_loads_follow_the_preload_unless_overridden() {

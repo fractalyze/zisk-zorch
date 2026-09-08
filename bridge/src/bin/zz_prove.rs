@@ -54,6 +54,10 @@ fn main() {
         // ZZ_WARM_THREADS=N loads that many AIRs at once on the one client:
         // the probe for how much concurrent deserialization the plugin takes.
         let threads: usize = std::env::var("ZZ_WARM_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+        // Spare threads go inside each AIR rather than idling. Warming one AIR
+        // -- what a plugin bisect does -- otherwise runs a single thread through
+        // ~34 compiles however high ZZ_WARM_THREADS is set.
+        let within = (threads / dirs.len().max(1)).max(1);
         let client = new_client(None);
         let queue = std::sync::Arc::new(std::sync::Mutex::new(dirs));
         let t0 = Instant::now();
@@ -69,7 +73,7 @@ fn main() {
                     };
                     let t = Instant::now();
                     let art = Artifact::load(client.clone(), &dir, Some(&cache)).unwrap();
-                    art.compile_all().unwrap();
+                    art.compile_all(within).unwrap();
                     eprintln!(
                         "warm {} ({} programs, {} from the cache) in {:.1} s",
                         dir.display(),
@@ -114,7 +118,9 @@ fn main() {
     let t = Instant::now();
     let client = new_client(None);
     let art = Artifact::load(client, &dir, Some(&cache)).unwrap();
-    art.compile_all().unwrap();
+    // Nothing is proving here, so a cold case compiles as wide as it is told to.
+    let threads: usize = std::env::var("ZZ_WARM_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    art.compile_all(threads).unwrap();
     let m = art.manifest.clone();
     eprintln!(
         "loaded {} ({} programs, {} from the cache) in {:.1} s",
