@@ -10,7 +10,12 @@ numpy
 # release asset remains.
 pyzorch @ https://github.com/fractalyze/pypi/releases/download/zorch-dev-20260812101713/pyzorch-0.1.0.dev20260812101713-py3-none-any.whl
 frx==0.10.2.dev20260909052233
-zk-dtypes==0.0.16
+# frx's declared floor (`zk_dtypes>=0.0.15`) under-states what it uses:
+# dev20260909052233's `frx/_src/dtypes.py` still reads
+# `zk_dtypes.ed25519_g1_affine`, which lands in 0.0.17, so resolving on the
+# floor alone imports and then AttributeErrors. Raise this with the frx quad,
+# not by the floor.
+zk-dtypes==0.0.17
 frxlib==0.10.2.dev20260909052233
 frx-cuda12-plugin==0.10.2.dev20260909052233
 frx-cuda12-pjrt==0.10.2.dev20260909052233
