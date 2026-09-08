@@ -87,6 +87,46 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_DUMP_INPUTS` | write each instance as a `zz_prove` case directory under this one | off |
 | `ZZ_DUMP_TRACES` | (fork) write each host trace as `gen_proof` receives it | off |
 
+## Profiling
+
+Where a prove's device time goes program by program, and the same question
+asked of pil2. The two totals are not like for like: `nvtx_kern_sum` counts
+kernels only and the bridge's uploads happen outside the ranges (they are not
+in `Artifact::run`), so its total excludes H2D and D2H, while pil2's totals
+count its `H2D_COPY` category. Compare the kernel work, and subtract pil2's
+`H2D_COPY` before comparing totals. Both halves want a quiet host and a warm
+executable cache — a compile inside the capture buries the numbers.
+
+```bash
+# The bridge: one NVTX range per program, then nsys over a prove of an
+# instance dumped with ZZ_DUMP_INPUTS. --cuda-graph-trace=node is not
+# optional; XLA runs the fusions as CUDA graphs and nsys sees nothing
+# through them. --repeat 1 proves twice, so the capture holds two proves.
+cargo build --release --features standalone,nvtx
+nsys profile --cuda-graph-trace=node -t cuda,nvtx -o main \
+    zz_prove $ARTIFACTS $CASE --repeat 1
+nsys stats --report nvtx_kern_sum --format csv -o main main.nsys-rep
+bench/nvtx_programs.py main_nvtx_kern_sum.csv
+
+# pil2: its own per-instance timers at -vv, on ONE basic stream. With more
+# the blocks of the streams interleave and nothing can be attributed; the
+# fork's headroom knob is what forces one (15 GB on a 32 GB card).
+ZZ_GPU_HEADROOM_GB=15 cargo-zisk-dev prove -e guest.elf -k $PK -g -y -vv \
+    -o proof > native.log
+bench/pil2_timers.py native.log --global-info $PK/pilout.globalInfo.json
+```
+
+The `nvtx` feature is off by default and stays off in proofman builds: it
+links the CUDA toolkit's `libnvtx3interop` and the ranges say nothing outside
+a profiler. `nvtx_programs.py` counts only the bridge's ranges — XLA opens
+its own around the same kernels — and reports per prove, except for a program
+that ran fewer times than the capture has proves, which it reports whole
+(`const_setup` builds the constant tree once per family). A program that runs
+several times per prove, like the quotient over its chunks, is one row
+carrying all of them. `pil2_timers.py` is per instance, and its rows are per
+air: a row carries the `x<n>` instances it sums and their average, because a
+workload runs several instances of the same air.
+
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
 The wall-clock comparison the issue asks for, on the closest stand-in for

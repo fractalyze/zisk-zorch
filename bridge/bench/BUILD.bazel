@@ -2,8 +2,9 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Bench tooling for the bridge: the guest input writer, the native <-> bridge
-# dump comparison and the log summarizer behind the numbers in
-# docs/bridge.md. run.sh drives one prove; see that page's "Running".
+# dump comparison, the log summarizer behind the numbers in docs/bridge.md,
+# and the two per-program profile readers behind that page's "Profiling".
+# run.sh drives one prove; see the page's "Running".
 
 py_library(
     name = "mk_input",
@@ -16,6 +17,41 @@ py_test(
     srcs = ["mk_input_test.py"],
     deps = [
         ":mk_input",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
+    name = "nvtx_programs",
+    srcs = ["nvtx_programs.py"],
+)
+
+py_test(
+    name = "nvtx_programs_test",
+    size = "small",
+    srcs = ["nvtx_programs_test.py"],
+    data = ["testdata/nvtx_kern_sum.csv"],
+    deps = [
+        ":nvtx_programs",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
+    name = "pil2_timers",
+    srcs = ["pil2_timers.py"],
+)
+
+py_test(
+    name = "pil2_timers_test",
+    size = "small",
+    srcs = ["pil2_timers_test.py"],
+    data = [
+        "testdata/pil2_prove.log",
+        "testdata/pilout.globalInfo.json",
+    ],
+    deps = [
+        ":pil2_timers",
         requirement("absl_py"),
     ],
 )
