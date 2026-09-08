@@ -48,10 +48,11 @@ def summarize(path: pathlib.Path) -> None:
     }
     wall = re.search(r"Elapsed \(wall clock\).*?(\d+):([\d.]+)", log)
     wall_s = int(wall.group(1)) * 60 + float(wall.group(2)) if wall else "?"
-    # Both phrases, because the two stacks this tool compares do not share
-    # one: a native pil2 run ends "Proof verified successfully", a bridged run
-    # "Vadcop Final proof was verified". Matching only the first reported
-    # every bridged run as unverified.
+    # Both phrases, because the wording has changed across prover builds and
+    # neither identifies the mode: a native and a bridged run of 2026-09-06
+    # both end "Proof verified successfully", while a native and a bridged run
+    # built on 09-08 both end "Vadcop Final proof was verified". Match both and
+    # do not infer the stack from which one appears.
     verified = any(p in log for p in VERIFIED)
     line = f"## {path}  wall {wall_s} s  verified={verified}"
     if streams := re.search(STREAMS, log):
