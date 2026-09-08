@@ -309,45 +309,50 @@ Facts the gate surfaced, all now handled by the bridge:
   (2026-09-08, one client):
   - **A client needs 12.1 GiB**, at headroom 3. 0.38 of the card proves
     all 11 AIRs; 0.37 aborts on a single 4.88 GiB allocation. That
-    12.1 GiB holds one AIR's fixed sections (the extended constants,
-    their tree, the base constants the stage-2 hints read: 4.6 GB for a
-    table AIR with 88 constant columns), the next AIR's sections read
-    ahead of its slot, and a prove's working set (3-6 GB). `ZZ_PENDING=1`
-    does not move it (0.38 proves, 0.30 aborts), so the pending queue is
-    not what the floor is made of. Which AIR aborts is not fixed — it is
-    whichever wide one first finds the arena dry, `Binary_n22` at 0.37
-    and `VirtualTableZisk0_n21` below that — so read the floor off the
-    fraction, not off the AIR named in the log.
+    12.1 GiB is what a client holds at once — one AIR's fixed sections
+    (the extended constants, their tree, the base constants the stage-2
+    hints read: 4.6 GB for a table AIR with 88 constant columns), the
+    next AIR's sections read ahead of its slot, and a prove's working
+    set (3-6 GB) — though the sweep measures the total, not the split.
+    Which AIR aborts is not fixed: it is whichever wide one first finds
+    the arena dry, `Binary_n22` at 0.37 and `VirtualTableZisk0_n21`
+    below that, so read the floor off the fraction rather than off the
+    AIR named in the log.
   - **pil2 needs 14.3 GiB left to it and refuses to start below that**,
     since `commit_witness` stays on the card. Left to it means the card
-    minus the clients' share minus the headroom, which is why one
-    fraction can go either way: at headroom 0, fraction 0.55 leaves
-    14.3 GiB and pil2 comes up with one basic stream and 5.05 GB of fixed
-    pols, while 0.58 leaves 13.4 GiB and it exits with `Not enough GPU
-    memory to run the proof`; at headroom 3 that same 0.55 leaves only
-    11.3 GiB and it refuses — the case the block-shaped Status section
-    above already records as "leaves pil2 13.3 GB, below the minimum it
-    will start with".
+    minus the clients' share minus the headroom, so one fraction can go
+    either way: at headroom 0, fraction 0.55 leaves 14.3 GiB and pil2
+    comes up with one basic stream and 5.05 GB of fixed pols, while 0.58
+    leaves 13.4 GiB and it exits with `Not enough GPU memory to run the
+    proof`; at headroom 3 that same 0.55 leaves 11.3 GiB and it refuses.
+    (The block-shaped section above reports 0.55 leaving pil2 13.3 GB,
+    which this model reproduces at neither headroom; that run's headroom
+    is not recorded, so the two are not the same measurement. #170
+    carries the discrepancy.)
   - **Module loads come out of neither**, which is what
     `ZZ_GPU_HEADROOM_GB` buys: at headroom 0 a run both pools fit in
     still dies on `Failed to get module function:
-    CUDA_ERROR_OUT_OF_MEMORY`, with the card at 31.4 GiB. Budget ~2 GiB.
+    CUDA_ERROR_OUT_OF_MEMORY`, with the card at 31.4 GiB. The bench's 3
+    is enough and 0 is not; the totals below budget ~2.
 
   So one client's floors total 12.1 + 14.3 + ~2 = **28.4 GiB** of the
   31.8 available, and a run at the bench's `ZZ_MEMORY_FRACTION=0.45`
   (where the client claims 14.3 GiB rather than its 12.1 GiB floor) peaks
   at 28.7 GiB. **Two clients need 2 × 12.1 + 14.3 + ~2 = 40.5 GiB and are
-  8.7 GiB short**: `ZZ_CLIENTS=2` aborts on `VirtualTableZisk1_n21` both
-  at fraction 0.45 (headroom 3) and at 0.54 (headroom 0). No fraction
-  rescues it — pil2's floor caps the clients' total share near 0.55, so
-  two clients can have at most ~8.8 GiB each, 3.3 GiB below the floor,
-  and that ceiling leaves the module loads nothing. **The unset default
-  is 3**, which 3 × 12.1 = 36.3 GiB puts past the whole card before pil2
-  gets any — the bench pins `ZZ_CLIENTS=1`, and every number here is from
-  one client. Two clients
-  wait either on trimming the resident set (re-upload the base constants
-  per prove, drop digest layers after the openings) or on a ~40 GB card,
-  which needs nothing.
+  8.7 GiB short.** 6.7 GiB of that is the measured floors alone
+  (2 × 12.1 + 14.3 = 38.5 against 31.8, before any headroom at all); the
+  rest is the headroom, which is estimated but cannot be zero.
+
+  The runs bear it out: `ZZ_CLIENTS=2` aborts on `VirtualTableZisk1_n21`
+  both at fraction 0.45 (headroom 3) and at 0.54 (headroom 0), and no
+  fraction rescues it — pil2's floor caps the clients' total share near
+  0.55, so two clients can have at most ~8.8 GiB each, 3.3 GiB below the
+  floor, and that ceiling leaves the module loads nothing. **The unset
+  default is 3**, which 3 × 12.1 = 36.3 GiB puts past the whole card
+  before pil2 gets any; the bench pins `ZZ_CLIENTS=1`, and every number
+  here is from one client. Two clients wait either on trimming the
+  resident set (re-upload the base constants per prove, drop digest
+  layers after the openings) or on a ~40 GB card, which needs nothing.
 - **Exports carry no debug info and no folded power tables.** XLA
   re-formats every op's source location on load (half of a 5.6 s load
   once), so the exporter strips them; and it constant-folds the coset
