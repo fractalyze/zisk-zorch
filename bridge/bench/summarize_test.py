@@ -15,27 +15,60 @@ from absl.testing import absltest
 
 from bridge.bench import summarize
 
-RESCUED = """\
+# A rescued run, with the text a real one carries. The two-line block is the
+# **default panic hook's** output, captured from this toolchain by running
+# `upload_ahead`'s panic case with the hook left in place: the hook prints at
+# panic time, before `catch_unwind` catches the unwind, so it lands in the log
+# whatever ZZ_LOG says and whatever the bridge does afterwards. An earlier
+# fixture carried only the bridge's own line, which is why it passed over a
+# log the tool still misread.
+HOOK = """\
+thread '<unnamed>' (2093326) panicked at src/lib.rs:461:35:
+PJRT error in BufferFromHostBuffer: Out of memory while trying to allocate 3.00GiB
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+"""
+
+RESCUED = (
+    HOOK
+    + """\
 [zz +  3.120] Main_n22: read-ahead upload gave way to the slot (PJRT error in \
 BufferFromHostBuffer: Out of memory while trying to allocate 3.00GiB)
 [zz +  3.400] fixed sections for Main_n22: 0.31 s under the slot, 0.00 s ahead of it
 INFO: <<< GENERATING_INNER_PROOFS (6345ms)
 Elapsed (wall clock) time (h:mm:ss or m:ss): 0:20.29
-Proof verified successfully
+Vadcop Final proof was verified
+exit=0
 """
+)
 
-ABORTED = """\
+# The same rescue with ZZ_LOG unset: the bridge logs nothing, so the hook's
+# output is the only trace of it. The run still finished.
+RESCUED_QUIET = (
+    HOOK
+    + """\
+Elapsed (wall clock) time (h:mm:ss or m:ss): 0:20.29
+Vadcop Final proof was verified
+exit=0
+"""
+)
+
+# A run the same out-of-memory actually killed.
+ABORTED = (
+    HOOK
+    + """\
 [zz +  3.120] instance 0 Main_n22 (basic): 0.50 s, of which 0.10 s waiting
-PJRT error in Event_Await: Out of memory while trying to allocate 3.00GiB
+exit=101
 """
+)
 
-# A run that died on its first prove: no instance ever finished, so nothing
-# the bridge reports per instance is in the log. The abort still has to be
-# reported — this is the shape an out-of-memory usually takes.
-ABORTED_BEFORE_ANY_INSTANCE = """\
+# Died on the first prove: no instance finished, and no exit line was ever
+# written because the harness was killed with it.
+ABORTED_BEFORE_ANY_INSTANCE = (
+    HOOK
+    + """\
 INFO: <<< INITIALIZING_PROOFMAN (8712ms)
-PJRT error in Event_Await: Out of memory while trying to allocate 3.00GiB
 """
+)
 
 
 def run(text: str) -> str:
@@ -51,10 +84,20 @@ def run(text: str) -> str:
 
 class SummarizeTest(absltest.TestCase):
     def test_a_rescued_read_ahead_upload_is_not_an_abort(self):
+        # The panic hook's message is in this log, identical to the aborted
+        # one's; only the outcome differs.
         out = run(RESCUED)
         self.assertNotIn("ABORTED", out)
         self.assertIn("read-ahead uploads sent to the slot: 1", out)
         self.assertIn("Main_n22 x1", out)
+
+    def test_a_rescue_is_recognised_with_zz_log_unset(self):
+        # No bridge line at all then — the hook's output is the only trace,
+        # and it is the same text an abort leaves.
+        out = run(RESCUED_QUIET)
+        self.assertNotIn("ABORTED", out)
+        self.assertIn("read-ahead uploads sent to the slot: 1", out)
+        self.assertIn("air not recorded", out)
 
     def test_a_real_abort_is_still_reported(self):
         self.assertIn("ABORTED: Out of memory", run(ABORTED))
