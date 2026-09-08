@@ -354,6 +354,15 @@ Facts the gate surfaced, all now handled by the bridge:
   programs ahead as well does not fit: `logup` reads `const_base` through
   the prove, so the next AIR's whole fixed set would have to live beside
   the running prove's, and every hello-world run aborted with the client
-  out of memory. Everything through commit2 is then enqueued before the
+  out of memory. What the slot still pays is the setup programs
+  themselves, and that is device time rather than the transfer this
+  read-ahead removes: `const_setup` runs 103.5 ms on Main and, with a
+  custom commit, 100.0 ms beside `custom_setup_0`'s 110.6 ms on Rom,
+  against warm `set_fixed` walls of 103 ms and 213 ms (RTX 5090, kernel
+  time per program from the `nvtx` build under `nsys`). Only 21-23 % of a
+  first `set_fixed` is the module load that #176 moves to init, so no
+  scheduling change reaches a target set at the transfer's device floor;
+  #183 tracks caching the constant tree on disk the way pil2 ships
+  `.const_tree`. Everything through commit2 is then enqueued before the
   first transcript wait (the stage-2 challenges do not depend on root1 in
   this schedule).
