@@ -296,22 +296,27 @@ pub fn copy_canonical(words: &[u64]) -> Vec<u64> {
 /// of memory however many proves queue up behind the slot.
 const FIXED_AHEAD: usize = 1;
 
-/// One client's read-ahead schedule for the base-domain fixed sections: the
-/// permit that bounds how far ahead of the running prove the next AIR's may
-/// go.
+/// One client's read-ahead schedule for the fixed sections: which AIRs' are
+/// on the device, and the permit that bounds how far ahead of the running
+/// prove the next AIR's may go.
 ///
-/// Every prove carries its own copy of these sections, resident AIR or not:
-/// they leave the client at `logup` (`driver::UploadedFixed`), so there is
-/// nothing on the device for a later prove to reuse. What residency saves is
-/// the setup programs over them, which the slot decides from
-/// `AirDriver::has_fixed`.
+/// Residency is mirrored here rather than read off the slot because the
+/// slot's lock is held for the whole of the running prove: a `try_lock`
+/// there answers "not resident" in exactly the case the read-ahead exists
+/// for, which would send every prove to re-read a key already on the card.
+/// Both writers hold the slot lock, so the mirror only ever trails by the
+/// window between a prove's glance and its own turn — and a stale glance
+/// costs a read, never a wrong proof.
 #[derive(Default)]
 struct FixedAhead {
+    resident: Mutex<std::collections::HashSet<String>>,
     permit: Arc<Pending>,
 }
 
 /// What a prove does with its AIR's fixed sections on the way to the slot.
 enum AheadPlan {
+    /// On the device already: read nothing, upload nothing.
+    Resident,
     /// Read the key and upload it before the slot — this prove holds the
     /// client's read-ahead permit until the sections are installed.
     ReadAndUpload(PendingPass),
@@ -321,7 +326,10 @@ enum AheadPlan {
 }
 
 impl FixedAhead {
-    fn plan(&self) -> AheadPlan {
+    fn plan(&self, key: &str) -> AheadPlan {
+        if self.resident.lock().unwrap_or_else(|p| p.into_inner()).contains(key) {
+            return AheadPlan::Resident;
+        }
         match self.permit.try_acquire(FIXED_AHEAD) {
             Some(pass) => AheadPlan::ReadAndUpload(pass),
             None => AheadPlan::ReadOnly,
@@ -332,8 +340,13 @@ impl FixedAhead {
     /// rather than when that prove ends, so the next prove reads its own
     /// ahead instead of waiting out a whole prove for a transfer it could
     /// have started.
-    fn installed(&self, permit: Option<PendingPass>) {
+    fn installed(&self, key: &str, permit: Option<PendingPass>) {
         drop(permit);
+        self.resident.lock().unwrap_or_else(|p| p.into_inner()).insert(key.to_string());
+    }
+
+    fn evicted(&self, key: &str) {
+        self.resident.lock().unwrap_or_else(|p| p.into_inner()).remove(key);
     }
 }
 
@@ -372,6 +385,16 @@ impl AheadFixed {
         })
     }
 
+    /// The key's words read *under* the slot, because the sections looked
+    /// resident on the way in and were evicted before this prove landed.
+    /// Nothing happened ahead, so the ahead timings stay zero: the caller's
+    /// `slot_s` is what accounts for this read.
+    fn read_under_slot(m: &manifest::Manifest, req: &OwnedRequest) -> Result<AheadFixed, Error> {
+        let mut ahead = AheadFixed::read(m, req)?;
+        ahead.read_s = 0.0;
+        Ok(ahead)
+    }
+
     /// Record a read-ahead upload's outcome, returning why it failed.
     ///
     /// On failure the permit goes back at once — nothing of this AIR's is on
@@ -396,18 +419,20 @@ impl AheadFixed {
         FixedSections {
             const_base: &self.const_base,
             custom_base: self.customs.iter().map(|(id, w)| (*id, w.as_slice())).collect(),
+            uploaded: self.uploaded.clone(),
         }
     }
 }
 
 /// Why an AIR's fixed sections went up where they did, for the `ZZ_LOG=2`
-/// trace. The two under-the-slot arms are worth keeping distinct: a prove
-/// that never held the permit and one whose own upload gave way both end up
+/// trace. Four ways in, and the arms are worth keeping distinct: a prove that
+/// never held the permit and one whose own upload gave way both end up
 /// uploading under the slot, but only the first is waiting on another AIR.
-fn ahead_trace_note(uploaded_ahead: bool, gave_way: bool) -> &'static str {
-    match (uploaded_ahead, gave_way) {
-        (true, _) => "",
-        (_, true) => " (uploaded under the slot: this prove's read-ahead upload gave way)",
+fn ahead_trace_note(uploaded_ahead: bool, looked_resident: bool, gave_way: bool) -> &'static str {
+    match (uploaded_ahead, looked_resident, gave_way) {
+        (true, _, _) => "",
+        (_, true, _) => " (all under the slot: the sections were resident when this prove looked)",
+        (_, _, true) => " (uploaded under the slot: this prove's read-ahead upload gave way)",
         _ => " (uploaded under the slot: another AIR's were already in flight)",
     }
 }
@@ -853,14 +878,16 @@ impl Bridge {
     /// Carry out a `FixedAhead` plan before this prove takes the slot, so the
     /// transfers run while the prove ahead of it still has the client. A
     /// table AIR's `const_base` is 1.2-1.4 GB out of pageable host memory,
-    /// and under the slot the client idles for it.
+    /// and under the slot the client idles for it. `None` when the sections
+    /// are already on the device and there is nothing to do.
     fn read_ahead_fixed(
         &self,
         plan: AheadPlan,
         art: &artifact::Artifact,
         req: &OwnedRequest,
-    ) -> Result<AheadFixed, Error> {
+    ) -> Result<Option<AheadFixed>, Error> {
         let permit = match plan {
+            AheadPlan::Resident => return Ok(None),
             AheadPlan::ReadAndUpload(pass) => Some(pass),
             AheadPlan::ReadOnly => None,
         };
@@ -878,7 +905,7 @@ impl Bridge {
                 }
             }
         }
-        Ok(ahead)
+        Ok(Some(ahead))
     }
 
     pub fn prove_owned(&self, req: &OwnedRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
@@ -908,8 +935,8 @@ impl Bridge {
         // residency only costs a read.
         let t = Instant::now();
         let uploaded = driver::upload_inputs(&art, &inputs)?;
-        let plan = self.fixed_ahead[slot_idx].plan();
-        let mut prefetched = self.read_ahead_fixed(plan, &art, req)?;
+        let plan = self.fixed_ahead[slot_idx].plan(&key);
+        let prefetched = self.read_ahead_fixed(plan, &art, req)?;
         let ahead = t.elapsed().as_secs_f64();
         let mut slot = self.slots[slot_idx].lock().unwrap_or_else(|p| p.into_inner());
         // No load may enter the plugin while this prove has work in flight.
@@ -932,44 +959,49 @@ impl Bridge {
             let evict = by_age.len() + 1 - self.resident_airs;
             for (_, k) in by_age.into_iter().take(evict) {
                 slot.drivers.get_mut(&k).unwrap().drop_fixed();
+                self.fixed_ahead[slot_idx].evicted(&k);
                 if self.log {
                     zzlog!("released {k}'s fixed sections");
                 }
             }
         }
         let driver = slot.drivers.get_mut(&key).unwrap();
-        let t = Instant::now();
-        let uploaded_ahead = prefetched.uploaded.is_some();
-        // This prove's own base sections, whether or not the setup programs
-        // have to run over them again: `prove` releases them at `logup`, so
-        // the client never holds a set another prove could have reused.
-        let base = match prefetched.uploaded.take() {
-            Some(up) => up,
-            None => driver::upload_fixed(&art, &prefetched.sections())?,
-        };
         if !driver.has_fixed() {
-            driver.set_fixed(&base)?;
+            let t = Instant::now();
+            let looked_resident = prefetched.is_none();
+            let mut ahead = match prefetched {
+                Some(sections) => sections,
+                None => AheadFixed::read_under_slot(&art.manifest, req)?,
+            };
+            let uploaded_ahead = ahead.uploaded.is_some();
+            driver.set_fixed(&ahead.sections())?;
+            self.fixed_ahead[slot_idx].installed(&key, ahead.permit.take());
+            let slot_s = t.elapsed().as_secs_f64();
+            if self.log {
+                // The two columns are disjoint, so a run can sum them:
+                // `slot_s` covers everything that happened here, and
+                // `read_under_slot` left the ahead timings at zero for the
+                // one arm whose read did.
+                zzlog!(
+                    "fixed sections for {key}: {slot_s:.2} s under the slot, {:.2} s ahead of it",
+                    ahead.read_s + ahead.upload_s
+                );
+            }
+            if artifact::trace_enabled() {
+                let why = ahead_trace_note(uploaded_ahead, looked_resident, ahead.gave_way);
+                zzlog!(
+                    "  fixed sections {key} ahead: {:.2} s reading the key, {:.2} s uploading{why}",
+                    ahead.read_s,
+                    ahead.upload_s,
+                );
+            }
+        } else {
+            // Resident after all — the mirror trailed an install on another
+            // prove. Drop the read-ahead's buffers, hand the permit back and
+            // re-sync the view.
+            drop(prefetched);
+            self.fixed_ahead[slot_idx].installed(&key, None);
         }
-        self.fixed_ahead[slot_idx].installed(prefetched.permit.take());
-        let slot_s = t.elapsed().as_secs_f64();
-        if self.log {
-            // The two columns are disjoint, so a run can sum them: `slot_s`
-            // covers everything that happened here and the ahead timings
-            // only what happened before the slot.
-            zzlog!(
-                "fixed sections for {key}: {slot_s:.2} s under the slot, {:.2} s ahead of it",
-                prefetched.read_s + prefetched.upload_s
-            );
-        }
-        if artifact::trace_enabled() {
-            let why = ahead_trace_note(uploaded_ahead, prefetched.gave_way);
-            zzlog!(
-                "  fixed sections {key} ahead: {:.2} s reading the key, {:.2} s uploading{why}",
-                prefetched.read_s,
-                prefetched.upload_s,
-            );
-        }
-        drop(prefetched);
         inputs.uploaded = Some(uploaded);
         if proof_out.len() != driver.proof_words() {
             return Err(format!(
@@ -1006,7 +1038,7 @@ impl Bridge {
             );
         }
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
-        let out = driver.prove(base, &inputs, &mut transcript, proof_out)?;
+        let out = driver.prove(&inputs, &mut transcript, proof_out)?;
         if self.log {
             zzlog!(
                 "instance {} {} ({}): {:.3} s, of which {:.3} s waiting for the client ({ahead:.3} s of uploads and reads done ahead)",
@@ -1257,29 +1289,29 @@ mod tests {
         // `FixedAhead::plan` is the schedule `prove_owned` follows on the way
         // to the slot, in the order it follows it.
         let client = FixedAhead::default();
-        // The first prove reads its key and uploads it while the prove ahead
-        // of it still holds the client.
-        let first = client.plan();
+        // Nothing on the device: the first prove reads its key and uploads it
+        // while the prove ahead of it still holds the client.
+        let first = client.plan("Main_n22");
         assert!(matches!(first, AheadPlan::ReadAndUpload(_)), "the first prove did not take the read-ahead");
         // A second AIR queued behind it reads, but its upload waits for the
         // slot: one key's sections beyond the running prove's, however many
         // proves queue up.
-        assert!(matches!(client.plan(), AheadPlan::ReadOnly), "a second AIR's sections went up beside the first's");
+        assert!(matches!(client.plan("Rom_n22"), AheadPlan::ReadOnly), "a second AIR's sections went up beside the first's");
 
         // The permit comes back when the sections are installed, not when
         // that prove ends — otherwise the next prove waits out a whole prove
         // for a transfer it could have started.
         let AheadPlan::ReadAndUpload(permit) = first else { unreachable!() };
-        client.installed(Some(permit));
-        // Which is also the schedule for a repeat of the AIR just proved:
-        // its base sections left the client at `logup`, so residency cannot
-        // stand in for them and every prove reads its own. Were `plan` to
-        // answer "already on the device", a repeat would reach `logup` with
-        // no `const_base`.
-        assert!(
-            matches!(client.plan(), AheadPlan::ReadAndUpload(_)),
-            "the permit did not come back at the install, or a repeat prove skipped its base sections"
-        );
+        client.installed("Main_n22", Some(permit));
+        assert!(matches!(client.plan("Rom_n22"), AheadPlan::ReadAndUpload(_)), "the permit did not come back at the install");
+
+        // An AIR whose sections are on the device reads nothing at all. This
+        // is the case a `try_lock` on the slot cannot see: the running prove
+        // holds that lock for its whole duration, so residency has to be
+        // readable without it.
+        assert!(matches!(client.plan("Main_n22"), AheadPlan::Resident), "a resident AIR re-read its key");
+        client.evicted("Main_n22");
+        assert!(!matches!(client.plan("Main_n22"), AheadPlan::Resident), "an evicted AIR still looked resident");
     }
 
     #[test]
@@ -1307,21 +1339,25 @@ mod tests {
         // A prove that never held the permit and one whose own upload gave
         // way both upload under the slot; only the first waits on another
         // AIR, and the trace has twice been caught saying otherwise.
-        assert_eq!(ahead_trace_note(true, false), "", "an upload ahead of the slot was explained at all");
+        assert_eq!(ahead_trace_note(true, false, false), "", "an upload ahead of the slot was explained at all");
         assert!(
-            ahead_trace_note(false, false).contains("another AIR's"),
+            ahead_trace_note(false, false, false).contains("another AIR's"),
             "a prove that never got the permit was not credited to the AIR ahead of it"
         );
         assert!(
-            ahead_trace_note(false, true).contains("this prove's read-ahead upload gave way"),
+            ahead_trace_note(false, false, true).contains("this prove's read-ahead upload gave way"),
             "a prove whose own upload gave way was blamed on another AIR"
+        );
+        assert!(
+            ahead_trace_note(false, true, false).contains("resident when this prove looked"),
+            "a prove that read under the slot was not told apart"
         );
     }
 
     #[test]
     fn a_failed_read_ahead_upload_hands_the_permit_back() {
         let client = FixedAhead::default();
-        let AheadPlan::ReadAndUpload(permit) = client.plan() else {
+        let AheadPlan::ReadAndUpload(permit) = client.plan("Main_n22") else {
             panic!("the first prove did not take the read-ahead")
         };
         let mut ahead = AheadFixed {
@@ -1338,17 +1374,17 @@ mod tests {
         assert!(ahead.uploaded.is_none(), "a failed upload still claimed to have uploaded");
         assert_eq!(ahead.upload_s, 0.0, "a failed upload was billed to the ahead column");
         assert_eq!(client.permit.pending(), 0, "a failed read-ahead upload kept the permit");
-        // With nothing uploaded the prove carries on: the slot uploads the
-        // same words once it is this prove's own and the card has room.
-        assert!(ahead.uploaded.is_none(), "the prove would skip its own upload under the slot");
+        // With nothing uploaded the prove carries on: `set_fixed` uploads the
+        // same words once the slot is its own and the card has room.
+        assert!(ahead.sections().uploaded.is_none());
     }
 
     #[test]
     fn the_read_ahead_permit_is_counted_per_client() {
         let (one, two) = (FixedAhead::default(), FixedAhead::default());
-        let held = one.plan();
+        let held = one.plan("Main_n22");
         assert!(matches!(held, AheadPlan::ReadAndUpload(_)));
-        assert!(matches!(two.plan(), AheadPlan::ReadAndUpload(_)), "one client's read-ahead held another's back");
+        assert!(matches!(two.plan("Main_n22"), AheadPlan::ReadAndUpload(_)), "one client's read-ahead held another's back");
         drop(held);
         assert_eq!(one.permit.pending(), 0, "the read-ahead permit leaked");
     }
