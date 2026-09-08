@@ -17,13 +17,16 @@ pub struct FixedSections<'a> {
     pub const_base: &'a [u64],
     /// commitId -> (2^nBits, width)
     pub custom_base: HashMap<usize, &'a [u64]>,
-    /// The same sections already on the device (`upload_fixed`), when the
-    /// caller could upload them while another prove had the client.
-    pub uploaded: Option<UploadedFixed>,
 }
 
-/// A key's fixed sections on the device, uploaded before the prove that
-/// needs them took the client.
+/// A key's base-domain fixed sections on the device, uploaded before the
+/// prove that needs them took the client.
+///
+/// They belong to one prove, not to the client: `const_setup` extends them
+/// and `logup` is the last program that reads them, so they go up per prove
+/// and come down before the quotient. A table AIR's `const_base` is
+/// 1.2-1.4 GB, which the resident set used to carry through the quotient
+/// and every opening for nothing.
 #[derive(Clone)]
 pub struct UploadedFixed {
     const_base: Buf,
@@ -31,13 +34,33 @@ pub struct UploadedFixed {
     custom_base: HashMap<usize, Buf>,
 }
 
-/// Upload the key's fixed sections, no more: a prove queued behind another
-/// on the same client can do this before its turn, so the slot pays only
-/// the setup programs over them. A table AIR's `const_base` is 1.2-1.4 GB
-/// read from pageable host memory, and under the slot the client idles for
-/// it. Running the setup programs ahead too does not fit — `logup` reads
-/// `const_base` through the prove, so a second AIR's sections would have to
-/// live beside the running prove's whole working set.
+impl UploadedFixed {
+    /// Bind the sections under the names `const_setup`, `witness_calc` and
+    /// `logup` read them by.
+    fn bind(&self, env: &mut Env) {
+        env.insert("const_base".into(), self.const_base.clone());
+        for (id, buf) in &self.custom_base {
+            env.insert(format!("custom_base_{id}"), buf.clone());
+        }
+    }
+
+    /// Let go of them again. The caller holds the last reference until it
+    /// drops its own `UploadedFixed`.
+    fn unbind(&self, env: &mut Env) {
+        env.remove("const_base");
+        for id in self.custom_base.keys() {
+            env.remove(&format!("custom_base_{id}"));
+        }
+    }
+}
+
+/// Upload the key's base-domain fixed sections, no more: a prove queued
+/// behind another on the same client can do this before its turn, so the
+/// slot pays only the setup programs over them. A table AIR's `const_base`
+/// is 1.2-1.4 GB read from pageable host memory, and under the slot the
+/// client idles for it. Running the setup programs ahead too does not fit
+/// — `logup` reads `const_base` through the prove, so a second AIR's
+/// sections would have to live beside the running prove's whole working set.
 pub fn upload_fixed(art: &Artifact, fixed: &FixedSections) -> Result<UploadedFixed, Error> {
     let m = &art.manifest;
     let const_base = art.upload_words(fixed.const_base, &m.program("const_setup")?.inputs[0])?;
@@ -126,6 +149,14 @@ fn push_values3(out: &mut Vec<u64>, words: &[u64], stages: &[StageOnly]) {
     }
 }
 
+/// Let go of one tree once its openings are on the wire: the extended
+/// section it was built over and every digest layer above it. Nothing later
+/// in a prove reads either.
+fn release_tree(env: &mut Env, section: &str, layers_prefix: &str) {
+    env.remove(section);
+    env.retain(|name, _| !name.starts_with(layers_prefix));
+}
+
 impl AirDriver {
     pub fn new(artifact: Arc<Artifact>) -> AirDriver {
         AirDriver { artifact, fixed: None }
@@ -149,26 +180,22 @@ impl AirDriver {
         self.fixed = None;
     }
 
-    /// Run the setup programs over the key's fixed sections, uploading them
-    /// first unless the caller already did (`upload_fixed`).
-    pub fn set_fixed(&mut self, fixed: &FixedSections) -> Result<(), Error> {
+    /// Run the setup programs over the key's base-domain fixed sections,
+    /// leaving the client holding what a later prove of the same AIR reads:
+    /// the extended constants and their tree, which cost a setup program to
+    /// rebuild. The base sections themselves stay out of the resident set —
+    /// `prove` binds them per prove and releases them at `logup`.
+    pub fn set_fixed(&mut self, base: &UploadedFixed) -> Result<(), Error> {
         let art = &self.artifact;
         let m = &art.manifest;
         let mut env = Env::new();
         art.run_into("constants", &mut env, None)?;
-        let up = match &fixed.uploaded {
-            Some(u) => u.clone(),
-            None => upload_fixed(art, fixed)?,
-        };
-        env.insert("const_base".into(), up.const_base);
+        base.bind(&mut env);
         art.run_into("const_setup", &mut env, Some(("const_setup_layers_", "const_layers_")))?;
         for cc in &m.custom_commits {
-            let buf = up
-                .custom_base
-                .get(&cc.id)
-                .ok_or_else(|| format!("set_fixed: custom commit {} was not uploaded", cc.id))?;
+            // `upload_fixed` uploads one per custom commit, so `bind` above
+            // put every section this loop reads in the environment.
             let prog = format!("custom_setup_{}", cc.id);
-            env.insert(format!("custom_base_{}", cc.id), buf.clone());
             let from = format!("{prog}_layers_");
             let to = format!("custom_layers_{}_", cc.id);
             art.run_into(&prog, &mut env, Some((&from, &to)))?;
@@ -185,6 +212,7 @@ impl AirDriver {
                 start += *size as i32;
             }
         }
+        base.unbind(&mut env);
         self.fixed = Some(env);
         Ok(())
     }
@@ -254,7 +282,17 @@ impl AirDriver {
 
     /// Prove one instance through the artifacts, writing `proof_words()`
     /// words into `proof_out`.
-    pub fn prove(&self, inp: &InstanceInputs, transcript: &mut HostTranscript, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+    ///
+    /// `base` is this prove's copy of the key's base-domain sections, taken
+    /// by value so that releasing them at `logup` really frees the device
+    /// memory rather than leaving the caller holding the last reference.
+    pub fn prove(
+        &self,
+        base: UploadedFixed,
+        inp: &InstanceInputs,
+        transcript: &mut HostTranscript,
+        proof_out: &mut [u64],
+    ) -> Result<ProveOutputs, Error> {
         let fixed = self.fixed.as_ref().ok_or("prove: set_fixed first")?;
         let art = &self.artifact;
         let m = &art.manifest;
@@ -275,6 +313,7 @@ impl AirDriver {
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
         let mut env = fixed.clone();
+        base.bind(&mut env);
         let up = match &inp.uploaded {
             Some(u) => Uploaded { trace: u.trace.clone(), publics: u.publics.clone(), airvalues: u.airvalues.clone(), proofvalues: u.proofvalues.clone() },
             None => upload_inputs(art, inp)?,
@@ -299,11 +338,13 @@ impl AirDriver {
         }
         art.run_into("commit1", &mut env, None)?;
         art.run_into("logup", &mut env, None)?;
-        // Nothing after logup reads the base trace, and nothing after
-        // commit2 the base cm2: a gigabyte or more each on a wide AIR,
-        // released before the quotient's peak (the plugin defers the free
-        // until the enqueued work is done).
+        // Nothing after logup reads the base trace or the key's base-domain
+        // sections, and nothing after commit2 the base cm2: a gigabyte or
+        // more each on a wide AIR, released before the quotient's peak (the
+        // plugin defers the free until the enqueued work is done).
         env.remove("trace");
+        base.unbind(&mut env);
+        drop(base);
         art.run_into("commit2", &mut env, None)?;
         env.remove("cm2");
         let mut result = ProveOutputs::default();
@@ -417,22 +458,33 @@ impl AirDriver {
             proof.extend(t.paths);
             proof.extend(t.last_level);
         };
+        // The key's trees are opened from the resident set, so they stay:
+        // the next prove of this AIR reads them and a setup program is what
+        // it costs to rebuild them. The stage trees are this prove's own,
+        // and each is released as its openings reach the wire — otherwise a
+        // wide AIR carries `cm1_ext` and its digest layers through every
+        // later opening, beside the next prove's uploads.
         push_tree(&mut proof, self.open_tree("const", m.n_constants, nbe, &env, &pos_ext)?);
         for cc in &m.custom_commits {
             push_tree(&mut proof, self.open_tree(&format!("custom_{}", cc.id), cc.width, nbe, &env, &pos_ext)?);
         }
         push_tree(&mut proof, self.open_tree("cm1", m.widths.cm1, nbe, &env, &pos_ext)?);
+        release_tree(&mut env, "cm1_ext", "cm1_layers_");
         push_tree(&mut proof, self.open_tree("cm2", m.widths.cm2, nbe, &env, &pos_ext)?);
+        release_tree(&mut env, "cm2_ext", "cm2_layers_");
         push_tree(&mut proof, self.open_tree("qsec", m.widths.qsec, nbe, &env, &pos_ext)?);
+        release_tree(&mut env, "qsec", "qsec_layers_");
         proof.extend(fri_roots);
-        for (i, layer) in fri_layers.iter().enumerate() {
+        // `into_iter`: each round's leaves and layers go at the end of its
+        // own iteration, not at the end of the prove.
+        for (i, layer) in fri_layers.into_iter().enumerate() {
             let leaf_bits = m.steps[i + 1];
             let n_x = 1usize << (m.steps[i] - leaf_bits);
             let mask = (1u64 << leaf_bits) - 1;
             let folded: Vec<u64> = positions.iter().map(|p| p & mask).collect();
             let name = format!("fri_{i}");
             let pos = art.upload_words(&folded, &in_spec(&format!("open_{name}"), "positions")?)?;
-            push_tree(&mut proof, self.open_tree(&name, n_x * 3, leaf_bits, layer, &pos)?);
+            push_tree(&mut proof, self.open_tree(&name, n_x * 3, leaf_bits, &layer, &pos)?);
         }
         proof.extend(final_pol);
         proof.push(result.nonce);

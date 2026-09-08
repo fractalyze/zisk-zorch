@@ -78,7 +78,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
 | `ZZ_PRELOAD_THREADS` | AIRs loading at once | 6 |
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
-| `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
+| `ZZ_RESIDENT_AIRS` | AIRs whose extended constants and constant tree stay on a client at once, least recently used evicted (the base sections are per prove) | 1 |
 | `ZZ_HOST_THREADS` | threads for the host-side copies and key reads | half the cores, at most 8 |
 | `ZZ_COMPILE_CACHE` | directory of serialized executables | `$ZZ_ARTIFACTS/.pjrt-cache` |
 | `ZZ_LOG` | `1` per-instance timing on stderr, `2` per program; lines carry the seconds since bridge-up | off |
@@ -172,9 +172,11 @@ separate the legs, both already named in #170:
   under the slot, so a full card costs it the head start rather than the
   run), and
   a larger share (`ZZ_MEMORY_FRACTION=0.55`) leaves pil2 13.3 GB, below
-  the minimum it will start with. The lever is the resident-set trim
-  (drop digest layers after the openings, re-upload base constants per
-  prove) so that two or three families fit beside a prove's working set.
+  the minimum it will start with. The resident-set trim was the candidate
+  lever and has since been measured: it buys under a third of what a
+  second resident family needs ("Memory budget" below), because what binds
+  is a program's own working set, not what the client keeps between
+  proves.
 
 Reproduce with the scripts in [`../bridge/bench/`](../bridge/bench/):
 `mk_input.py 14000 in.bin` for the guest's input (a ZiskStdin frame of a
@@ -350,9 +352,48 @@ Facts the gate surfaced, all now handled by the bridge:
   floor, and that ceiling leaves the module loads nothing. **The unset
   default is 3**, which 3 × 12.1 = 36.3 GiB puts past the whole card
   before pil2 gets any; the bench pins `ZZ_CLIENTS=1`, and every number
-  here is from one client. Two clients wait either on trimming the
-  resident set (re-upload the base constants per prove, drop digest
-  layers after the openings) or on a ~40 GB card, which needs nothing.
+  here is from one client.
+
+- **The resident-set trim does not move that floor** (#188). A client now
+  keeps only what a later prove of the same AIR reads and a setup program
+  is what it costs to rebuild — the extended constants and their tree. The
+  base constants and the custom commits' base sections go up per prove and
+  are released at `logup`, the last program that reads them, and each stage
+  tree is released as its openings reach the wire. Re-walking the fraction
+  with and without it, one client, headroom 3, a pass being all 11 proofs
+  and a verified final proof:
+
+  | `ZZ_MEMORY_FRACTION` | the client's share | before | after |
+  |---|---|---|---|
+  | 0.45 | 14.3 GiB | 4/4 | 5/5 |
+  | 0.39 | 12.4 GiB | 7/7 | 7/10 |
+  | 0.38 | 12.1 GiB | 0/4 | 4/7 |
+  | 0.37 | 11.8 GiB | 0/4 | 2/4 |
+  | 0.36 | 11.5 GiB | 0/1 | 0/1 |
+
+  The fraction every run survives is 0.39 either way; below it the trim
+  turns "never" into "sometimes" and no lower, which is worth 0.3–0.6 GiB
+  against the 3.6 GiB a second client needs. It costs no leg time
+  (6.08 / 6.08 s against 6.16 / 6.13 s, second and third of three
+  consecutive runs each) and the 11 proofs stay byte-identical to native's.
+  Run the repeats: a fraction at the boundary is a race between the
+  read-ahead's upload and the running prove's peak, which is why the
+  before column puts the floor one step above the 0.38 a single run found
+  in #177.
+
+  What binds is named by the aborts, and it is the same block before and
+  after: one allocation twice the size of an extended section, the extend's
+  input and output alive at once inside a single program — 5.50 GiB for
+  `const_setup` on `VirtualTableZisk0_n21` (2 × its 2.75 GiB `const_ext`),
+  4.56 GiB for `VirtualTableZisk1_n21`, 4.88 GiB for `commit1` on
+  `Binary_n22` (2 × its 2.44 GiB `cm1_ext`). None of it is what the client
+  keeps between proves, and `const_base` is the *input* to the largest of
+  them, so releasing it after `logup` cannot reach it. With the trim in,
+  `ZZ_CLIENTS=2` still fails 0/3 at fraction 0.45 (headroom 3) and 0/3 at
+  0.54 (headroom 0), on that same `const_setup` block; the 8.7 GiB
+  shortfall above stands. Two clients wait on an extend that does not hold
+  both its input and its output — an exporter change, not a residency one
+  — or on a ~40 GB card, which needs nothing.
 - **Exports carry no debug info and no folded power tables.** XLA
   re-formats every op's source location on load (half of a 5.6 s load
   once), so the exporter strips them; and it constant-folds the coset
@@ -403,11 +444,14 @@ Facts the gate surfaced, all now handled by the bridge:
   the running prove's at a time (a per-client permit, taken at the read
   and handed on when they are installed), so the read-ahead costs the
   card one key's worth of memory however many proves queue up; a prove
-  that finds the permit taken uploads under the slot. Running the setup
-  programs ahead as well does not fit: `logup` reads `const_base` through
-  the prove, so the next AIR's whole fixed set would have to live beside
-  the running prove's, and every hello-world run aborted with the client
-  out of memory. What the slot still pays is the setup programs
+  that finds the permit taken uploads under the slot. Every prove reads
+  and uploads its own, a repeat of the AIR just proved included: the base
+  sections leave the client at `logup`, so residency has nothing of theirs
+  to reuse. What residency saves is the setup programs over them. Running
+  those ahead as well does not fit: `logup` reads `const_base` through the
+  prove, so the next AIR's whole fixed set would have to live beside the
+  running prove's, and every hello-world run aborted with the client out
+  of memory. What the slot still pays is the setup programs
   themselves, and that is device time rather than the transfer this
   read-ahead removes: `const_setup` runs 103.5 ms on Main and, with a
   custom commit, 100.0 ms beside `custom_setup_0`'s 110.6 ms on Rom,

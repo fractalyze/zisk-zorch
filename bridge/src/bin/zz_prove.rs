@@ -133,11 +133,19 @@ fn main() {
     let fixed = FixedSections {
         const_base: &const_base,
         custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect::<HashMap<_, _>>(),
-        uploaded: None,
     };
-    let mut driver = AirDriver::new(std::sync::Arc::new(art));
+    let art = std::sync::Arc::new(art);
+    // The base sections belong to one prove, so every prove below uploads its
+    // own — the same per-prove cost the bridge pays.
+    let upload_base = || {
+        let t = Instant::now();
+        let base = zisk_zorch_bridge::driver::upload_fixed(&art, &fixed).unwrap();
+        (base, t.elapsed().as_secs_f64())
+    };
+    let mut driver = AirDriver::new(art.clone());
     let t = Instant::now();
-    driver.set_fixed(&fixed).unwrap();
+    let (base, _) = upload_base();
+    driver.set_fixed(&base).unwrap();
     eprintln!("fixed sections in {:.2} s", t.elapsed().as_secs_f64());
 
     let trace = words(&case.join("trace.bin"));
@@ -156,13 +164,14 @@ fn main() {
     let mut proof = vec![0u64; driver.proof_words()];
     let t = Instant::now();
     let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-    let out = driver.prove(&inputs, &mut transcript, &mut proof).unwrap();
+    let out = driver.prove(base, &inputs, &mut transcript, &mut proof).unwrap();
     eprintln!("proved in {:.3} s (nonce {})", t.elapsed().as_secs_f64(), out.nonce);
     for _ in 0..repeat {
+        let (base, upload_s) = upload_base();
         let t = Instant::now();
         let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-        driver.prove(&inputs, &mut transcript, &mut proof).unwrap();
-        eprintln!("warm prove {:.3} s", t.elapsed().as_secs_f64());
+        driver.prove(base, &inputs, &mut transcript, &mut proof).unwrap();
+        eprintln!("warm prove {:.3} s ({upload_s:.3} s of it the base sections)", t.elapsed().as_secs_f64());
     }
 
     let expected_path = case.join("expected_proof.bin");
