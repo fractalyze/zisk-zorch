@@ -126,6 +126,14 @@ fn push_values3(out: &mut Vec<u64>, words: &[u64], stages: &[StageOnly]) {
     }
 }
 
+/// Let go of one tree once its openings are on the wire: the extended
+/// section it was built over and every digest layer above it. Nothing later
+/// in a prove reads either.
+fn release_tree(env: &mut Env, section: &str, layers_prefix: &str) {
+    env.remove(section);
+    env.retain(|name, _| !name.starts_with(layers_prefix));
+}
+
 impl AirDriver {
     pub fn new(artifact: Arc<Artifact>) -> AirDriver {
         AirDriver { artifact, fixed: None }
@@ -417,22 +425,33 @@ impl AirDriver {
             proof.extend(t.paths);
             proof.extend(t.last_level);
         };
+        // The key's trees belong to the resident set and stay: the next prove
+        // of this AIR reads them and a setup program is what it costs to
+        // rebuild them. The stage trees are this prove's own, and each goes
+        // as its openings reach the wire — otherwise a wide AIR carries
+        // `cm1_ext` and its digest layers through every later opening,
+        // beside the next prove's uploads.
         push_tree(&mut proof, self.open_tree("const", m.n_constants, nbe, &env, &pos_ext)?);
         for cc in &m.custom_commits {
             push_tree(&mut proof, self.open_tree(&format!("custom_{}", cc.id), cc.width, nbe, &env, &pos_ext)?);
         }
         push_tree(&mut proof, self.open_tree("cm1", m.widths.cm1, nbe, &env, &pos_ext)?);
+        release_tree(&mut env, "cm1_ext", "cm1_layers_");
         push_tree(&mut proof, self.open_tree("cm2", m.widths.cm2, nbe, &env, &pos_ext)?);
+        release_tree(&mut env, "cm2_ext", "cm2_layers_");
         push_tree(&mut proof, self.open_tree("qsec", m.widths.qsec, nbe, &env, &pos_ext)?);
+        release_tree(&mut env, "qsec", "qsec_layers_");
         proof.extend(fri_roots);
-        for (i, layer) in fri_layers.iter().enumerate() {
+        // `into_iter`: each round's leaves and layers go at the end of its
+        // own iteration, not at the end of the prove.
+        for (i, layer) in fri_layers.into_iter().enumerate() {
             let leaf_bits = m.steps[i + 1];
             let n_x = 1usize << (m.steps[i] - leaf_bits);
             let mask = (1u64 << leaf_bits) - 1;
             let folded: Vec<u64> = positions.iter().map(|p| p & mask).collect();
             let name = format!("fri_{i}");
             let pos = art.upload_words(&folded, &in_spec(&format!("open_{name}"), "positions")?)?;
-            push_tree(&mut proof, self.open_tree(&name, n_x * 3, leaf_bits, layer, &pos)?);
+            push_tree(&mut proof, self.open_tree(&name, n_x * 3, leaf_bits, &layer, &pos)?);
         }
         proof.extend(final_pol);
         proof.push(result.nonce);

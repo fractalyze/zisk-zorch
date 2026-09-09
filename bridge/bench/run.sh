@@ -8,6 +8,8 @@
 #   ZZ_ARTIFACTS, XLA_PJRT_PLUGIN           for the bridge
 # Optional: ZISK_IN (the input file, for a guest that reads one — the go
 # hello-world guest does not), ZZ_RUNS (output root, default ./zz-runs),
+# ZZ_MEMORY_FRACTION (default 0.45; set it to the empty string to let the
+# clients allocate on demand rather than claim a share up front),
 # ZISK_PROVE_FLAGS (default "-a -u": the ASM emulator, mapped memory
 # unlocked; set it to the empty string for a host without the ASM
 # emulator built, which is what the hello-world guest runs on).
@@ -16,7 +18,10 @@ TAG=$1; MODE=$2; shift 2
 OUT=${ZZ_RUNS:-./zz-runs}/$TAG
 rm -rf "$OUT"; mkdir -p "$OUT/dumps"
 if [ "$MODE" = bridge ]; then
-  export ZZ_ARTIFACTS ZZ_CLIENTS=${ZZ_CLIENTS:-1} ZZ_MEMORY_FRACTION=${ZZ_MEMORY_FRACTION:-0.45} \
+  # `-` not `:-` for the fraction: an explicitly empty ZZ_MEMORY_FRACTION is
+  # how the bridge is told to allocate on demand instead of claiming a share
+  # up front, which is the only way to see a client's true working set.
+  export ZZ_ARTIFACTS ZZ_CLIENTS=${ZZ_CLIENTS:-1} ZZ_MEMORY_FRACTION=${ZZ_MEMORY_FRACTION-0.45} \
          ZZ_GPU_HEADROOM_GB=${ZZ_GPU_HEADROOM_GB:-3} ZZ_LOG=${ZZ_LOG:-2}
 else
   unset ZZ_ARTIFACTS
