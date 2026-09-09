@@ -13,6 +13,18 @@ with no kernel of that side running:
 It is an upper bound, not an exact attribution: a transfer that runs in a gap
 the client would have idled through anyway (a host-side unpack, an executable
 load) counts against it. Read it as "uploads are worth at most this much".
+Two lines say how loose the bound is on a given capture. The critical path is
+split at the leg — an upload before the side's first kernel had no kernel to
+hide behind and belongs to no leg — and `idle_gaps` reports how long the
+side's device had already been idle when each copy started. A copy that
+starts into an idle device overlaps nothing because there was nothing to
+overlap with, which is a different finding from a copy the runtime refused to
+overlap, and only the second is worth chasing on the upload path.
+
+Each side's uploads are also intersected with the *other* prover's kernels.
+That number is the control: it is what the card does when the ordering
+constraint does not apply, so a zero beside a non-zero says the hardware was
+willing and the runtime was not.
 
 A bridged run has two provers on one card, so the two are reported apart.
 XLA writes a fusion's name with no argument list (`loop_add_fusion`,
@@ -41,6 +53,7 @@ import collections
 import csv
 import pathlib
 import re
+import statistics
 import sys
 import typing
 
@@ -108,6 +121,25 @@ class Upload(typing.NamedTuple):
     n_bytes: int
     kind: str
     stream: str
+
+
+def idle_gaps(uploads: list[Upload], kernels: list[Span]) -> list[int]:
+    """Per copy, how long this side's device had been idle when the copy
+    started: zero if one of the side's kernels was running, otherwise the
+    time since the last one ended. `kernels` must be a merged cover, so the
+    one span that could still be running at time t is the last that started
+    at or before it. Copies before the side's first kernel have no "since"
+    and are left out."""
+    starts = [start for start, _ in kernels]
+    gaps: list[int] = []
+    for up in uploads:
+        began = up.span[0]
+        i = bisect.bisect_right(starts, began)
+        if i == 0:
+            continue
+        end = kernels[i - 1][1]
+        gaps.append(0 if began < end else began - end)
+    return gaps
 
 
 class Capture:
@@ -181,8 +213,51 @@ def bandwidth(n_bytes: int, ns: int) -> str:
     return f"{n_bytes / ns:5.1f} GB/s" if ns else "    -     "
 
 
+def report_leg(merged: list[Span], kernels: list[Span]) -> None:
+    """Where the critical path fell relative to the leg. The share needs the
+    same window top and bottom: an upload before the side's first kernel is
+    time no kernel of that side could have hidden, and belongs to no leg, so
+    counting it against the leg's length overstates the share."""
+    first, last = kernels[0][0], kernels[-1][1]
+    in_leg = overlap(merged, [(first, last)]) - overlap(merged, kernels)
+    early = covered([(s, min(e, first)) for s, e in merged if s < first])
+    late = covered([(max(s, last), e) for s, e in merged if e > last])
+    print(
+        f"          {in_leg / 1e9:5.2f} s of that fell inside the leg"
+        f" ({in_leg / (last - first) * 100:.0f} % of it)"
+    )
+    print(
+        f"          {early / 1e9:5.2f} s ran before the leg's first kernel and"
+        f" {late / 1e9:5.2f} s after its last"
+    )
+
+
+def report_idle(uploads: list[Upload], kernels: list[Span]) -> None:
+    """How long the side's own device had been idle when each copy started.
+    An upload that overlaps nothing is not the same claim as an upload that
+    had nothing to overlap with, and this line is what tells them apart."""
+    gaps = [g / 1e6 for g in idle_gaps(uploads, kernels)]
+    if len(gaps) < 2:
+        return
+    waited = [g for g in gaps if g > 1]
+    print(
+        f"          {len(waited):5d} of {len(gaps)} copies"
+        f" ({len(waited) / len(gaps) * 100:.0f} %) started more than 1 ms"
+        f" after the last kernel ended"
+    )
+    print(
+        f"          idle before a copy: median {statistics.median(gaps):6.2f} ms,"
+        f" p90 {statistics.quantiles(gaps, n=10)[8]:6.2f} ms,"
+        f" max {max(gaps):7.2f} ms"
+    )
+
+
 def report_side(
-    side: str, kernels: list[Span], uploads: list[Upload], top: int
+    side: str,
+    kernels: list[Span],
+    uploads: list[Upload],
+    other_kernels: list[Span],
+    top: int,
 ) -> None:
     if not kernels and not uploads:
         return
@@ -202,22 +277,14 @@ def report_side(
         f"          uploads {len(uploads):5d} copies, {n_bytes / 1e9:6.2f} GB"
         f" in {spent / 1e9:5.2f} s at {bandwidth(n_bytes, spent)}"
     )
-    share = f", {(spent - hidden) / leg * 100:.0f} % of the leg" if leg else ""
     print(
-        f"          {(spent - hidden) / 1e9:5.2f} s on the critical path{share};"
-        f" {hidden / 1e9:5.2f} s overlapped"
+        f"          {(spent - hidden) / 1e9:5.2f} s on the critical path;"
+        f" {hidden / 1e9:5.2f} s overlapped by its own kernels,"
+        f" {overlap(merged, other_kernels) / 1e9:5.2f} s by the other prover's"
     )
-    # The first instance's upload has no kernel of its own to hide behind,
-    # so it is exposed by construction; the rest could have overlapped and
-    # did not.
     if kernels:
-        first = kernels[0][0]
-        early = covered([(s, min(e, first)) for s, e in merged if s < first])
-        if early / 1e9 >= 0.005:
-            print(
-                f"          {early / 1e9:5.2f} s of that ran before the"
-                f" leg's first kernel"
-            )
+        report_leg(merged, kernels)
+        report_idle(uploads, kernels)
     by_kind: dict[str, list[Upload]] = collections.defaultdict(list)
     for u in uploads:
         by_kind[u.kind].append(u)
@@ -250,9 +317,10 @@ def report(path: pathlib.Path, top: int) -> None:
     ]
     span = max(e for _, e in every) - min(s for s, _ in every)
     print(f"## {path}  {span / 1e9:.2f} s of timeline")
-    for side in (BRIDGE, PIL2):
+    merged_kernels = {side: merge(spans) for side, spans in cap.kernels.items()}
+    for side, other in ((BRIDGE, PIL2), (PIL2, BRIDGE)):
         uploads = [u for u in cap.uploads if owners.get(u.stream) == side]
-        report_side(side, merge(cap.kernels[side]), uploads, top)
+        report_side(side, merged_kernels[side], uploads, merged_kernels[other], top)
     # A stream resolves unless no kernel starts after any of its copies —
     # a capture cut short, or one with no kernels at all. Those bytes
     # belong to neither side above, so say so rather than dropping them

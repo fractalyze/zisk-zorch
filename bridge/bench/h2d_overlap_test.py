@@ -43,6 +43,26 @@ class IntervalsTest(parameterized.TestCase):
         self.assertEqual(h2d_overlap.overlap(uploads, kernels), 7)
 
     @parameterized.named_parameters(
+        # A copy inside a kernel waited for nothing; one after it waited
+        # from that kernel's end, not from the previous gap.
+        ("during_a_kernel", 5, 0),
+        ("right_after_one", 10, 0),
+        ("into_the_gap", 17, 7),
+        ("after_the_second", 30, 5),
+    )
+    def test_idle_gaps_measures_from_the_last_kernel_end(self, began, want):
+        uploads = [h2d_overlap.Upload((began, began + 1), 0, "Pageable", "9")]
+        kernels = [(0, 10), (20, 25)]
+        self.assertEqual(h2d_overlap.idle_gaps(uploads, kernels), [want])
+
+    def test_idle_gaps_skips_copies_before_the_first_kernel(self):
+        # There is no "since the device went idle" before the device has
+        # ever been busy, and counting one as a zero would flatter the
+        # distribution.
+        uploads = [h2d_overlap.Upload((s, s + 1), 0, "Pageable", "9") for s in (1, 12)]
+        self.assertEqual(h2d_overlap.idle_gaps(uploads, [(5, 10)]), [2])
+
+    @parameterized.named_parameters(
         ("nanoseconds", "Start (ns)", 1),
         ("microseconds", "Start (µs)", 1_000),
         ("seconds", "Start (s)", 1_000_000_000),
@@ -126,6 +146,21 @@ class CaptureTest(absltest.TestCase):
             )
             self.assertEqual(h2d_overlap.overlap(uploads, kernels), 0, side)
 
+    def test_the_bridge_uploads_before_its_own_first_kernel(self):
+        # 256 ns of copy 1.01 ms ahead of the bridge's first kernel. Small,
+        # but not nothing: a report that hides a clip this size below a
+        # floor tells the reader the window opens on a kernel when it does
+        # not.
+        kernels = h2d_overlap.merge(self.capture.kernels[h2d_overlap.BRIDGE])
+        uploads = h2d_overlap.merge(
+            [u.span for u in self.capture.uploads if self.owners[u.stream] == "bridge"]
+        )
+        first = kernels[0][0]
+        self.assertEqual(
+            h2d_overlap.covered([(s, min(e, first)) for s, e in uploads if s < first]),
+            256,
+        )
+
     def test_bridge_upload_time_is_all_on_the_critical_path(self):
         kernels = h2d_overlap.merge(self.capture.kernels[h2d_overlap.BRIDGE])
         uploads = h2d_overlap.merge(
@@ -164,10 +199,12 @@ class ReportTest(absltest.TestCase):
         lines = "\n".join(self.report(CAPTURE))
         self.assertIn("bridge leg  0.18 s, kernels busy  0.06 s over 323 spans", lines)
         self.assertIn("uploads    79 copies,   1.44 GB in  0.07 s at  19.5 GB/s", lines)
-        # The headline: exposed time, its share of the leg, and the zero.
+        # The headline: exposed time and the zero it is all exposed against.
         self.assertIn(
-            "0.07 s on the critical path, 40 % of the leg;  0.00 s overlapped", lines
+            "0.07 s on the critical path;  0.00 s overlapped by its own kernels",
+            lines,
         )
+        self.assertIn("0.07 s of that fell inside the leg (40 % of it)", lines)
         self.assertIn(
             "from Pageable     48 copies,   1.31 GB in  0.07 s at  18.4 GB/s", lines
         )
@@ -175,12 +212,47 @@ class ReportTest(absltest.TestCase):
             "from Pinned       31 copies,   0.13 GB in  0.00 s at  44.1 GB/s", lines
         )
 
-    def test_the_clip_before_the_first_kernel_is_printed_only_where_there_is_one(self):
+    def test_the_share_is_of_the_leg_the_exposure_is_measured_in(self):
+        # The numerator and the leg have to be the same window. Every one of
+        # pil2's copies runs before its first kernel, so none of its 0.02 s
+        # critical path is in its leg; dividing the whole of it by that leg
+        # would print 56 % of a leg the copies never touch.
+        shares = [
+            line for line in self.report(CAPTURE) if "fell inside the leg" in line
+        ]
+        self.assertLen(shares, 2)
+        self.assertIn("0.00 s of that fell inside the leg (0 % of it)", shares[1])
+
+    def test_the_time_outside_the_leg_is_printed_for_both_sides(self):
+        # No floor on either half, so the two account for the whole of the
+        # critical path that no leg contains.
+        outside = [line for line in self.report(CAPTURE) if "before the leg" in line]
+        self.assertLen(outside, 2)
+        self.assertEndsWith(
+            outside[0],
+            "0.00 s ran before the leg's first kernel and  0.00 s after" " its last",
+        )
+        self.assertIn("0.02 s ran before the leg's first kernel", outside[1])
+
+    def test_each_side_is_measured_against_the_other_provers_kernels_too(self):
+        # The control for the zero above: the card runs copy and compute
+        # together when the two belong to different clients, so pil2's
+        # copies do overlap the bridge's kernels in this same window.
         lines = self.report(CAPTURE)
-        early = [line for line in lines if "before the" in line]
-        # pil2's window opens on a transfer; the bridge's opens on a kernel.
-        self.assertLen(early, 1)
-        self.assertIn("0.02 s of that ran before the leg's first kernel", early[0])
+        cross = [line for line in lines if "by the other prover's" in line]
+        self.assertLen(cross, 2)
+        self.assertEndsWith(cross[0], "0.00 s by the other prover's")
+        self.assertEndsWith(cross[1], "0.01 s by the other prover's")
+
+    def test_the_idle_before_each_copy_is_reported(self):
+        lines = "\n".join(self.report(CAPTURE))
+        # 78 of the bridge's 79 copies have a preceding kernel; over half
+        # start into a device that has been idle more than a millisecond.
+        self.assertIn("44 of 78 copies (56 %) started more than 1 ms", lines)
+        self.assertIn(
+            "idle before a copy: median   1.18 ms, p90  14.23 ms, max   17.88 ms",
+            lines,
+        )
 
     def test_top_bounds_the_largest_line(self):
         largest = [line for line in self.report(CAPTURE, top=2) if "largest:" in line]
