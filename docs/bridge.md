@@ -336,10 +336,11 @@ was measured this way, adding `ZZ_MEMORY_FRACTION` and
 ### Bridge start-up (2026-09-09, post-#176)
 
 The bridge's start is hidden inside proofman's init with time to spare.
-`ZZ_LOG` timestamps a run against that start: the client is up at
-+0.19 s, `INITIALIZING_PROOFMAN` runs from there to +3.44 s, and the whole
-preload — 11 AIRs, 380 programs out of the cache — is done at +1.03 s,
-leaving about 2.4 s of init it does not use. What is left beside native is
+`ZZ_LOG` timestamps a run against that start, and over seven runs the
+shape holds: the client is up at 0.17–0.19 s, `INITIALIZING_PROOFMAN` runs
+from there to 3.40–3.44 s, and the whole preload — 11 AIRs, 380 programs
+out of the cache — is done at 1.03–1.07 s. Every run leaves at least 2.3 s
+of init the preload does not use. What is left beside native is
 0.07–0.26 s on proofman's own timer, or 0.26–0.45 s counting the client
 creation that precedes it.
 
