@@ -39,10 +39,24 @@ thread_local! {
     static DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Every name this thread pushed. Without the feature there is no
+    /// profiler to read the names back from, and the `host/` prefix is a
+    /// contract two bench scripts key on — `host_idle.py` finds phases by
+    /// it and `nvtx_programs.py` excludes them by it — so a test build
+    /// records what was pushed and the tests below assert on that rather
+    /// than on a literal.
+    static PUSHED: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 impl Range {
     pub fn push(name: &str) -> Range {
         #[cfg(any(feature = "nvtx", test))]
         DEPTH.with(|d| d.set(d.get() + 1));
+        #[cfg(test)]
+        PUSHED.with(|p| p.borrow_mut().push(name.to_string()));
         #[cfg(feature = "nvtx")]
         {
             // NVTX copies the message out of the call, so a temporary buffer
@@ -52,8 +66,9 @@ impl Range {
             message.push(0);
             unsafe { nvtxRangePushA(message.as_ptr().cast()) };
         }
-        // Nothing reads the name without the feature; the ranges are inert.
-        #[cfg(not(feature = "nvtx"))]
+        // Nothing reads the name in a build with neither the feature nor
+        // the tests; the ranges are inert.
+        #[cfg(not(any(feature = "nvtx", test)))]
         let _ = name;
         Range(())
     }
@@ -61,7 +76,7 @@ impl Range {
     /// A range for one of the bridge's host phases, under the `host/` prefix
     /// the bench scripts key on.
     pub fn host(name: &str) -> Range {
-        #[cfg(feature = "nvtx")]
+        #[cfg(any(feature = "nvtx", test))]
         let name = &format!("{HOST}{name}");
         Range::push(name)
     }
@@ -107,6 +122,12 @@ mod tests {
         DEPTH.with(|d| d.get())
     }
 
+    /// The names this thread pushed. Each `#[test]` runs on a thread of its
+    /// own, so the log starts empty.
+    fn pushed() -> Vec<String> {
+        PUSHED.with(|p| p.borrow().clone())
+    }
+
     #[test]
     fn a_phase_replaces_its_predecessor_rather_than_nesting_inside_it() {
         assert_eq!(depth(), 0);
@@ -131,7 +152,22 @@ mod tests {
     }
 
     #[test]
-    fn host_ranges_carry_the_prefix_the_bench_scripts_key_on() {
-        assert_eq!(HOST, "host/");
+    fn a_phase_is_pushed_under_the_prefix_the_bench_scripts_key_on() {
+        // Not an assertion about `HOST` — about what actually reaches NVTX.
+        // `host_idle.py` finds phases by this prefix and `nvtx_programs.py`
+        // excludes them by it, so dropping the prefixing would silently make
+        // the first find nothing and the second double-count every kernel.
+        let mut phase = Phase::start("take/trace");
+        phase.set("fixed_install");
+        drop(phase);
+        assert_eq!(pushed(), ["host/take/trace", "host/fixed_install"]);
+    }
+
+    #[test]
+    fn a_program_range_is_pushed_under_its_bare_name() {
+        // The other half of the same contract: `nvtx_programs.py` counts
+        // these, so a stray prefix here would empty its table.
+        let _r = Range::push("commit1");
+        assert_eq!(pushed(), ["commit1"]);
     }
 }

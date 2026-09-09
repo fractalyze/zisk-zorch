@@ -187,7 +187,8 @@ context, and `ZZ_RESIDENT_AIRS` only drops device buffers. So this cost
 scales with how many *families* a workload touches, and a guest whose
 instances are all distinct AIRs — hello-world — is its worst case and a bad
 place to size it from. Per-load cost is not constant either (~4.2 ms on
-hello-world against ~5.5 ms on the block-shaped mix), so scaling by program
+hello-world against ~5.5 ms on the block-shaped mix, over the calls that
+contributed idle — not over every load made), so scaling by program
 count alone under-predicts.
 
 Cross-check any figure this produces against `ZZ_LOG=2`, which prints each

@@ -143,6 +143,35 @@ class AttributionTest(absltest.TestCase):
         self.assertEqual(s.holding["host/prove"], 700)
 
 
+class SeveralClientsTest(absltest.TestCase):
+    """`ZZ_CLIENTS` defaults to 3, and the exact split assumes one."""
+
+    def test_overlapping_turns_do_not_make_the_free_time_negative(self):
+        # Two threads holding different slot mutexes at once. Both charge the
+        # same idle nanoseconds, so the phase shares sum to more than the
+        # idle; the union is what "client held" must report, or "client free"
+        # prints negative with nothing flagging it.
+        rows = [
+            phase("host/slot_wait", 0, 100),
+            phase("host/prove", 100, 500),
+            phase("host/slot_wait", 0, 100, tid=QUEUED),
+            phase("host/prove", 100, 500, tid=QUEUED),
+        ]
+        idle = [(100, 500)]
+        s = host_idle.shares(rows, idle)
+        by_tid = host_idle.turns(rows)
+        inside = host_idle.covered(
+            host_idle.intersect(
+                idle,
+                host_idle.merge([sp for spans in by_tid.values() for sp in spans]),
+            )
+        )
+        # Charged twice over, but the union is the real occupied time.
+        self.assertEqual(sum(s.holding.values()), 800)
+        self.assertEqual(inside, 400)
+        self.assertGreaterEqual(host_idle.covered(idle) - inside, 0)
+
+
 class DriverCallTest(absltest.TestCase):
     """The second cut of the same idle: what the driver was doing."""
 
@@ -158,6 +187,20 @@ class DriverCallTest(absltest.TestCase):
         self.assertEqual(idle["cuModuleLoadFatBinary"], 300)
         # The count divides the idle beside it, so it counts the same calls.
         self.assertEqual(calls["cuModuleLoadFatBinary"], 1)
+
+    def test_a_call_that_contributed_no_idle_is_not_counted_either(self):
+        # The report divides the ns by this count, so the two have to be of
+        # the same population. A holder's `cuEventRecord` issued during
+        # `host/upload_inputs`, before it took the slot, contributes no idle
+        # — counting it would deflate the per-call cost it is quoted as.
+        turns = {HOLDER: [(500, 1000)]}
+        api = [
+            host_idle.ApiRow("cuEventRecord", (0, 100), HOLDER),  # pre-slot
+            host_idle.ApiRow("cuEventRecord", (600, 700), HOLDER),  # in the idle
+        ]
+        idle, calls = host_idle.api_idle(api, turns, [(600, 800)])
+        self.assertEqual(calls["cuEventRecord"], 1)
+        self.assertEqual(idle["cuEventRecord"], 100)
 
     def test_a_call_is_charged_only_where_the_device_was_actually_idle(self):
         # Half the call overlaps a running kernel, which costs the leg

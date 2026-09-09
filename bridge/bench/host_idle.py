@@ -30,6 +30,13 @@ tile the time exactly. That makes the split exact rather than overlapping:
 
     device idle = idle under the holder's phases + idle with no prove holding
 
+That identity needs **one client**. `ZZ_CLIENTS` defaults to 3, and with
+several, two threads hold different slot mutexes at once: their turns
+overlap, one nanosecond is charged to two phases, and the shares stop being
+a split. The report totals the turns as a union so "client free" cannot go
+negative, and prints a `counted twice` line when it happens rather than
+letting it pass silently.
+
 What the other threads were doing in the same nanoseconds is reported after
 that, marked as overlapping rather than additive — it is where an upload
 waiting on the client (#193) and `take` unpacking the next instance on
@@ -281,7 +288,12 @@ def api_idle(
     )
     calls: collections.Counter = collections.Counter()
     for row in api:
-        if row.tid in held:
+        # The count has to be of the same population the nanoseconds come
+        # from, because the report divides one by the other. A call on a
+        # holder's thread made *before* it took the slot — the event records
+        # and copies of `host/upload_inputs` — contributes no idle, so
+        # counting it would deflate the per-call cost.
+        if row.tid in held and intersect([row.span], held[row.tid]):
             by_name[row.name][row.tid].append(row.span)
             calls[row.name] += 1
     return {
@@ -346,6 +358,15 @@ def report(
     # `host/prove` wraps one instance's turn on the client, so its instances
     # are the proves the capture holds.
     n = proves or s.counts.get(PROVE, 0) or 1
+    by_tid = turns(rows)
+    # Time inside *some* prove's turn, counted once. With one client the slot
+    # mutex serialises turns and this equals the sum of the phase shares; with
+    # several, two threads hold different mutexes at once, their turns overlap
+    # and the shares double-count. Taking the union keeps `client free`
+    # non-negative and makes the excess visible instead of silent.
+    inside = covered(
+        intersect(idle, merge([sp for spans in by_tid.values() for sp in spans]))
+    )
     held = sum(s.holding.values())
 
     def line(name: str, ns: int, indent: str = "      ") -> str:
@@ -359,10 +380,15 @@ def report(
         f" bridge kernels busy {covered(kernels) / 1e9:.2f} s,"
         f" device idle {covered(idle) / 1e9:.2f} s over {n} proves"
     )
-    print(line("idle, client held", held, "   "))
+    print(line("idle, client held", inside, "   "))
     for name, ns in rank(s.holding, top):
         print(line(name, ns) + f"  x{s.counts[name]}")
-    print(line("idle, client free", covered(idle) - held, "   "))
+    if held > inside:
+        print(
+            f"   {'-> counted twice':22s} {(held - inside) / 1e9:7.3f} s"
+            "  (turns overlap — several clients; the shares are not a split)"
+        )
+    print(line("idle, client free", covered(idle) - inside, "   "))
     print(
         "   meanwhile on other threads (overlaps the above, not additive;"
         " admit/slot_wait are queue waits by construction)"
@@ -372,7 +398,10 @@ def report(
     if api is None:
         return
     driver, calls = api_idle(read_api(api), turns(rows), idle)
-    print("   the same idle, by what the holder was inside (CUDA driver call)")
+    print(
+        "   the same idle, by what the holder was inside (CUDA driver call;"
+        " x<n> counts the calls that contributed, not every call made)"
+    )
     for name, ns in rank(driver, top):
         print(line(name, ns) + f"  x{calls[name]}")
 
