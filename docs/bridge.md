@@ -273,19 +273,27 @@ pre-#175 profile put on them, and pageable transfers on this card run at
 11–16 GB/s rather than the 3–6 GB/s that number assumed — most of the
 difference is #182's read-ahead and #183's parallel key reads, which took
 the host-side staging out of the transfer. And **none of it overlaps**:
-0.00 s in all three runs, on both provers. The read-ahead gets a transfer
-off the slot's own thread, but PJRT still blocks on `done_with_host_buffer`
-and an execution blocks on its inputs' transfers, so on the device the
-uploads and the kernels of one client strictly alternate. The separate
-host-to-device stream (`local_device_state.h`) exists and is never busy at
-the same time as the compute stream.
+0.00 s in all three runs, on both provers. The separate host-to-device
+stream (`local_device_state.h`) exists and is never busy at the same time
+as the compute stream.
+
+That zero is not the runtime holding transfers back. Measured from the
+same captures, 71–75 % of the bridge's uploads begin after its device side
+has *already* been idle for more than a millisecond — median 1.6–2.0 ms,
+p90 ~27 ms, up to 217 ms. A runtime serializing a transfer against compute
+would start it the instant the last kernel ended; these start long after,
+because at that moment the bridge has no upload ready to issue. The client
+is idle and waiting for the host, not for the wire.
 
 So of the 2.85–2.98 s the client stands idle inside the leg, uploads
-explain 0.30 s; the rest is host-side. Pinning the pageable 5.29 GB at the
-42 GB/s the already-pinned copies reach would take that 0.34–0.47 s to
-about 0.13 s — worth roughly 0.2–0.3 s of a 5.5 s leg, and only if the
-pinning itself is free (`cudaHostRegister` over 5.29 GB a run is not; a
-staging pool the untiling writes into is). #193 carries the decision.
+explain 0.30 s, and the reason they never overlap is the same reason the
+other ~2.5 s exists: the host does not keep a prove on the device while
+the next instance is being prepared. Bandwidth is the smaller half of
+this. Pinning the pageable 5.29 GB at the 42 GB/s the already-pinned
+copies reach would take 0.34–0.47 s to about 0.13 s — roughly 0.2–0.3 s of
+a 5.5 s leg, and only if the pinning itself is free (`cudaHostRegister`
+over 5.29 GB a run is not; a staging pool the untiling writes into is).
+#193 carries the overlap work.
 
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
