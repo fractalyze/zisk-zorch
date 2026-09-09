@@ -60,15 +60,19 @@ import argparse
 import collections
 import csv
 import pathlib
-import re
 import sys
 import typing
 
-Span = tuple[int, int]
-
-# nsys writes the unit into the column header, and which one it picks depends
-# on the capture's length.
-UNITS_NS = {"ns": 1, "us": 1_000, "µs": 1_000, "ms": 1_000_000, "s": 1_000_000_000}
+from bridge.bench.nsys_trace import (
+    BRIDGE,
+    Span,
+    column,
+    covered,
+    intersect,
+    merge,
+    owner,
+    subtract,
+)
 
 # The prefix `src/nvtx.rs` puts on a host phase, so a phase is told from the
 # per-program ranges around each `Artifact::run`.
@@ -77,79 +81,6 @@ HOST = "host/"
 # A prove's turn on the client runs from where its thread leaves this phase
 # (it has the slot mutex) to the end of this one.
 SLOT_WAIT, PROVE = f"{HOST}slot_wait", f"{HOST}prove"
-
-
-def column(header: list[str], prefix: str) -> tuple[str, int]:
-    """The named column and the multiplier from its unit to nanoseconds."""
-    for name in header:
-        if name.startswith(prefix):
-            unit = re.search(r"\(([^)]*)\)", name)
-            scale = UNITS_NS.get(unit.group(1) if unit else "ns")
-            if scale is None:
-                raise ValueError(f"{name}: unit is not a time")
-            return name, scale
-    raise ValueError(f"no {prefix!r} column in {header}")
-
-
-def merge(spans: list[Span]) -> list[Span]:
-    """The spans as a sorted, non-overlapping cover of the same time."""
-    out: list[Span] = []
-    for start, end in sorted(spans):
-        if out and start <= out[-1][1]:
-            out[-1] = (out[-1][0], max(out[-1][1], end))
-        else:
-            out.append((start, end))
-    return out
-
-
-def covered(spans: list[Span]) -> int:
-    return sum(end - start for start, end in spans)
-
-
-def intersect(a: list[Span], b: list[Span]) -> list[Span]:
-    """The time both merged covers hold."""
-    out: list[Span] = []
-    i = j = 0
-    while i < len(a) and j < len(b):
-        lo, hi = max(a[i][0], b[j][0]), min(a[i][1], b[j][1])
-        if lo < hi:
-            out.append((lo, hi))
-        if a[i][1] < b[j][1]:
-            i += 1
-        else:
-            j += 1
-    return out
-
-
-def subtract(a: list[Span], b: list[Span]) -> list[Span]:
-    """The time the merged cover `a` holds and the merged cover `b` does
-    not."""
-    out: list[Span] = []
-    j = 0
-    for lo, hi in a:
-        # Both covers are sorted, so the cursor into `b` only ever moves
-        # forward across the whole sweep.
-        while j < len(b) and b[j][1] <= lo:
-            j += 1
-        cur, k = lo, j
-        while k < len(b) and b[k][0] < hi:
-            if b[k][0] > cur:
-                out.append((cur, b[k][0]))
-            cur = max(cur, b[k][1])
-            k += 1
-        if cur < hi:
-            out.append((cur, hi))
-    return out
-
-
-def owner_is_bridge(kernel_name: str) -> bool:
-    """Whether the bridge emitted a kernel. A bridged run has two provers on
-    one card: XLA writes a fusion's name with no argument list
-    (`loop_add_fusion`, `sponge_hash_1`) and pil2's kernels are C++
-    signatures (`_add(Goldilocks::Element *, ...)`), so a `(` in the name is
-    what tells them apart. Same rule as `h2d_overlap.py`, which #196 lands;
-    the two want one module once it does."""
-    return "(" not in kernel_name
 
 
 class RangeRow(typing.NamedTuple):
@@ -184,7 +115,7 @@ def read_kernels(path: pathlib.Path) -> list[Span]:
         dur_col, dur_scale = column(reader.fieldnames or [], "Duration")
         for row in reader:
             name = row["Name"]
-            if "memcpy" in name or "memset" in name or not owner_is_bridge(name):
+            if "memcpy" in name or "memset" in name or owner(name) != BRIDGE:
                 continue
             start = round(float(row[start_col]) * start_scale)
             spans.append((start, start + round(float(row[dur_col]) * dur_scale)))

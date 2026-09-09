@@ -14,33 +14,10 @@ from bridge.bench import h2d_overlap
 CAPTURE = pathlib.Path("bridge/bench/testdata/cuda_gpu_trace.csv")
 
 
-class IntervalsTest(parameterized.TestCase):
-    """The arithmetic, on spans small enough to check by eye."""
-
-    @parameterized.named_parameters(
-        ("disjoint", [(0, 1), (3, 4)], [(0, 1), (3, 4)]),
-        ("touching_join", [(0, 2), (2, 4)], [(0, 4)]),
-        ("nested_absorbed", [(0, 9), (2, 4)], [(0, 9)]),
-        ("unsorted_input", [(5, 6), (0, 2), (1, 3)], [(0, 3), (5, 6)]),
-    )
-    def test_merge(self, spans, want):
-        self.assertEqual(h2d_overlap.merge(spans), want)
-
-    @parameterized.named_parameters(
-        ("no_overlap", [(0, 2)], [(3, 5)], 0),
-        ("partial", [(0, 4)], [(2, 9)], 2),
-        ("contained", [(2, 4)], [(0, 9)], 2),
-        # A transfer spanning two kernels is hidden only where they run.
-        ("many_to_one", [(0, 10)], [(1, 2), (4, 6)], 3),
-    )
-    def test_overlap(self, a, b, want):
-        self.assertEqual(h2d_overlap.overlap(a, b), want)
-        self.assertEqual(h2d_overlap.overlap(b, a), want)
-
-    def test_exposed_is_the_cover_minus_the_overlap(self):
-        uploads, kernels = [(0, 10), (20, 25)], [(5, 22)]
-        self.assertEqual(h2d_overlap.covered(uploads), 15)
-        self.assertEqual(h2d_overlap.overlap(uploads, kernels), 7)
+class IdleGapsTest(parameterized.TestCase):
+    """How long the device had been idle when a copy started, on spans small
+    enough to check by eye. The rest of the span algebra is pinned in
+    nsys_trace_test."""
 
     @parameterized.named_parameters(
         # A copy inside a kernel waited for nothing; one after it waited
@@ -61,34 +38,6 @@ class IntervalsTest(parameterized.TestCase):
         # distribution.
         uploads = [h2d_overlap.Upload((s, s + 1), 0, "Pageable", "9") for s in (1, 12)]
         self.assertEqual(h2d_overlap.idle_gaps(uploads, [(5, 10)]), [2])
-
-    @parameterized.named_parameters(
-        ("nanoseconds", "Start (ns)", 1),
-        ("microseconds", "Start (µs)", 1_000),
-        ("seconds", "Start (s)", 1_000_000_000),
-    )
-    def test_column_scales_to_nanoseconds(self, header, scale):
-        self.assertEqual(h2d_overlap.column([header], "Start"), (header, scale))
-
-    def test_column_rejects_a_header_it_cannot_scale(self):
-        with self.assertRaises(ValueError):
-            h2d_overlap.column(["Bytes (MB)"], "Bytes")
-
-
-class OwnerTest(parameterized.TestCase):
-
-    @parameterized.named_parameters(
-        ("xla_fusion", "loop_add_gather_fusion", h2d_overlap.BRIDGE),
-        ("xla_hash", "sponge_hash_1", h2d_overlap.BRIDGE),
-        ("pil2_plain", "genMerkleProof(gl64_t *, unsigned long)", h2d_overlap.PIL2),
-        (
-            "pil2_templated",
-            "void merkleNodeKernel_pos1<(unsigned int)12>(unsigned long)",
-            h2d_overlap.PIL2,
-        ),
-    )
-    def test_owner(self, kernel, side):
-        self.assertEqual(h2d_overlap.owner(kernel), side)
 
 
 class CaptureTest(absltest.TestCase):

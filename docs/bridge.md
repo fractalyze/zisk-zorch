@@ -332,12 +332,14 @@ was measured this way, adding `ZZ_MEMORY_FRACTION` and
 ### The uploads, measured (2026-09-09, post-#192)
 
 Three `nsys` captures of the whole run on a quiet card, read by
-`bench/h2d_overlap.py` (recipe under "Profiling"). Every figure in this
-section is a line that tool prints over those captures, except the one place
-`host_idle.py` is named. The bridge's leg here is its first kernel to its
-last, which is 0.8–1.2 s inside proofman's `GENERATING_INNER_PROOFS` (6.29,
-6.63, 6.62 s here against 5.93–6.01 s uninstrumented — nsys costs the leg
-5–11 %).
+`bench/h2d_overlap.py` (recipe under "Profiling"). Every figure in the table
+below is a line that tool prints over those captures. Three numbers in the
+prose are not its, and each says so where it appears: proofman's own
+`GENERATING_INNER_PROOFS` timer, the device-idle share `host_idle.py`
+produces, and the pinning projection at the end, which is arithmetic on the
+table rather than a measurement. The bridge's leg here is its first kernel to
+its last, which is 0.8–1.2 s inside `GENERATING_INNER_PROOFS` (6.29, 6.63,
+6.62 s here against 5.93–6.01 s uninstrumented — nsys costs the leg 5–11 %).
 
 | per run | run 1 | run 2 | run 3 |
 |---|---|---|---|
@@ -414,9 +416,9 @@ holding the client is on the host rather than on the device.
 Which also means the 0.31 s inside the leg is an upper bound that
 overstates its own cost here: an upload landing in idle the leg would have
 had anyway is not paid for twice. Uploads are not this leg's problem, and
-no change to the upload path makes them one. Bandwidth is smaller still:
-pinning the pageable 5.29 GB at the 42 GB/s the already-pinned copies reach
-would take 0.34–0.47 s to about 0.13 s.
+no change to the upload path makes them one. Bandwidth is smaller still: on
+the table's own rates, pinning the pageable 5.29 GB at the 42 GB/s the
+already-pinned copies reach would take 0.34–0.47 s to about 0.13 s.
 
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads

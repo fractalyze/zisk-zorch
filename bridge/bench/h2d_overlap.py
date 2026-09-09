@@ -27,12 +27,10 @@ constraint does not apply, so a zero beside a non-zero says the hardware was
 willing and the runtime was not.
 
 A bridged run has two provers on one card, so the two are reported apart.
-XLA writes a fusion's name with no argument list (`loop_add_fusion`,
-`sponge_hash_1`); pil2's kernels are C++ signatures (`_add(Goldilocks::
-Element *, ...)`), so a `(` in the name is what tells them apart. A transfer
-goes to the side whose kernels share its stream, or, on a stream that
-carries only transfers, to the side owning the kernels that follow its
-copies — see `Capture.upload_owners`.
+`nsys_trace.owner` tells their kernels apart; a transfer goes to the side
+whose kernels share its stream, or, on a stream that carries only transfers,
+to the side owning the kernels that follow its copies — see
+`Capture.upload_owners`.
 
 `SrcMemKd` says whether a transfer came out of pageable or pinned host
 memory, so the same report shows which path the uploads take and at what
@@ -52,65 +50,21 @@ import bisect
 import collections
 import csv
 import pathlib
-import re
 import statistics
 import sys
 import typing
 
-Span = tuple[int, int]
-
-BRIDGE, PIL2 = "bridge", "pil2"
-
-# nsys writes the unit into the column header, and which one it picks
-# depends on the capture's length.
-UNITS_NS = {"ns": 1, "us": 1_000, "µs": 1_000, "ms": 1_000_000, "s": 1_000_000_000}
-
-
-def column(header: list[str], prefix: str) -> tuple[str, int]:
-    """The named column and the multiplier from its unit to nanoseconds."""
-    for name in header:
-        if name.startswith(prefix):
-            unit = re.search(r"\(([^)]*)\)", name)
-            scale = UNITS_NS.get(unit.group(1) if unit else "ns")
-            if scale is None:
-                raise ValueError(f"{name}: unit is not a time")
-            return name, scale
-    raise ValueError(f"no {prefix!r} column in {header}")
-
-
-def merge(spans: list[Span]) -> list[Span]:
-    """The spans as a sorted, non-overlapping cover of the same time."""
-    out: list[Span] = []
-    for start, end in sorted(spans):
-        if out and start <= out[-1][1]:
-            out[-1] = (out[-1][0], max(out[-1][1], end))
-        else:
-            out.append((start, end))
-    return out
-
-
-def covered(spans: list[Span]) -> int:
-    return sum(end - start for start, end in spans)
-
-
-def overlap(a: list[Span], b: list[Span]) -> int:
-    """Time covered by both merged covers. What each cover has to itself is
-    then its own total minus this, so no second sweep is needed."""
-    total = 0
-    i = j = 0
-    while i < len(a) and j < len(b):
-        total += max(0, min(a[i][1], b[j][1]) - max(a[i][0], b[j][0]))
-        if a[i][1] < b[j][1]:
-            i += 1
-        else:
-            j += 1
-    return total
-
-
-def owner(kernel_name: str) -> str:
-    """Which prover emitted a kernel. XLA's names carry no argument list;
-    pil2's are C++ signatures."""
-    return PIL2 if "(" in kernel_name else BRIDGE
+from bridge.bench.nsys_trace import (
+    BRIDGE,
+    PIL2,
+    UNITS_BYTES,
+    Span,
+    column,
+    covered,
+    merge,
+    overlap,
+    owner,
+)
 
 
 class Upload(typing.NamedTuple):
@@ -154,7 +108,9 @@ class Capture:
             collections.Counter
         )
 
-    def add(self, row: dict[str, str], start_ns: int, dur_ns: int) -> None:
+    def add(
+        self, row: dict[str, str], start_ns: int, dur_ns: int, n_bytes: int
+    ) -> None:
         span = (start_ns, start_ns + dur_ns)
         name = row["Name"]
         stream = row.get("Strm", "")
@@ -164,7 +120,7 @@ class Capture:
             self.kernel_streams[stream][side] += 1
         elif "Host-to-Device" in name:
             kind = row.get("SrcMemKd") or "unknown"
-            self.uploads.append(Upload(span, size_bytes(row), kind, stream))
+            self.uploads.append(Upload(span, n_bytes, kind, stream))
 
     def upload_owners(self) -> dict[str, str]:
         """Which side each upload stream belongs to. A stream that also
@@ -190,21 +146,23 @@ class Capture:
         return {s: c.most_common(1)[0][0] for s, c in votes.items()}
 
 
-def size_bytes(row: dict[str, str]) -> int:
-    """The row's `Bytes (MB)` (nsys means 10^6) as bytes. A kernel row leaves
-    the column empty."""
-    return round(float(row.get("Bytes (MB)", "") or 0) * 1e6)
-
-
 def read(path: pathlib.Path) -> Capture:
+    """Every kernel and every host-to-device copy in the capture. The size
+    column goes through the same unit rule as the times — nsys picks the unit
+    from the capture and this report publishes GB and GB/s, so a header this
+    module cannot scale has to raise rather than print zeros."""
     cap = Capture()
     with path.open(newline="") as f:
         reader = csv.DictReader(f)
-        start_col, start_scale = column(reader.fieldnames or [], "Start")
-        dur_col, dur_scale = column(reader.fieldnames or [], "Duration")
+        header = reader.fieldnames or []
+        start_col, start_scale = column(header, "Start")
+        dur_col, dur_scale = column(header, "Duration")
+        bytes_col, bytes_scale = column(header, "Bytes", UNITS_BYTES)
         for row in reader:
             start = round(float(row[start_col]) * start_scale)
-            cap.add(row, start, round(float(row[dur_col]) * dur_scale))
+            # A kernel row leaves the size column empty.
+            n_bytes = round(float(row[bytes_col] or 0) * bytes_scale)
+            cap.add(row, start, round(float(row[dur_col]) * dur_scale), n_bytes)
     return cap
 
 
