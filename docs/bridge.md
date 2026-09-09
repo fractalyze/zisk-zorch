@@ -350,23 +350,36 @@ the host-side staging out of the transfer. And **none of it overlaps**:
 stream (`local_device_state.h`) exists and is never busy at the same time
 as the compute stream.
 
-That zero is not the runtime holding transfers back. Measured from the
-same captures, 71–75 % of the bridge's uploads begin after its device side
-has *already* been idle for more than a millisecond — median 1.6–2.0 ms,
-p90 ~27 ms, up to 217 ms. A runtime serializing a transfer against compute
-would start it the instant the last kernel ended; these start long after,
-because at that moment the bridge has no upload ready to issue. The client
-is idle and waiting for the host, not for the wire.
+That zero is enforced, and not by the hardware: in the same captures
+pil2's copies overlap *the bridge's* kernels for 0.07–0.09 s, so the card
+runs copy and compute together happily. What neither prover overlaps is
+its own kernels, and for the bridge PJRT is why. A GPU client is
+`kComputeSynchronized` (`xla/pjrt/local_device_state.h`): a buffer the
+allocator returns at time t may only be written once the compute stream
+has drained everything enqueued before t. So `AllocatedRawSEDeviceMemory`
+records a compute-stream sync point when it allocates
+(`tracked_device_buffer.cc`), and both `BufferFromHostBuffer` paths call
+`WaitForAllocation`, which makes the host-to-device stream wait on that
+sync point's event (`pjrt_stream_executor_client.cc`). An upload into a
+*freshly allocated* buffer therefore cannot start until the client's own
+compute stream is empty — no host-buffer-semantics flag changes that,
+which is why the 2026-09-03 `kImmutableOnlyDuringCall` attempt only moved
+the wait into the next `Execute`. It also explains the shape of the
+capture: a quarter of the uploads start within a millisecond of the last
+kernel ending, having waited on exactly that event.
 
-So of the 2.85–2.98 s the client stands idle inside the leg, uploads
-explain 0.30 s, and the reason they never overlap is the same reason the
-other ~2.5 s exists: the host does not keep a prove on the device while
-the next instance is being prepared. Bandwidth is the smaller half of
-this. Pinning the pageable 5.29 GB at the 42 GB/s the already-pinned
-copies reach would take 0.34–0.47 s to about 0.13 s — roughly 0.2–0.3 s of
-a 5.5 s leg, and only if the pinning itself is free (`cudaHostRegister`
-over 5.29 GB a run is not; a staging pool the untiling writes into is).
-#193 carries the overlap work.
+The host is separately late — 71–75 % of uploads begin after the device
+has already been idle for more than a millisecond (median 1.6–2.0 ms, p90
+~27 ms, up to 217 ms) — which is why the client idles 2.85–2.98 s of the
+leg against 0.30 s of in-leg uploads. Both have to be fixed to buy
+anything: issuing earlier wins nothing while the allocation still orders
+the copy behind compute, and removing that ordering wins nothing while
+there is no kernel running to overlap. Removing it means not allocating
+the destination behind the running prove — a reused pool, or PJRT's
+async host-to-device transfer manager, which creates the buffers up front
+and fills them later. Bandwidth is the smaller half of all this: pinning
+the pageable 5.29 GB at the 42 GB/s the already-pinned copies reach would
+take 0.34–0.47 s to about 0.13 s. #193 carries the overlap work.
 
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
