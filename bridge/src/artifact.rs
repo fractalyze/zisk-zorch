@@ -158,35 +158,43 @@ fn each_parallel<T: Send + Sync>(
     threads: usize,
     f: impl Fn(&T) -> Result<(), Error> + Sync,
 ) -> Result<(), Error> {
-    if threads <= 1 {
-        return items.iter().fold(Ok(()), |first, item| match (first, f(item)) {
-            (Ok(()), Err(e)) => Err(e),
-            (first, _) => first,
-        });
-    }
-    let queue = std::sync::Mutex::new(items.iter());
-    let mut first = Ok(());
-    std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads)
-            .map(|_| {
-                scope.spawn(|| loop {
-                    let next = queue.lock().unwrap_or_else(|p| p.into_inner()).next();
-                    match next {
-                        Some(item) => f(item)?,
-                        None => return Ok(()),
-                    }
-                })
-            })
-            .collect();
-        for worker in workers {
-            match worker.join() {
-                Ok(Err(e)) if first.is_ok() => first = Err(e),
-                Err(panic) => std::panic::resume_unwind(panic),
-                _ => {}
+    // One accumulator for both branches: a worker that hits an error keeps
+    // pulling, so the set left compiled does not depend on the thread count.
+    let first: std::sync::Mutex<Result<(), Error>> = std::sync::Mutex::new(Ok(()));
+    let keep = |result: Result<(), Error>| {
+        if let Err(e) = result {
+            let mut first = first.lock().unwrap_or_else(|p| p.into_inner());
+            if first.is_ok() {
+                *first = Err(e);
             }
         }
-    });
-    first
+    };
+    if threads <= 1 {
+        items.iter().for_each(|item| keep(f(item)));
+    } else {
+        let queue = std::sync::Mutex::new(items.iter());
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..threads)
+                .map(|_| {
+                    scope.spawn(|| loop {
+                        // Bound before the body: a `while let` on the guard
+                        // would hold the lock across `f` and serialise the run.
+                        let next = queue.lock().unwrap_or_else(|p| p.into_inner()).next();
+                        match next {
+                            Some(item) => keep(f(item)),
+                            None => return,
+                        }
+                    })
+                })
+                .collect();
+            for worker in workers {
+                if let Err(panic) = worker.join() {
+                    std::panic::resume_unwind(panic);
+                }
+            }
+        });
+    }
+    first.into_inner().unwrap_or_else(|p| p.into_inner())
 }
 
 pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
@@ -557,39 +565,28 @@ mod tests {
     }
 
     #[test]
-    fn each_parallel_reports_a_failure_and_still_drains_the_queue() {
-        // Pinned at 1 as well as above it: the bridge's own preload runs the
-        // serial path, so a failure there has to leave the cache in the same
-        // state a warm at eight threads would.
-        for threads in [1, 8] {
-            let ran = std::sync::atomic::AtomicUsize::new(0);
+    fn each_parallel_attempts_every_item_at_every_thread_count() {
+        // Fewer threads than items and a failure per live worker: the case a
+        // `threads >= items` test cannot see, because there no worker ever
+        // takes a second item. With `f(item)?` returning from the worker,
+        // items 2 and 3 are never attempted at threads=2.
+        for threads in [1, 2, 3, 8] {
+            let ran = std::sync::Mutex::new(Vec::new());
             let err = each_parallel((0..4).collect(), threads, |i| {
-                ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                if *i == 2 {
-                    return Err("program 2 failed".into());
+                ran.lock().unwrap().push(*i);
+                if *i < 2 {
+                    return Err(format!("item {i} failed").into());
                 }
                 Ok(())
             })
             .unwrap_err();
-            assert_eq!(err.to_string(), "program 2 failed", "threads={threads}");
-            // The other three still ran: one failure must not strand the rest,
-            // since the caller retries nothing.
-            assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 4, "threads={threads}");
-        }
-    }
-
-    #[test]
-    fn each_parallel_returns_the_first_failure_when_several_fail() {
-        for threads in [1, 8] {
-            let err = each_parallel(vec![0, 1, 2], threads, |i| match i {
-                0 => Ok(()),
-                _ => Err(format!("item {i} failed").into()),
-            })
-            .unwrap_err();
-            // At one thread "first" is positional; above it, whichever worker
-            // lost the race -- so only assert it is one of the two failures.
+            let mut got = ran.into_inner().unwrap();
+            got.sort_unstable();
+            assert_eq!(got, vec![0, 1, 2, 3], "threads={threads}");
+            // Both failures are eligible; which one lands first is a race
+            // above one thread, so pin the set rather than the order.
             assert!(
-                ["item 1 failed", "item 2 failed"].contains(&err.to_string().as_str()),
+                ["item 0 failed", "item 1 failed"].contains(&err.to_string().as_str()),
                 "threads={threads} got {err}"
             );
         }

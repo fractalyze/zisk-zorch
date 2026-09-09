@@ -20,6 +20,18 @@ use zisk_zorch_bridge::artifact::{new_client, Artifact};
 use zisk_zorch_bridge::driver::{AirDriver, FixedSections, InstanceInputs};
 use zisk_zorch_bridge::transcript::HostTranscript;
 
+/// Compile threads per AIR worker: one worker per AIR up to `threads`, and the
+/// budget left over spread one per worker so all of it is used at any ratio.
+///
+/// Only one worker can be busy with a given AIR, so spawning `threads` workers
+/// over fewer AIRs leaves the surplus exiting immediately; folding them inside
+/// instead is what makes a single-AIR warm -- a plugin bisect -- parallel.
+fn warm_split(threads: usize, dirs: usize) -> Vec<usize> {
+    let across = threads.min(dirs).max(1);
+    let (base, extra) = (threads / across, threads % across);
+    (0..across).map(|worker| (base + usize::from(worker < extra)).max(1)).collect()
+}
+
 fn words(path: &Path) -> Vec<u64> {
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect()
@@ -54,15 +66,19 @@ fn main() {
         // ZZ_WARM_THREADS=N loads that many AIRs at once on the one client:
         // the probe for how much concurrent deserialization the plugin takes.
         let threads: usize = std::env::var("ZZ_WARM_THREADS").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
-        // Spare threads go inside each AIR rather than idling. Warming one AIR
-        // -- what a plugin bisect does -- otherwise runs a single thread through
-        // ~34 compiles however high ZZ_WARM_THREADS is set.
-        let within = (threads / dirs.len().max(1)).max(1);
+        // Spare threads go inside the AIRs rather than idling: only one worker
+        // per AIR can be busy, so `threads` workers over fewer AIRs would leave
+        // the rest exiting immediately. Warming one AIR -- what a plugin bisect
+        // does -- otherwise runs a single thread through ~34 compiles however
+        // high ZZ_WARM_THREADS is set. The remainder is spread one per worker
+        // so the whole budget is used at any ratio, not only at a multiple.
+        let split = warm_split(threads, dirs.len());
         let client = new_client(None);
         let queue = std::sync::Arc::new(std::sync::Mutex::new(dirs));
         let t0 = Instant::now();
-        let handles: Vec<_> = (0..threads)
-            .map(|_| {
+        let handles: Vec<_> = split
+            .into_iter()
+            .map(|within| {
                 let client = client.clone();
                 let queue = queue.clone();
                 let cache = cache.clone();
@@ -202,5 +218,37 @@ fn main() {
         })
         .unwrap();
         println!("wrote bridge_proof.bin ({} words)", proof.len());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::warm_split;
+
+    #[test]
+    fn warm_split_uses_the_whole_budget_at_any_ratio() {
+        // The recipe's own case: 11 threads over 6 AIRs ran 6 one-wide and
+        // idled 5 before the remainder was spread.
+        assert_eq!(warm_split(11, 6), [2, 2, 2, 2, 2, 1]);
+        // A bisect: every thread goes inside the one AIR.
+        assert_eq!(warm_split(11, 1), [11]);
+        // More AIRs than threads: one worker each, none spare to fold in.
+        assert_eq!(warm_split(4, 11), [1, 1, 1, 1]);
+        assert_eq!(warm_split(1, 1), [1]);
+        for (threads, dirs) in [(11, 6), (11, 1), (4, 11), (7, 3), (1, 9), (64, 5)] {
+            let split = warm_split(threads, dirs);
+            assert_eq!(split.len(), threads.min(dirs).max(1), "{threads}/{dirs}");
+            if dirs <= threads {
+                assert_eq!(split.iter().sum::<usize>(), threads, "{threads}/{dirs}");
+            }
+        }
+    }
+
+    #[test]
+    fn warm_split_never_returns_a_zero_width_worker() {
+        // `threads` is env-parsed, so 0 reaches here; a zero would spawn a
+        // worker that compiles nothing and the warm would silently do nothing.
+        assert_eq!(warm_split(0, 4), [1]);
+        assert!(warm_split(0, 0).iter().all(|w| *w >= 1));
     }
 }
