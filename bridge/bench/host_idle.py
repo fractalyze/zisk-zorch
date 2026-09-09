@@ -314,8 +314,13 @@ class Shares(typing.NamedTuple):
     counts: collections.Counter
 
 
-def shares(rows: list[RangeRow], idle: list[Span]) -> Shares:
-    by_tid = turns(rows)
+def shares(
+    rows: list[RangeRow], idle: list[Span], by_tid: dict[str, list[Span]] | None = None
+) -> Shares:
+    # `by_tid` is derivable from `rows`, so a caller with one already — the
+    # report needs it for its own totals — passes it rather than paying for
+    # the same sweep again.
+    by_tid = turns(rows) if by_tid is None else by_tid
     holding: dict[str, int] = collections.defaultdict(int)
     other: dict[str, int] = collections.defaultdict(int)
     for row, own in self_spans(rows):
@@ -354,11 +359,11 @@ def report(
         return
     leg = [(kernels[0][0], kernels[-1][1])]
     idle = subtract(leg, kernels)
-    s = shares(rows, idle)
+    by_tid = turns(rows)
+    s = shares(rows, idle, by_tid)
     # `host/prove` wraps one instance's turn on the client, so its instances
     # are the proves the capture holds.
     n = proves or s.counts.get(PROVE, 0) or 1
-    by_tid = turns(rows)
     # Time inside *some* prove's turn, counted once. With one client the slot
     # mutex serialises turns and this equals the sum of the phase shares; with
     # several, two threads hold different mutexes at once, their turns overlap
@@ -397,7 +402,7 @@ def report(
         print(line(name, ns) + f"  x{s.counts[name]}")
     if api is None:
         return
-    driver, calls = api_idle(read_api(api), turns(rows), idle)
+    driver, calls = api_idle(read_api(api), by_tid, idle)
     print(
         "   the same idle, by what the holder was inside (CUDA driver call;"
         " x<n> counts the calls that contributed, not every call made)"

@@ -123,6 +123,19 @@ class AttributionTest(absltest.TestCase):
         # overlapping upper bounds.
         self.assertEqual(sum(s.holding.values()), host_idle.covered(idle))
 
+    def test_a_passed_turn_map_is_used_rather_than_recomputed(self):
+        # The report derives the map once and hands it to both `shares` and
+        # `api_idle`; if the parameter were ignored the sweep would run three
+        # times and, worse, a caller could not correct it.
+        rows = [phase("host/slot_wait", 0, 100), phase("host/prove", 100, 900)]
+        narrowed = {HOLDER: [(100, 300)]}
+        s = host_idle.shares(rows, [(100, 900)], narrowed)
+        self.assertEqual(sum(s.holding.values()), 200)
+        # Same rows, map derived internally: the whole turn is charged.
+        self.assertEqual(
+            sum(host_idle.shares(rows, [(100, 900)]).holding.values()), 800
+        )
+
     def test_idle_outside_every_turn_is_charged_to_no_one(self):
         # The handover gap: one prove has released the client and the next
         # has not taken it. Only the second idle span is inside the turn.

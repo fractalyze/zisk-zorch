@@ -173,10 +173,13 @@ directly — the bridge's own default is 3, and three clients splitting one
 
 Two things about reading the result, both learned by getting them wrong.
 
-**Quote the share of the *leg*, not of the idle.** They differ by more than
-2x and the milestone's criterion is wall time. On the 2026-09-09 captures
-`cuModuleLoadFatBinary` is the same 2.94 s whether it is called 34 % (of the
-idle) or 15 % (of the leg); the second is the one that decides anything.
+**Quote the share of the *leg*, not of the idle.** The two denominators
+differ by about 2x, and the milestone's criterion is wall time. The same
+`cuModuleLoadFatBinary`, on the two workloads measured 2026-09-09: on the
+hello-world guest 1.53-1.60 s, which is 53-56 % of that leg's idle but
+28-29 % of the leg itself (1.9x); on the block-shaped `sha-hasher` mix
+2.94 s, 34 % of the idle and 15 % of the leg (2.25x). One number, two
+denominators — and the leg is the one that decides anything.
 
 **Module loads are once per (AIR, program) pair, not per execution and not
 per instance.** A program that runs four times in a prove loads once, and
