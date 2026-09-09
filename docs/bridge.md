@@ -306,9 +306,11 @@ Facts the gate surfaced, all now handled by the bridge:
   and what each gets is `ZZ_MEMORY_FRACTION` (the clients' share, claimed
   up front), `ZZ_GPU_HEADROOM_GB` (held back from pil2's sizing) and
   whatever is left (pil2's). The first two floors were measured on the
-  hello-world key by walking the fraction down until a run failed
-  (2026-09-08, one client, repeats at each fraction — a single run at the
-  boundary is a race and lands either way):
+  hello-world key by walking the fraction down until a run failed, one
+  client, repeats at each fraction — a single run at the boundary is a
+  race and lands either way. The client's floor is from #191's re-walk
+  (2026-09-09, both arms on one binary); pil2's and the module loads'
+  are from 2026-09-08 and the blocked LDE does not touch them:
   - **A client needs 11.8 GiB**, at headroom 3: 0.37 of the card proves
     all 11 AIRs in three runs out of three, and below it the outcome is a
     coin flip — 0.35 four times in five, 0.34 once in three, 0.32 never
@@ -387,8 +389,7 @@ Facts the gate surfaced, all now handled by the bridge:
 
   With the trim in full, `ZZ_CLIENTS=2` still fails 0/3 at fraction 0.45
   (headroom 3) and 0/3 at 0.54 (headroom 0). That arm frees strictly more
-  than what shipped, so the verdict is the conservative one and the 9.3 GiB
-  shortfall above stands.
+  than what shipped, so the verdict is the conservative one.
 
   What binds is the same allocation before and after, and the resident set
   never held it: one block twice the size of an extended section — an
@@ -451,7 +452,9 @@ Facts the gate surfaced, all now handled by the bridge:
   **A client's floor moves 12.4 → 11.8 GiB, and two clients still do not
   fit.** The walk is the same one #188 ran, both arms on the same binary
   (`main` at c8da072, an exporter-only change) so only the artifacts
-  differ:
+  differ. Its `before` column is that binary, not #188's `before` column
+  four bullets up, which predates #190's stage-tree release — the two
+  disagree at 0.37 (1/3 here, 0/4 there) and are not the same arm:
 
   | `ZZ_MEMORY_FRACTION` | the client's share | before | after |
   |---|---|---|---|
