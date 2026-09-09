@@ -359,17 +359,32 @@ Facts the gate surfaced, all now handled by the bridge:
   - **What pil2 actually allocates — 12.9 GiB — is already sized for
     recursion**, so taking its basic proofs away frees none of it
     (#194). It is 1.72 GiB of basic fixed pols, 3.33 GiB of aggregation
-    fixed pols and one 7.85 GiB auxiliary trace, and two lines every run
-    prints just above the stream count settle the last of those: `Max
-    prover buffer size` is `max(basic, recursion)` while `Max prover
-    recursive buffer size` is the recursion term alone
-    ([`proof_ctx.rs:961-976`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/proof_ctx.rs#L961-L976)).
-    Both read 7.85 GB, so the basic term is not what sizes the buffer —
-    the compressor is
-    ([`setup_ctx.rs:149-154`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/setup_ctx.rs#L149-L154)).
-    Nor can the stream go. Contributions stay on pil2 under the bridge,
-    and `commit_witness_gpu` takes a *non-recursive* stream, reads the
-    basic fixed pols and writes that same auxiliary trace
+    fixed pols and one 7.85 GiB auxiliary trace, and three lines every
+    run prints just above the stream count place that last term
+    ([`proof_ctx.rs:961-988`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/proof_ctx.rs#L961-L988)):
+    `Max prover buffer size: 7.85 GB` is `max(basic, recursion)`, `Max
+    prover recursive buffer size: 7.85 GB` is the recursion term alone,
+    and `Max prover recursive1/recursive2 buffer size: 1.53 GB` is the
+    per-recursive-stream buffer, `max(recursive1, recursive2)`. The
+    first two being equal says only that recursion is at least basic —
+    enough to know basic proving does not size the buffer, not enough to
+    say what does. The third takes recursive1 and recursive2 out of the
+    five-way max
+    ([`setup_ctx.rs:149-154`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/setup_ctx.rs#L149-L154)),
+    leaving the compressor and the two vadcop finals, and the proving
+    key separates those. Holding every committed section at extended
+    size plus the trace — a lower bound on the `mapTotalN` the buffer is
+    cut from — the largest compressor (Keccakf's) comes to 6.41 GiB
+    against 2.36 for `vadcop_final` and 0.60 for
+    `vadcop_final_compressed`, with `recursive2` at 1.22 against its
+    logged 1.53. Only the compressor is in range. It is also sized over
+    the whole proving key rather than the workload: none of
+    hello-world's 11 airs has a compressor at all, and the buffer is
+    still Keccakf's.
+  - **Nor can the basic stream itself go.** Contributions stay on pil2
+    under the bridge, and `commit_witness_gpu` takes a *non-recursive*
+    stream, reads the basic fixed pols and writes that same auxiliary
+    trace
     ([`starks_api.cu:1231-1292`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/pil2-stark/src/api/starks_api.cu#L1231-L1292));
     so does the compressor, since `gen_recursive_proof_gpu` sets
     `aggregation` for `recursive1` and `recursive2` only
@@ -388,10 +403,11 @@ Facts the gate surfaced, all now handled by the bridge:
   **Two clients need 2 × 11.8 + 14.3 + ~2 = 39.9 GiB and are 8.1 GiB
   short.** 6.1 GiB of that is the measured floors alone (2 × 11.8 +
   14.3 = 37.9 against 31.8, before any headroom at all); the rest is the
-  headroom, which is estimated but cannot be zero. Sizing pil2 for
-  recursion only would not close that gap even if the bullet above left
-  it open: the 6.3 GiB it would free (12.9 down to 1.72 + 3.33 + 1.53)
-  still leaves two clients 1.8 GiB short.
+  headroom, which is estimated but cannot be zero. #194's counterfactual
+  does not close it either: had pil2 been sizable for recursion alone —
+  1.72 + 3.33 + one 1.53 GiB recursive stream, 6.3 GiB below what it
+  holds — two clients would still be 1.8 GiB short. The bullet above is
+  why that 6.3 GiB is not on offer.
 
   The runs bear it out: `ZZ_CLIENTS=2` aborts in three runs out of three
   at fraction 0.45 (headroom 3), and again in three out of three with at
