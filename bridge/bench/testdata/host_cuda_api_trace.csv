@@ -1,0 +1,5 @@
+Start (ns),Duration (ns),Name,Result,CorrID,Pid,Tid,T-Pri,Thread Name
+9070207772,20863051,cuModuleLoadFatBinary,0,10687,576916,577249,20,cargo-zisk
+9868090079,4771072,cuModuleLoadFatBinary,0,21773,576916,577260,20,cargo-zisk
+9874848417,300059,cuGraphInstantiateWithFlags,0,22503,576916,577260,20,cargo-zisk
+10091790111,13620,cuLaunchKernelEx,0,27667,576916,577260,20,cargo-zisk

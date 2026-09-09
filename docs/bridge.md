@@ -153,9 +153,17 @@ separately, as overlapping rather than additive.
 nsys profile --cuda-graph-trace=node -t cuda,nvtx --sample=none --cpuctxsw=none \
     -o run cargo-zisk prove -e guest.elf -k $PK -g -y -o proof -vv
 nsys stats --report cuda_gpu_trace --report nvtx_pushpop_trace \
-    --format csv -o s run.nsys-rep
-bench/host_idle.py s_cuda_gpu_trace.csv s_nvtx_pushpop_trace.csv
+    --report cuda_api_trace --format csv -o s run.nsys-rep
+bench/host_idle.py s_cuda_gpu_trace.csv s_nvtx_pushpop_trace.csv \
+    s_cuda_api_trace.csv
 ```
+
+The third CSV is optional and cuts the same idle a second way: which CUDA
+driver call the holding thread was inside. The phase cut says which step of a
+prove starved the device; this one says what the driver was doing there, and
+the two are answers about the same nanoseconds rather than separate budgets.
+`-t cuda` already collects it, so an existing capture can be re-exported
+without re-running anything.
 
 `--sample=none --cpuctxsw=none` is not optional here either: with CPU
 sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in

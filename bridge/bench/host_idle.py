@@ -45,7 +45,8 @@ Capture recipe in docs/bridge.md "Profiling". The prover must be built with
 `-t cuda,nvtx` (or there are no ranges), and `--sample=none --cpuctxsw=none`
 (nsys 2026.1.3 deadlocks in report generation on a run this size).
 
-Usage: host_idle.py <cuda_gpu_trace.csv> <nvtx_pushpop_trace.csv> [--top N]"""
+Usage: host_idle.py <cuda_gpu_trace.csv> <nvtx_pushpop_trace.csv>
+                    [cuda_api_trace.csv] [--top N]"""
 from __future__ import annotations
 
 import argparse
@@ -240,6 +241,58 @@ def turns(rows: list[RangeRow]) -> dict[str, list[Span]]:
     return out
 
 
+class ApiRow(typing.NamedTuple):
+    """One CUDA driver call, from `nsys stats --report cuda_api_trace`."""
+
+    name: str
+    span: Span
+    tid: str
+
+
+def read_api(path: pathlib.Path) -> list[ApiRow]:
+    """Every CUDA driver call in the capture, with the thread that made it."""
+    rows: list[ApiRow] = []
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        start_col, start_scale = column(reader.fieldnames or [], "Start")
+        dur_col, dur_scale = column(reader.fieldnames or [], "Duration")
+        for row in reader:
+            start = round(float(row[start_col]) * start_scale)
+            end = start + round(float(row[dur_col]) * dur_scale)
+            rows.append(ApiRow(row["Name"], (start, end), row["Tid"]))
+    return rows
+
+
+def api_idle(
+    api: list[ApiRow], turns: dict[str, list[Span]], idle: list[Span]
+) -> tuple[dict[str, int], collections.Counter]:
+    """Idle time a holding thread spent inside each CUDA driver call, and how
+    many such calls it made.
+
+    This is a second cut of the *same* idle the phases account for, not more
+    of it: a module load happens inside some program's range, so the two
+    sections answer "which step of the prove" and "what the driver was doing"
+    about one nanosecond. Only a holder's calls are candidates, for the reason
+    the phase attribution turns on — which is also why the count is of the
+    holders' calls alone, so it divides the idle beside it."""
+    held = {tid: intersect(idle, spans) for tid, spans in turns.items() if spans}
+    by_name: dict[str, dict[str, list[Span]]] = collections.defaultdict(
+        lambda: collections.defaultdict(list)
+    )
+    calls: collections.Counter = collections.Counter()
+    for row in api:
+        if row.tid in held:
+            by_name[row.name][row.tid].append(row.span)
+            calls[row.name] += 1
+    return {
+        name: sum(
+            covered(intersect(merge(spans), held[tid]))
+            for tid, spans in per_tid.items()
+        )
+        for name, per_tid in by_name.items()
+    }, calls
+
+
 class Shares(typing.NamedTuple):
     """Idle time under each phase name, split by whether the phase's own
     thread held the client at the time."""
@@ -268,7 +321,11 @@ def rank(share: dict[str, int], top: int) -> list[tuple[str, int]]:
 
 
 def report(
-    trace: pathlib.Path, nvtx: pathlib.Path, top: int, proves: int | None
+    trace: pathlib.Path,
+    nvtx: pathlib.Path,
+    api: pathlib.Path | None,
+    top: int,
+    proves: int | None,
 ) -> None:
     kernels = merge(read_kernels(trace))
     if not kernels:
@@ -312,18 +369,30 @@ def report(
     )
     for name, ns in rank(s.other, top):
         print(line(name, ns) + f"  x{s.counts[name]}")
+    if api is None:
+        return
+    driver, calls = api_idle(read_api(api), turns(rows), idle)
+    print("   the same idle, by what the holder was inside (CUDA driver call)")
+    for name, ns in rank(driver, top):
+        print(line(name, ns) + f"  x{calls[name]}")
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("trace", type=pathlib.Path, help="cuda_gpu_trace CSV")
     ap.add_argument("nvtx", type=pathlib.Path, help="nvtx_pushpop_trace CSV")
+    ap.add_argument(
+        "api",
+        type=pathlib.Path,
+        nargs="?",
+        help="cuda_api_trace CSV, to also cut the idle by CUDA driver call",
+    )
     ap.add_argument("--top", type=int, default=14, help="phases listed per section")
     ap.add_argument(
         "--proves", type=int, help="proves in the capture, when the guess is wrong"
     )
     args = ap.parse_args(argv[1:])
-    report(args.trace, args.nvtx, args.top, args.proves)
+    report(args.trace, args.nvtx, args.api, args.top, args.proves)
     return 0
 
 

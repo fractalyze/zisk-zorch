@@ -41,3 +41,9 @@ of that run.
   every bridge range name is how `nsys` writes the default (unnamed) NVTX
   domain, and the `(ns)` in each time column is the unit the reader scales
   by.
+
+- `host_cuda_api_trace.csv` — four rows of the same capture's
+  `cuda_api_trace`, the optional third input. Three are the prove thread's
+  own driver calls (a module load, a graph instantiation, a kernel launch)
+  and the fourth is a module load on another thread, which must not be
+  counted: only a holder's calls can explain the device being idle.

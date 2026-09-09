@@ -16,6 +16,7 @@ from bridge.bench import host_idle
 
 TRACE = pathlib.Path("bridge/bench/testdata/host_cuda_gpu_trace.csv")
 NVTX = pathlib.Path("bridge/bench/testdata/host_nvtx_pushpop_trace.csv")
+API = pathlib.Path("bridge/bench/testdata/host_cuda_api_trace.csv")
 
 HOLDER, QUEUED, WORKER = "100", "200", "300"
 
@@ -142,6 +143,42 @@ class AttributionTest(absltest.TestCase):
         self.assertEqual(s.holding["host/prove"], 700)
 
 
+class DriverCallTest(absltest.TestCase):
+    """The second cut of the same idle: what the driver was doing."""
+
+    def test_only_a_holders_calls_are_counted(self):
+        # A module load on a queued thread runs while its prove waits; it
+        # cannot be what the device is idle for.
+        turns = {HOLDER: [(0, 1000)]}
+        api = [
+            host_idle.ApiRow("cuModuleLoadFatBinary", (100, 400), HOLDER),
+            host_idle.ApiRow("cuModuleLoadFatBinary", (100, 400), QUEUED),
+        ]
+        idle, calls = host_idle.api_idle(api, turns, [(0, 1000)])
+        self.assertEqual(idle["cuModuleLoadFatBinary"], 300)
+        # The count divides the idle beside it, so it counts the same calls.
+        self.assertEqual(calls["cuModuleLoadFatBinary"], 1)
+
+    def test_a_call_is_charged_only_where_the_device_was_actually_idle(self):
+        # Half the call overlaps a running kernel, which costs the leg
+        # nothing.
+        turns = {HOLDER: [(0, 1000)]}
+        api = [host_idle.ApiRow("cuModuleLoadFatBinary", (0, 200), HOLDER)]
+        idle, _ = host_idle.api_idle(api, turns, [(100, 1000)])
+        self.assertEqual(idle["cuModuleLoadFatBinary"], 100)
+
+    def test_the_fixtures_calls_land_on_the_prove_that_made_them(self):
+        rows = host_idle.read_ranges(NVTX)
+        prove = next(r for r in rows if r.name == "host/prove")
+        idle, calls = host_idle.api_idle(
+            host_idle.read_api(API), host_idle.turns(rows), [prove.span]
+        )
+        # Three of the fixture's four calls are the holder's; the fourth is
+        # another thread's module load.
+        self.assertEqual(calls["cuModuleLoadFatBinary"], 1)
+        self.assertGreater(idle["cuModuleLoadFatBinary"], idle["cuLaunchKernelEx"])
+
+
 class ReadingTest(parameterized.TestCase):
     """The filters the two readers apply, against real `nsys` rows."""
 
@@ -183,6 +220,11 @@ class ReadingTest(parameterized.TestCase):
         self.assertNotIn(None, names)
         self.assertFalse([n for n in names if n.startswith("TSL")])
         self.assertIn("host/fixed_install", names)
+
+    def test_a_driver_call_keeps_its_thread(self):
+        rows = host_idle.read_api(API)
+        self.assertLen(rows, 4)
+        self.assertLen({row.tid for row in rows}, 2)
 
     def test_a_range_keeps_the_thread_and_parent_the_report_needs(self):
         rows = {row.name: row for row in host_idle.read_ranges(NVTX)}

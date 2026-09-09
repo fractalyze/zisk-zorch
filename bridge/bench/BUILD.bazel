@@ -81,6 +81,7 @@ py_test(
     size = "small",
     srcs = ["host_idle_test.py"],
     data = [
+        "testdata/host_cuda_api_trace.csv",
         "testdata/host_cuda_gpu_trace.csv",
         "testdata/host_nvtx_pushpop_trace.csv",
     ],
