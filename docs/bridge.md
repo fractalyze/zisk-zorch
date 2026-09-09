@@ -281,9 +281,11 @@ block-shaped mix:
 | `=1` + `CUDA_MODULE_LOADING=EAGER` | 5.24 s | 18.53 s |
 | `=0` + `CUDA_MODULE_LOADING=EAGER` | 5.71 s | — |
 
-Byte-gate green on every completed run of both workloads: 11 of 11 native
-dumps on hello-world across all four arms, 38 of 38 on the block-shaped mix
-across the first three.
+Byte-gate green on every run gated — a sample of the sweep, not all of it: on
+hello-world, passes 1/3/5 of each arm, 12 of the 20 runs, at 11 of 11 native
+dumps each; on the block-shaped mix, nine of the 18 (arms A-C, the second
+sweep's three passes) at 38 of 38, except one that aborted mid-proof and
+matched on the seven dumps it had written.
 
 **The two knobs are only worth anything together.** The last row is the whole
 argument: the driver variable with lazy executable loading buys nothing,
@@ -329,9 +331,11 @@ one arm is the cheapest way to confirm that floor before trusting a table.
 
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
-> Measured before `CUDA_MODULE_LOADING=EAGER` joined the run recipe, so the
-> leg figures below are the lazy-loading ones: a run made with it proves
-> this workload with ~1.1 s less leg.
+> Measured 2026-09-06, on that date's binary and plugin. Do not adjust these
+> figures for `CUDA_MODULE_LOADING=EAGER`: the 2026-09-09 arms above read
+> 19.61 s of leg without it and 18.53 s with it, both under the 20.3-20.7 s
+> here, so this table is stale by more than that one knob. Take the shape of
+> the gap from here and the leg from those arms.
 
 The wall-clock comparison the issue asks for, on the closest stand-in for
 block 21740136 this host can run: the `sha-hasher` example guest at
@@ -395,9 +399,11 @@ process still releasing its memory makes pil2 size 20 streams from the
 
 ## Status (2026-09-04, RTX 5090, go hello-world guest)
 
-> Measured before `CUDA_MODULE_LOADING=EAGER` joined the run recipe, so the
-> leg figures below are the lazy-loading ones: a run made with it proves
-> this guest with ~0.5 s less leg.
+> Measured 2026-09-04, on that date's binary and plugin. Do not adjust these
+> figures for `CUDA_MODULE_LOADING=EAGER`: the 2026-09-09 arms above read
+> 5.72 s of leg without it and 5.24 s with it, both under the 6.5 s here, so
+> this table is stale by more than that one knob. Take the shape of the gap
+> from here and the leg from those arms.
 
 `cargo-zisk prove -g -y` through the bridge completes and its final proof
 verifies. All 11 basic instances (Rom, Main, Mem, InputData, RomData,
