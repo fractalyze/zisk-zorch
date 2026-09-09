@@ -311,14 +311,27 @@ Facts the gate surfaced, all now handled by the bridge:
   race and lands either way. The client's floor is from #191's re-walk
   (2026-09-09, both arms on one binary); pil2's and the module loads'
   are from 2026-09-08 and the blocked LDE does not touch them:
-  - **A client needs 11.8 GiB**, at headroom 3: 0.37 of the card proves
-    all 11 AIRs in three runs out of three, and below it the outcome is a
-    coin flip — 0.35 four times in five, 0.34 once in three, 0.32 never
-    in three (#191's table below is the walk, beside the same binary on
-    the pre-#191 artifacts, where the same three-out-of-three fraction is
-    0.39 and 12.4 GiB). #177 first put it at 12.1 GiB off one run per
-    fraction and #188 revised that to 12.4 off seven; a fraction at the
-    boundary is a race, so a repeated figure supersedes a single run.
+  - **A client needs 11.8 GiB**, at headroom 3 — the fraction every run
+    survives, below which the outcome is a coin flip rather than a
+    cliff. Both columns are `main` at c8da072, so only the artifacts
+    differ:
+
+    | `ZZ_MEMORY_FRACTION` | the client's share | before #191 | after |
+    |---|---|---|---|
+    | 0.45 | 14.3 GiB | — | 2/2 |
+    | 0.39 | 12.4 GiB | 3/3 | 3/3 |
+    | 0.37 | 11.8 GiB | 1/3 | 3/3 |
+    | 0.35 | 11.1 GiB | 0/3 | 4/5 |
+    | 0.34 | 10.8 GiB | 0/3 | 1/3 |
+    | 0.32 | 10.2 GiB | — | 0/3 |
+    | 0.30 | 9.5 GiB | — | 0/3 |
+    | 0.28 | 8.9 GiB | — | 0/2 |
+
+    #177 first put the floor at 12.1 GiB off one run per fraction and
+    #188 revised it to 12.4 off seven; a repeated figure supersedes a
+    single run. #188's own table below reads 0/4 at 0.37 where this one
+    reads 1/3 — that arm predates #190's stage-tree release, and is not
+    this binary.
     That 11.8 GiB is what a client holds at once — one AIR's fixed
     sections (the extended constants, their tree, the base constants the
     stage-2 hints read: 4.6 GB for a table AIR with 88 constant columns),
@@ -431,17 +444,13 @@ Facts the gate surfaced, all now handled by the bridge:
   | the LDE's own device time | 31.9 → 39.5 ms | 34.0 → 54.5 ms |
 
   Whole programs move less than their LDEs do, because the Merkle half
-  has temporaries of its own. `const_setup` on VirtualTableZisk0_n21 —
-  the program the issue names — goes from 9.79 to **6.42 GiB**
-  (1.38 argument + 2.92 results, scratch 5.50 → 2.13); what is left of
-  the scratch is the tree's, not the transform's. Compiling it is
-  unaffected: 262.8 s against 266.4 s, since the blocks multiply the NTT
-  passes and the Poseidon kernels are what the minutes go to.
-
-  The 3 GiB the issue asked of that program is not reachable by any
-  change to how it computes: the argument and the results are 4.13 GiB
-  before it computes anything, and both are fixed sections the client
-  holds either way. What was reachable is everything above them.
+  has temporaries of its own: `const_setup` on VirtualTableZisk0_n21 goes
+  from 9.79 to **6.42 GiB** (1.38 argument + 2.92 results, scratch 5.50 →
+  2.13), and what is left of the scratch is the tree's. Compiling it is
+  unaffected, 262.8 s against 266.4 s — the blocks multiply the NTT
+  passes and the Poseidon kernels are what the minutes go to. A program
+  cannot go below its own argument and results, 4.13 GiB there, and both
+  are fixed sections the client holds either way.
 
   The time lands where the per-LDE figures predict. A whole hello-world
   leg is 5.64–5.86 s before and 5.74–6.14 s after, three runs each at
@@ -449,35 +458,14 @@ Facts the gate surfaced, all now handled by the bridge:
   proves it in 0.501 s against 0.519 s, which over 11 instances is the
   0.2 s the leg moves.
 
-  **A client's floor moves 12.4 → 11.8 GiB, and two clients still do not
-  fit.** The walk is the same one #188 ran, both arms on the same binary
-  (`main` at c8da072, an exporter-only change) so only the artifacts
-  differ. Its `before` column is that binary, not #188's `before` column
-  four bullets up, which predates #190's stage-tree release — the two
-  disagree at 0.37 (1/3 here, 0/4 there) and are not the same arm:
-
-  | `ZZ_MEMORY_FRACTION` | the client's share | before | after |
-  |---|---|---|---|
-  | 0.45 | 14.3 GiB | — | 2/2 |
-  | 0.39 | 12.4 GiB | 3/3 | 3/3 |
-  | 0.37 | 11.8 GiB | 1/3 | 3/3 |
-  | 0.35 | 11.1 GiB | 0/3 | 4/5 |
-  | 0.34 | 10.8 GiB | 0/3 | 1/3 |
-  | 0.32 | 10.2 GiB | — | 0/3 |
-  | 0.30 | 9.5 GiB | — | 0/3 |
-  | 0.28 | 8.9 GiB | — | 0/2 |
-
-  So 3.4 GiB freed inside the biggest program buys 0.6 GiB of the floor,
-  and the band below it shifts by about the same. The two are not the
-  same quantity: the floor is the arena's high-water over a whole run,
-  and the extend's temporaries were the largest single allocation in it
-  rather than most of it. The largest allocation any failing run now
-  reports is 1.56 GiB, inside `commit2` on `VirtualTableZisk0_n21` at
-  fraction 0.28. Two clients need ~7.25 GiB each at headroom 3 (pil2's
-  own floor caps their total share near 0.456) against a measured 11.8 —
-  so the extend was not what stands between this card and a second
-  client, and the next lever is what a client keeps rather than what one
-  program computes.
+  **Freeing memory inside a program is not the same as lowering the
+  floor.** 3.4 GiB out of the biggest one buys 0.6 GiB of the client
+  floor above, because that block was the arena's largest single
+  allocation rather than most of its high-water; the largest any failing
+  run now reports is 1.56 GiB, inside `commit2` on
+  `VirtualTableZisk0_n21` at fraction 0.28. So the extend is not what
+  stands between this card and a second client, and the next lever is
+  what a client keeps rather than what one program computes.
 - **Exports carry no debug info and no folded power tables.** XLA
   re-formats every op's source location on load (half of a 5.6 s load
   once), so the exporter strips them; and it constant-folds the coset
