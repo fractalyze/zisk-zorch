@@ -1,6 +1,7 @@
 """Pins how `host_idle.py` charges a bridge leg's device idle to host phases:
-the span algebra underneath it, the rule that only the prove holding the
-client explains the idle, and the two readers' filters.
+the rule that only the prove holding the client explains the idle, and the two
+readers' filters. The span algebra underneath it is shared with
+`h2d_overlap.py` and pinned in nsys_trace_test.
 
 The attribution cases are built here rather than cut from a capture — each
 one is a handful of ranges saying exactly what it is about, which a real
@@ -24,53 +25,6 @@ HOLDER, QUEUED, WORKER = "100", "200", "300"
 def phase(name, start, end, tid=HOLDER, rid=None, parent=""):
     """One range instance, named the way the bridge opens it."""
     return host_idle.RangeRow(name, (start, end), tid, rid or f"{name}@{start}", parent)
-
-
-class SpansTest(parameterized.TestCase):
-    """The interval algebra the attribution is built on."""
-
-    @parameterized.named_parameters(
-        ("disjoint", [(0, 1), (2, 3)], [(0, 1), (2, 3)]),
-        ("overlapping", [(0, 2), (1, 3)], [(0, 3)]),
-        ("touching", [(0, 1), (1, 2)], [(0, 2)]),
-        ("unsorted", [(2, 3), (0, 1)], [(0, 1), (2, 3)]),
-        ("nested", [(0, 9), (3, 4)], [(0, 9)]),
-    )
-    def test_merge(self, spans, want):
-        self.assertEqual(host_idle.merge(spans), want)
-
-    @parameterized.named_parameters(
-        ("holes", [(0, 10)], [(2, 4), (6, 8)], [(0, 2), (4, 6), (8, 10)]),
-        ("all_covered", [(0, 10)], [(0, 20)], []),
-        ("nothing_removed", [(0, 10)], [(20, 30)], [(0, 10)]),
-        (
-            "cursor_spans_several",
-            [(0, 5), (10, 15)],
-            [(1, 2), (11, 12)],
-            [(0, 1), (2, 5), (10, 11), (12, 15)],
-        ),
-        ("edge_touching", [(0, 10)], [(0, 3), (7, 10)], [(3, 7)]),
-    )
-    def test_subtract(self, a, b, want):
-        self.assertEqual(host_idle.subtract(a, b), want)
-
-    @parameterized.named_parameters(
-        ("partial", [(0, 10)], [(5, 15)], [(5, 10)]),
-        ("none", [(0, 5)], [(5, 10)], []),
-        ("several", [(0, 10)], [(1, 2), (3, 4)], [(1, 2), (3, 4)]),
-    )
-    def test_intersect(self, a, b, want):
-        self.assertEqual(host_idle.intersect(a, b), want)
-
-    def test_subtract_and_intersect_partition_the_time(self):
-        # The report's reconciliation rests on this: what one cover takes
-        # from another plus what it leaves is the whole of it.
-        a, b = [(0, 100)], [(10, 20), (30, 90)]
-        self.assertEqual(
-            host_idle.covered(host_idle.intersect(a, b))
-            + host_idle.covered(host_idle.subtract(a, b)),
-            host_idle.covered(a),
-        )
 
 
 class TurnsTest(absltest.TestCase):
@@ -239,14 +193,6 @@ class ReadingTest(parameterized.TestCase):
     """The filters the two readers apply, against real `nsys` rows."""
 
     @parameterized.named_parameters(
-        ("bridge_fusion", "loop_add_fusion", True),
-        ("bridge_indexed", "sponge_hash_1", True),
-        ("pil2_signature", "evalTwiddleFirstKernel(gl64_t *, ...)", False),
-    )
-    def test_owner(self, kernel, is_bridge):
-        self.assertEqual(host_idle.owner_is_bridge(kernel), is_bridge)
-
-    @parameterized.named_parameters(
         # nsys writes a default-domain range with a bare leading colon.
         ("bridge_phase", ":host/take/trace", "host/take/trace"),
         ("bridge_program", ":commit1", "commit1"),
@@ -261,15 +207,6 @@ class ReadingTest(parameterized.TestCase):
         # pil2's, two copies and a memset; counting any of those four would
         # make the leg look busy where it is not.
         self.assertLen(host_idle.read_kernels(TRACE), 3)
-
-    def test_a_time_column_is_scaled_by_the_unit_in_its_header(self):
-        # nsys picks the unit by capture length, so the reader has to scale
-        # rather than assume nanoseconds.
-        self.assertEqual(
-            host_idle.column(["Start (us)"], "Start"), ("Start (us)", 1_000)
-        )
-        with self.assertRaises(ValueError):
-            host_idle.column(["Start (bytes)"], "Start")
 
     def test_xlas_own_ranges_are_left_out(self):
         names = {row.name for row in host_idle.read_ranges(NVTX)}

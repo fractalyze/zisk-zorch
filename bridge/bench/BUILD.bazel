@@ -3,8 +3,26 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Bench tooling for the bridge: the guest input writer, the native <-> bridge
 # dump comparison, the log summarizer behind the numbers in docs/bridge.md,
-# and the two per-program profile readers behind that page's "Profiling".
+# and the four capture readers behind that page's "Profiling" — two
+# per-program (ours and pil2's), one for where the uploads sit and one for
+# where the leg's device idle goes. The two that read a `cuda_gpu_trace`
+# share :nsys_trace, which owns the rule telling the provers' kernels apart.
 # run.sh drives one prove; see the page's "Running".
+
+py_library(
+    name = "nsys_trace",
+    srcs = ["nsys_trace.py"],
+)
+
+py_test(
+    name = "nsys_trace_test",
+    size = "small",
+    srcs = ["nsys_trace_test.py"],
+    deps = [
+        ":nsys_trace",
+        requirement("absl_py"),
+    ],
+)
 
 py_library(
     name = "summarize",
@@ -91,6 +109,7 @@ py_test(
 py_library(
     name = "host_idle",
     srcs = ["host_idle.py"],
+    deps = [":nsys_trace"],
 )
 
 py_test(
@@ -104,6 +123,23 @@ py_test(
     ],
     deps = [
         ":host_idle",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
+    name = "h2d_overlap",
+    srcs = ["h2d_overlap.py"],
+    deps = [":nsys_trace"],
+)
+
+py_test(
+    name = "h2d_overlap_test",
+    size = "small",
+    srcs = ["h2d_overlap_test.py"],
+    data = ["testdata/cuda_gpu_trace.csv"],
+    deps = [
+        ":h2d_overlap",
         requirement("absl_py"),
     ],
 )

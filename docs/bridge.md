@@ -118,7 +118,39 @@ bench/nvtx_programs.py main_nvtx_kern_sum.csv
 ZZ_GPU_HEADROOM_GB=15 cargo-zisk-dev prove -e guest.elf -k $PK -g -y -vv \
     -o proof > native.log
 bench/pil2_timers.py native.log --global-info $PK/pilout.globalInfo.json
+
+# Where the uploads sit: nsys over a WHOLE run (not one instance), then the
+# host-to-device time each prover's own kernels did not hide. --sample=none
+# --cpuctxsw=none is not optional either -- with CPU sampling on, nsys
+# 2026.1.3 collects the run fine and then deadlocks in report generation,
+# leaving an unusable .qdstrm and no .nsys-rep.
+ZZ_ARTIFACTS=$ARTIFACTS ZZ_CLIENTS=1 ZZ_MEMORY_FRACTION=0.45 ZZ_GPU_HEADROOM_GB=3 \
+XLA_PJRT_PLUGIN=<venv>/site-packages/frx_plugins/xla_cuda12/xla_cuda_plugin.so \
+nsys profile --cuda-graph-trace=node -t cuda --sample=none --cpuctxsw=none \
+    -o run --force-overwrite true \
+    cargo-zisk prove -e guest.elf -k $PK -g -y -o proof -vv
+nsys stats --report cuda_gpu_trace --format csv -o run run.nsys-rep
+bench/h2d_overlap.py run_cuda_gpu_trace.csv
 ```
+
+`h2d_overlap.py` reports the two provers apart, because one bridged run has
+both on the card: XLA writes a fusion's name with no argument list, pil2's
+kernels are C++ signatures, and a transfer stream belongs to whoever owns
+the kernels on it or, for a dedicated one, the kernels that follow its
+copies. Per side it prints the transfer time that side's own kernels did
+not hide, split at the leg so the share and the exposure share a window;
+the same time measured against the *other* prover's kernels, which is the
+control for a zero; and how long the side's device had already been idle
+when each copy started, which separates a copy the runtime would not
+overlap from one that had nothing to overlap with. Every variable the run
+needs is inlined above, including the `XLA_PJRT_PLUGIN` path that "Running"
+exports, because this recipe wraps the prover directly rather than
+`bench/run.sh` — nsys tracking the shell and `/usr/bin/time` between it and
+the prover is the other way to reach the same hang, and run.sh is also what
+would otherwise export `ZZ_CLIENTS=1` for you. Leaving that one out is the expensive mistake: the default is 3,
+three clients splitting one `ZZ_MEMORY_FRACTION` are each below a client's
+floor, and the run aborts mid-prove with no GPU data in the capture at
+all. The other three values are the ones the numbers below were taken at.
 
 The `nvtx` feature is off by default and stays off in proofman builds: it
 links the CUDA toolkit's `libnvtx3interop` and the ranges say nothing outside
@@ -300,6 +332,97 @@ run.sh's default is the ASM emulator's `-a -u`. So
 for the byte-gate and `summarize.py` for the rows. "Memory budget" below
 was measured this way, adding `ZZ_MEMORY_FRACTION` and
 `ZZ_GPU_HEADROOM_GB` per run.
+
+### The uploads, measured (2026-09-09, post-#192)
+
+Three `nsys` captures of the whole run on a quiet card, read by
+`bench/h2d_overlap.py` (recipe under "Profiling"). Every figure in the table
+below is a line that tool prints over those captures. Three numbers in the
+prose are not its, and each says so where it appears: proofman's own
+`GENERATING_INNER_PROOFS` timer, the device-idle share `host_idle.py`
+produces, and the pinning projection at the end, which is arithmetic on the
+table rather than a measurement. The bridge's leg here is its first kernel to
+its last, which is 0.8–1.2 s inside `GENERATING_INNER_PROOFS` (6.29, 6.63,
+6.62 s here against 5.93–6.01 s uninstrumented — nsys costs the leg 5–11 %).
+
+| per run | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| bridge leg | 5.45 s | 5.47 s | 5.59 s |
+| its kernels, busy | 2.60 s | 2.60 s | 2.61 s |
+| its uploads, 9.75 GB | 0.58 s | 0.44 s | 0.49 s |
+| ├ overlapped by its own kernels | 0.00 s | 0.00 s | 0.00 s |
+| ├ on the critical path | 0.58 s | 0.44 s | 0.49 s |
+| ├ … of that, inside the leg | 0.31 s | 0.31 s | 0.31 s |
+| └ … of that, before the leg's first kernel | 0.27 s | 0.14 s | 0.19 s |
+| copies starting >1 ms after a kernel ended | 71 % | 74 % | 75 % |
+| ├ median idle before a copy | 1.62 ms | 1.90 ms | 1.98 ms |
+| └ p90, longest | 27, 217 ms | 29, 125 ms | 27, 156 ms |
+| pil2's copies overlapped by *the bridge's* kernels | 0.09 s | 0.08 s | 0.07 s |
+| pageable, 5.29 GB | 11.2 GB/s | 15.7 GB/s | 13.4 GB/s |
+| pinned, 4.46 GB | 42.0 GB/s | 41.9 GB/s | 44.9 GB/s |
+
+The two parts of the critical path are each rounded to a hundredth, so they
+do not always re-add to it: run 2 is 0.308 s inside the leg and 0.136 s
+before it, against 0.444 s in total.
+
+Two things this settles. Uploads are **0.44–0.58 s**, not the ~1.9 s the
+pre-#175 profile put on them, and pageable transfers on this card run at
+11–16 GB/s rather than the 3–6 GB/s that number assumed — most of the
+difference is #182's read-ahead and #183's parallel key reads, which took
+the host-side staging out of the transfer. And **none of it overlaps the
+prove it belongs to**: 0.00 s against its own client's kernels in all three
+runs, on both provers. The separate host-to-device stream
+(`local_device_state.h`) exists and is never busy at the same time as that
+client's compute stream.
+
+That zero is enforced, and not by the hardware: in the same captures
+pil2's copies overlap *the bridge's* kernels for 0.07–0.09 s, so the card
+runs copy and compute together happily. What neither prover overlaps is
+its own kernels, and for the bridge PJRT is why. A GPU client is
+`kComputeSynchronized` (`xla/pjrt/local_device_state.h`): a buffer the
+allocator returns at time t may only be written once the compute stream
+has drained everything enqueued before t. So `AllocatedRawSEDeviceMemory`
+records a compute-stream sync point when it allocates
+(`tracked_device_buffer.cc`), and both `BufferFromHostBuffer` paths call
+`WaitForAllocation`, which makes the host-to-device stream wait on that
+sync point's event (`pjrt_stream_executor_client.cc`). An upload into a
+*freshly allocated* buffer therefore cannot start until the client's own
+compute stream is empty — no host-buffer-semantics flag changes that,
+which is why the 2026-09-03 `kImmutableOnlyDuringCall` attempt only moved
+the wait into the next `Execute`. It also explains the shape of the
+capture: the 25–29 % of copies that start within a millisecond of the last
+kernel ending had waited on exactly that event.
+
+The host is separately late: the other 71–75 % start into a device that
+has been idle longer than that, a median of 1.6–2.0 ms and a p90 of 27–29
+ms. **Removing the ordering was tried and does not help.** Allocating an
+instance's four input buffers together, up front, through PJRT's async
+host-to-device transfer manager — so the sync point is taken at admission
+rather than once per buffer behind the previous copy — leaves the overlap
+at 0.00/0.01/0.00 s and proofman's `GENERATING_INNER_PROOFS` unmoved:
+6110/6188/6254 ms before against 6218/6140/6223 ms after. Those are the
+uninstrumented timer on a separate same-session A/B — old bridge and new
+bridge built one after the other on the same card, three runs each — so
+they are comparable to each other and to nothing else on this page, neither
+the nsys legs in the table above nor the 5.93–6.01 s beside them.
+
+The second constraint is what binds, and the idle distribution is what
+makes it visible. The device is not idle for the whole leg — its own
+kernels are busy 2.60 s of 5.45 s — but it is idle when the copies run:
+three in four start after it has already been doing nothing for over a
+millisecond, so an upload freed to run beside kernels finds none to run
+beside. `host_idle.py` says where that idle goes: 76–83 % of it is
+host-side dispatch inside `Artifact::run` — #197's measurement, on its own
+`-t cuda,nvtx` captures of the same guest and card on the same day, not on
+the three here. So at the moment the next instance uploads, the prove
+holding the client is on the host rather than on the device.
+
+Which also means the 0.31 s inside the leg is an upper bound that
+overstates its own cost here: an upload landing in idle the leg would have
+had anyway is not paid for twice. Uploads are not this leg's problem, and
+no change to the upload path makes them one. Bandwidth is smaller still: on
+the table's own rates, pinning the pageable 5.29 GB at the 42 GB/s the
+already-pinned copies reach would take 0.34–0.47 s to about 0.13 s.
 
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
