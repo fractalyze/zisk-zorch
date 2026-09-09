@@ -3,7 +3,8 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Bench tooling for the bridge: the guest input writer, the native <-> bridge
 # dump comparison, the log summarizer behind the numbers in docs/bridge.md,
-# and the two per-program profile readers behind that page's "Profiling".
+# and the three capture readers behind that page's "Profiling" — two
+# per-program (ours and pil2's) and one for where the uploads sit.
 # run.sh drives one prove; see the page's "Running".
 
 py_library(

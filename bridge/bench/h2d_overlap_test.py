@@ -3,6 +3,8 @@ arithmetic behind "on the critical path", which prover a kernel and an upload
 stream belong to, and the totals that come out of a real capture. The fixture
 is one prove's worth of a real run — see testdata/README.md."""
 
+import contextlib
+import io
 import pathlib
 
 from absl.testing import absltest, parameterized
@@ -131,6 +133,81 @@ class CaptureTest(absltest.TestCase):
         )
         self.assertEqual(h2d_overlap.covered(uploads), 74_038_028)
         self.assertEqual(h2d_overlap.covered(kernels), 58_496_094)
+
+
+class ReportTest(absltest.TestCase):
+    """The printed lines, which are where the numbers in docs/bridge.md
+    "The uploads, measured" come from."""
+
+    def report(self, path: pathlib.Path, top: int = 4) -> list[str]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            h2d_overlap.report(path, top=top)
+        return out.getvalue().splitlines()
+
+    def csv(self, body: str) -> pathlib.Path:
+        header = "Start (ns),Duration (ns),Bytes (MB),SrcMemKd,Strm,Name\n"
+        return pathlib.Path(self.create_tempfile(content=header + body).full_path)
+
+    def test_each_side_gets_its_own_block(self):
+        lines = self.report(CAPTURE)
+        self.assertStartsWith(lines[0], "## ")
+        self.assertIn("0.22 s of timeline", lines[0])
+        sides = [
+            line.split()[0]
+            for line in lines
+            if line.startswith("   ") and not line.startswith("    ")
+        ]
+        self.assertEqual(sides, ["bridge", "pil2"])
+
+    def test_the_bridges_numbers(self):
+        lines = "\n".join(self.report(CAPTURE))
+        self.assertIn("bridge leg  0.18 s, kernels busy  0.06 s over 323 spans", lines)
+        self.assertIn("uploads    79 copies,   1.44 GB in  0.07 s at  19.5 GB/s", lines)
+        # The headline: exposed time, its share of the leg, and the zero.
+        self.assertIn(
+            "0.07 s on the critical path, 40 % of the leg;  0.00 s overlapped", lines
+        )
+        self.assertIn(
+            "from Pageable     48 copies,   1.31 GB in  0.07 s at  18.4 GB/s", lines
+        )
+        self.assertIn(
+            "from Pinned       31 copies,   0.13 GB in  0.00 s at  44.1 GB/s", lines
+        )
+
+    def test_the_clip_before_the_first_kernel_is_printed_only_where_there_is_one(self):
+        lines = self.report(CAPTURE)
+        early = [line for line in lines if "before the" in line]
+        # pil2's window opens on a transfer; the bridge's opens on a kernel.
+        self.assertLen(early, 1)
+        self.assertIn("0.02 s of that ran before the leg's first kernel", early[0])
+
+    def test_top_bounds_the_largest_line(self):
+        largest = [line for line in self.report(CAPTURE, top=2) if "largest:" in line]
+        self.assertLen(largest, 2)
+        for line in largest:
+            self.assertLen(line.split("largest:")[1].split(","), 2)
+
+    def test_a_capture_with_neither_says_so(self):
+        # An empty table would otherwise read as a run with no uploads
+        # rather than as a capture taken without -t cuda.
+        lines = self.report(self.csv("0,10,,,7,[CUDA memset]\n"))
+        self.assertLen(lines, 1)
+        self.assertEndsWith(lines[0], "no kernels and no transfers — was -t cuda on?")
+
+    def test_uploads_no_kernel_follows_are_reported_not_dropped(self):
+        # A transfer stream resolves off the kernel that starts after its
+        # copies; with none, the bytes must still be accounted for.
+        lines = self.report(
+            self.csv(
+                "0,100,,,7,sponge_hash_1\n"
+                "500,100,64.0,Pageable,9,[CUDA memcpy Host-to-Device]\n"
+            )
+        )
+        self.assertIn(
+            "unattributed 1 copies, 0.06 GB on stream(s) 9: no kernel runs after them",
+            "\n".join(lines),
+        )
 
 
 if __name__ == "__main__":

@@ -120,9 +120,10 @@ bench/pil2_timers.py native.log --global-info $PK/pilout.globalInfo.json
 # --cpuctxsw=none is not optional either -- with CPU sampling on, nsys
 # 2026.1.3 collects the run fine and then deadlocks in report generation,
 # leaving an unusable .qdstrm and no .nsys-rep.
+ZZ_ARTIFACTS=$ARTIFACTS ZZ_CLIENTS=1 ZZ_MEMORY_FRACTION=0.45 ZZ_GPU_HEADROOM_GB=3 \
 nsys profile --cuda-graph-trace=node -t cuda --sample=none --cpuctxsw=none \
     -o run --force-overwrite true \
-    $ZISK_BIN prove -e guest.elf -k $PK -g -y -o proof -vv
+    cargo-zisk prove -e guest.elf -k $PK -g -y -o proof -vv
 nsys stats --report cuda_gpu_trace --format csv -o run run.nsys-rep
 bench/h2d_overlap.py run_cuda_gpu_trace.csv
 ```
@@ -131,12 +132,14 @@ bench/h2d_overlap.py run_cuda_gpu_trace.csv
 both on the card: XLA writes a fusion's name with no argument list, pil2's
 kernels are C++ signatures, and a transfer stream belongs to whoever owns
 the kernels on it or, for a dedicated one, the kernels that follow its
-copies. Wrap the binary directly rather than `bench/run.sh` — nsys tracking
-the shell and `/usr/bin/time` between it and the prover is the other way to
-reach the same hang — and set `ZZ_CLIENTS=1` yourself, which run.sh
-otherwise does for you (the default is 3, and three clients splitting one
-`ZZ_MEMORY_FRACTION` are each below a client's floor, so the run aborts
-mid-prove and the capture holds no GPU data at all).
+copies. The environment is inlined above because this recipe wraps the
+prover directly rather than `bench/run.sh` — nsys tracking the shell and
+`/usr/bin/time` between it and the prover is the other way to reach the
+same hang, and run.sh is also what would otherwise export `ZZ_CLIENTS=1`
+for you. Leaving that one out is the expensive mistake: the default is 3,
+three clients splitting one `ZZ_MEMORY_FRACTION` are each below a client's
+floor, and the run aborts mid-prove with no GPU data in the capture at
+all. The other three values are the ones the numbers below were taken at.
 
 The `nvtx` feature is off by default and stays off in proofman builds: it
 links the CUDA toolkit's `libnvtx3interop` and the ranges say nothing outside

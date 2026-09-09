@@ -253,6 +253,18 @@ def report(path: pathlib.Path, top: int) -> None:
     for side in (BRIDGE, PIL2):
         uploads = [u for u in cap.uploads if owners.get(u.stream) == side]
         report_side(side, merge(cap.kernels[side]), uploads, top)
+    # A stream resolves unless no kernel starts after any of its copies —
+    # a capture cut short, or one with no kernels at all. Those bytes
+    # belong to neither side above, so say so rather than dropping them
+    # out of the totals.
+    orphans = [u for u in cap.uploads if u.stream not in owners]
+    if orphans:
+        streams = sorted({u.stream for u in orphans})
+        print(
+            f"   unattributed {len(orphans)} copies,"
+            f" {sum(u.n_bytes for u in orphans) / 1e9:.2f} GB on"
+            f" stream(s) {', '.join(streams)}: no kernel runs after them"
+        )
 
 
 def main(argv: list[str]) -> int:
