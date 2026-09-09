@@ -236,6 +236,62 @@ attached; on the 2026-09-09 runs the two agreed to within 8 % (3.448 s of
 enqueue summed, against 3.457-3.731 s of NVTX range time under nsys), which
 is what says the dispatch cost is real and not an artifact of tracing.
 
+### The module-loading mode decides where the first-execution cost lands
+
+`cuModuleLoadFatBinary` and `cuGraphInstantiateWithFlags` are not two costs.
+They are one piece of first-execution work, and which of them pays depends on
+the CUDA driver's module-loading mode.
+
+CUDA 12 defaults `CUDA_MODULE_LOADING` to `LAZY`, under which loading a module
+only registers its fatbin: each kernel's code reaches the device when something
+first references it, and for the bridge that reference is the
+`cuGraphInstantiateWithFlags` building a program's graph inside the prove slot.
+So `eager_load_executable_modules` (#176) moves the registration to preload and
+leaves the code load on the prove path. That is why enabling it took
+`cuModuleLoadFatBinary` from 1.45-1.51 s to zero inside the leg and took
+`cuGraphInstantiateWithFlags` from 0.06-0.12 s to 1.16-1.33 s, for 2.3 % of
+the leg.
+
+`CUDA_MODULE_LOADING=EAGER` makes the driver do both at load time, which
+`ZZ_PRELOAD` has already put off the prove path. Measured 2026-09-09 on one
+binary, arms interleaved, five passes each on hello-world and six on the
+block-shaped mix:
+
+| arm | hello-world leg | block-shaped leg |
+|---|---|---|
+| `ZZ_EAGER_MODULES=0` | 5.77 s | 19.71 s |
+| `=1` | 5.72 s | 19.61 s |
+| `=1` + `CUDA_MODULE_LOADING=EAGER` | 5.24 s | 18.53 s |
+| `=0` + `CUDA_MODULE_LOADING=EAGER` | 5.71 s | — |
+
+**The two knobs are only worth anything together.** The last row is the whole
+argument: the driver variable with lazy executable loading buys nothing,
+because there is no earlier place for the code load to go. Paired with the
+preload it returns 0.48 s of the hello-world leg (8.4 %) and 1.08 s of the
+block-shaped one (5.5 %), with graph instantiation dropping 1.32 s to 0.56 s
+over a whole run.
+
+Read the two shares the way the difference implies rather than picking one:
+first-execution cost is paid once per (AIR, program) pair however many
+instances follow, so the *share* falls as instances per AIR rise and the
+*absolute* figure travels. 5.5 % is an upper bound for block-shaped work, not
+a constant; 1.08 s is the portable number.
+
+**The bridge cannot set this itself.** The driver reads the variable when it
+initializes, and pil2 has initialized CUDA before any bridge client exists:
+setting it in `artifact::new_session` was measured as a no-op (leg 5.65 s
+against 5.17 s for the same binary with the variable set in the environment,
+four interleaved passes each). It has to be set before the process starts, or
+the plugin has to materialize the kernels itself after loading a module —
+which is where the durable fix belongs: beside `eager_load_executable_modules`,
+scoped to the executables loaded through it rather than to every module the
+process loads.
+
+A caveat for anyone sizing a lever off a per-program table: two captures of
+the *same* arm agree to 0.002 s on `deep` and disagree by 0.18 s on
+`fri_fold_0`, with `quotient_1048576` 0.10 s apart. Per-program attribution
+from a single capture supports claims above roughly 0.1 s and nothing below.
+
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
 The wall-clock comparison the issue asks for, on the closest stand-in for
