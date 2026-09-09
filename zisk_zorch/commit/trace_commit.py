@@ -112,7 +112,23 @@ def unextend(extended: Array, blowup: int) -> Array:
     return lax.ntt(unscaled, ntt_type="NTT", ntt_length=n, generator=_PIL2_GENERATOR).T
 
 
-def extend(trace: Array, blowup: int) -> Array:
+# How much of an extended section one LDE block may occupy. Three
+# block-sized temporaries are live at the peak — the coefficients, the
+# coset-scaled block, the transform's output — so `extend`'s working set is
+# near three times this whatever the section's width. 256 MiB is the
+# measured knee; docs/bridge.md "Memory budget" carries the walk behind it
+# and what a smaller block costs.
+LDE_BLOCK_BYTES = 256 << 20
+
+
+def _block_cols(ext_rows: int, n_cols: int, block_bytes: int) -> int:
+    """Columns per LDE block: as many as `block_bytes` of the extended
+    domain holds, at least one and never more than the section has."""
+    per_col = ext_rows * np.dtype(F).itemsize
+    return max(1, min(n_cols, block_bytes // per_col))
+
+
+def extend(trace: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES) -> Array:
     """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
     rows in pil2's domain order (`extendPol` semantics).
 
@@ -120,21 +136,39 @@ def extend(trace: Array, blowup: int) -> Array:
     transforms the last axis; the trace is row-major here, so it rides in as
     columns (`trace.T`) and back out as rows. `_PIL2_GENERATOR` keeps the
     transform in pil2's domain order.
+
+    Columns are transformed a block at a time (`LDE_BLOCK_BYTES`). Each
+    column's LDE is independent of every other's, so the codeword does not
+    depend on how they are split.
     """
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
+    n, n_cols = trace.shape
+    ne = n * blowup
     # The shift crosses an optimization barrier so XLA cannot fold the coset
     # power series it seeds into a 2^nBitsExt literal: every exported
     # program that LDEs would otherwise carry its own copy (tens of MB each,
     # on the device for as long as the program is loaded).
     rs = ReedSolomon(
-        trace.shape[0],
+        n,
         blowup,
         F,
         coset_shift=lax.optimization_barrier(fnp.asarray(COSET_SHIFT, F)),
         generator=_PIL2_GENERATOR,
     )
-    return rs.extend(trace.T).T
+    cols = _block_cols(ne, n_cols, block_bytes)
+    if cols == n_cols:
+        return rs.extend(trace.T).T
+    out = fnp.zeros((ne, n_cols), F)
+    for j in range(0, n_cols, cols):
+        # A dependency, not a scheduling hint. The blocks are independent,
+        # so without it XLA runs several transforms at once and their
+        # temporaries are live together; threading `trace` through with the
+        # result makes each block's read wait on the previous block's write.
+        trace, out = lax.optimization_barrier((trace, out))
+        block = rs.extend(trace[:, j : j + cols].T).T
+        out = lax.dynamic_update_slice(out, block, (0, j))
+    return out
 
 
 def merkle_tree(arity: int, hash_family: str = DEFAULT_HASH_FAMILY) -> MerkleTree:

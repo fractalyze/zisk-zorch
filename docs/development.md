@@ -278,12 +278,17 @@ which is production's shape (111 AIR instances per block):
 - **Cold is compile time**: ~88–89 s and flat from 2^20 to 2^22 (up from
   ~70 s as more of the spine jits), so the cold column prices the
   compile-once half of the server shape, not the proving.
-- **The 2^23 ceiling is the stage-1 LDE forward NTT**, whose lowering holds
+- **The 2^23 ceiling was the stage-1 LDE forward NTT**, whose lowering held
   two full ping-pong copies of the `(38, 2^24)` matrix as one 9.50 GiB
   scratch allocation. The traceback blames the query grind only because the
   transcript is device-resident, so the grind's `_canonical` is the first
-  host sync in the chain. Splitting the LDE into column blocks (exact — the
-  transform is per-column) is the known fix, currently parked.
+  host sync in the chain. zisk-zorch#191 took the fix this bullet named:
+  `commit.trace_commit`'s `extend` transforms a column block at a time
+  (`LDE_BLOCK_BYTES`), which bounds that scratch at about three blocks
+  whatever the section's width — 1.01 GiB at this very shape, from the
+  compiled executable's own `memory_analysis`. Whether the ceiling itself
+  lifts is unmeasured: nothing has re-run the spine at 2^23 since, and
+  the LDE was only the allocation the traceback reached first.
 - **For a measured whole-block ratio, see the block baseline below** — that
   supersedes the derived ~2–3× bracket this bullet used to carry.
 
