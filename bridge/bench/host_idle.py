@@ -5,7 +5,7 @@ and an `nsys stats --report nvtx_pushpop_trace` CSV for the host phases.
 
 The bridge's leg is its first kernel to its last. Its own kernels are busy
 for less than half of it (#193: 2.60 s of a 5.47 s leg) and the uploads
-account for 0.30 s of the difference, so the rest is time in which the device
+account for 0.31 s of the difference, so the rest is time in which the device
 has nothing to run because the host has not given it anything. This report
 says which host phase was running in each such nanosecond.
 
