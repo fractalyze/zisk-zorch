@@ -429,11 +429,18 @@ Facts the gate surfaced, all now handled by the bridge:
   | argument + result + temporaries | 9.63 → **4.88 GiB** | 8.53 → **4.41 GiB** |
   | the LDE's own device time | 31.9 → 39.5 ms | 34.0 → 54.5 ms |
 
-  The 3 GiB the issue asked of the largest program is not reachable there
-  by any change to how it computes: `const_setup` on VirtualTableZisk0_n21
-  takes a 1.38 GiB argument and returns a 2.75 GiB result, 4.13 GiB before
-  it computes anything, and both are fixed sections the client holds
-  either way. What was reachable is everything above them.
+  Whole programs move less than their LDEs do, because the Merkle half
+  has temporaries of its own. `const_setup` on VirtualTableZisk0_n21 —
+  the program the issue names — goes from 9.79 to **6.42 GiB**
+  (1.38 argument + 2.92 results, scratch 5.50 → 2.13); what is left of
+  the scratch is the tree's, not the transform's. Compiling it is
+  unaffected: 262.8 s against 266.4 s, since the blocks multiply the NTT
+  passes and the Poseidon kernels are what the minutes go to.
+
+  The 3 GiB the issue asked of that program is not reachable by any
+  change to how it computes: the argument and the results are 4.13 GiB
+  before it computes anything, and both are fixed sections the client
+  holds either way. What was reachable is everything above them.
 
   The time lands where the per-LDE figures predict. A whole hello-world
   leg is 5.64–5.86 s before and 5.74–6.14 s after, three runs each at
@@ -457,15 +464,17 @@ Facts the gate surfaced, all now handled by the bridge:
   | 0.30 | 9.5 GiB | — | 0/3 |
   | 0.28 | 8.9 GiB | — | 0/2 |
 
-  So 4.75 GiB freed inside the program buys 0.6 GiB of the floor, and
-  the band below it shifts by about the same. The two are not the same
-  quantity: the floor is the arena's high-water over a whole run, and the
-  extend's temporaries were the largest single allocation in it rather
-  than most of it. The largest allocation any failing run now reports is
-  1.56 GiB, inside `commit2` on `VirtualTableZisk0_n21` at fraction 0.28.
-  Two clients need ~7.25 GiB each at headroom 3 (pil2's
-  own floor caps their total share near 0.456) against a measured 11.8,
-  so this was not what stood between this card and a second client.
+  So 3.4 GiB freed inside the biggest program buys 0.6 GiB of the floor,
+  and the band below it shifts by about the same. The two are not the
+  same quantity: the floor is the arena's high-water over a whole run,
+  and the extend's temporaries were the largest single allocation in it
+  rather than most of it. The largest allocation any failing run now
+  reports is 1.56 GiB, inside `commit2` on `VirtualTableZisk0_n21` at
+  fraction 0.28. Two clients need ~7.25 GiB each at headroom 3 (pil2's
+  own floor caps their total share near 0.456) against a measured 11.8 —
+  so the extend was not what stands between this card and a second
+  client, and the next lever is what a client keeps rather than what one
+  program computes.
 - **Exports carry no debug info and no folded power tables.** XLA
   re-formats every op's source location on load (half of a 5.6 s load
   once), so the exporter strips them; and it constant-folds the coset
