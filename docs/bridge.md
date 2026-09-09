@@ -395,9 +395,10 @@ host-to-device transfer manager — so the sync point is taken at admission
 rather than once per buffer behind the previous copy — leaves the overlap
 at 0.00/0.01/0.00 s and proofman's `GENERATING_INNER_PROOFS` unmoved:
 6110/6188/6254 ms before against 6218/6140/6223 ms after. Those are the
-uninstrumented timer on a separate same-session A/B, old bridge and new
-bridge built one after the other on the same card, three runs each — not
-the nsys legs in the table above, and not comparable to them.
+uninstrumented timer on a separate same-session A/B — old bridge and new
+bridge built one after the other on the same card, three runs each — so
+they are comparable to each other and to nothing else on this page, neither
+the nsys legs in the table above nor the 5.93–6.01 s beside them.
 
 The second constraint is what binds, and the idle distribution is what
 makes it visible. The device is not idle for the whole leg — its own
