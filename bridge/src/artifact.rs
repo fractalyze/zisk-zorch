@@ -141,6 +141,62 @@ impl Client {
     }
 }
 
+/// Apply `f` to every item, `threads` at a time, and return the first error.
+///
+/// Threads share one queue rather than taking a slice each, because the items
+/// here are programs whose compile times differ by more than an order of
+/// magnitude -- a static split leaves one thread holding every slow one. A
+/// panic in a worker propagates, since callers wrap this in `catch_unwind` to
+/// clear their in-flight marks.
+///
+/// Every item is attempted whatever the thread count, and the first error is
+/// the one returned: a failure part-way through must leave the same set
+/// compiled at one thread as at eight, or the preload path (which runs at one)
+/// would fill the cache differently from a warm.
+fn each_parallel<T: Send + Sync>(
+    items: Vec<T>,
+    threads: usize,
+    f: impl Fn(&T) -> Result<(), Error> + Sync,
+) -> Result<(), Error> {
+    // One accumulator for both branches: a worker that hits an error keeps
+    // pulling, so the set left compiled does not depend on the thread count.
+    let first: std::sync::Mutex<Result<(), Error>> = std::sync::Mutex::new(Ok(()));
+    let keep = |result: Result<(), Error>| {
+        if let Err(e) = result {
+            let mut first = first.lock().unwrap_or_else(|p| p.into_inner());
+            if first.is_ok() {
+                *first = Err(e);
+            }
+        }
+    };
+    if threads <= 1 {
+        items.iter().for_each(|item| keep(f(item)));
+    } else {
+        let queue = std::sync::Mutex::new(items.iter());
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..threads)
+                .map(|_| {
+                    scope.spawn(|| loop {
+                        // Bound before the body: a `while let` on the guard
+                        // would hold the lock across `f` and serialise the run.
+                        let next = queue.lock().unwrap_or_else(|p| p.into_inner()).next();
+                        match next {
+                            Some(item) => keep(f(item)),
+                            None => return,
+                        }
+                    })
+                })
+                .collect();
+            for worker in workers {
+                if let Err(panic) = worker.join() {
+                    std::panic::resume_unwind(panic);
+                }
+            }
+        });
+    }
+    first.into_inner().unwrap_or_else(|p| p.into_inner())
+}
+
 pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
     Arc::new(Client {
         session: new_session(memory_fraction),
@@ -148,10 +204,54 @@ pub fn new_client(memory_fraction: Option<f32>) -> Arc<Client> {
     })
 }
 
+/// Whether the plugin loads an executable's modules into the CUDA context as
+/// it is deserialized rather than on its first execution.
+///
+/// It pays when the loads land somewhere other than a prove slot, which is
+/// what `ZZ_PRELOAD` arranges, so it follows that by default. `ZZ_EAGER_MODULES`
+/// overrides either way — a measurement has to vary this without also varying
+/// what gets preloaded, or the two changes land in one number.
+///
+/// Off means sending no option at all, not `false`: PJRT rejects a create
+/// option a plugin does not know, so a plugin built before
+/// fractalyze/xla#664 fails client creation on the key whatever its value.
+fn eager_module_loads() -> Option<bool> {
+    // The same ZZ_PRELOAD the bridge acts on in `Bridge::global`; clients are
+    // built before that runs, so it is read here too.
+    eager_module_loads_from(
+        std::env::var("ZZ_EAGER_MODULES").ok().as_deref(),
+        std::env::var("ZZ_PRELOAD").ok().as_deref(),
+    )
+}
+
+/// The decision on its own, so the table in the tests can state it.
+///
+/// `0` is the off spelling for both variables, as it is for `ZZ_PRELOAD`; an
+/// empty value is not a value at all but an unset one, which is how every
+/// other variable here reads it (`filter(|s| !s.is_empty())` in `Bridge::global`).
+fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option<bool> {
+    let on = match eager.filter(|s| !s.is_empty()) {
+        Some("0") => false,
+        Some(_) => true,
+        None => preload.filter(|s| !s.is_empty()) != Some("0"),
+    };
+    on.then_some(true)
+}
+
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
-    let options = match memory_fraction {
-        Some(f) => SessionOptions { preallocate: Some(true), memory_fraction: Some(f) },
-        None => SessionOptions { preallocate: Some(false), memory_fraction: None },
+    let eager = eager_module_loads();
+    if crate::log_level() >= 1 {
+        // A run's own log has to say which way this went: two runs that differ
+        // only by this option are otherwise indistinguishable after the fact.
+        // Once per run, not per client -- the value is read from the
+        // environment, so every client of a run reports the same thing.
+        static SAID: std::sync::Once = std::sync::Once::new();
+        SAID.call_once(|| zzlog!("eager module loads {}", if eager.is_some() { "on" } else { "off" }));
+    }
+    let options = SessionOptions {
+        preallocate: Some(memory_fraction.is_some()),
+        memory_fraction,
+        eager_load_executable_modules: eager,
     };
     let session = Arc::new(unsafe { Session::with_options(options) });
     if memory_fraction.is_some() {
@@ -338,13 +438,18 @@ impl Artifact {
         Ok(exe)
     }
 
-    /// Compile every program now rather than on first use.
-    pub fn compile_all(&self) -> Result<(), Error> {
-        let names: Vec<String> = self.manifest.programs.keys().cloned().collect();
-        for name in names {
-            self.executable(&name)?;
-        }
-        Ok(())
+    /// Compile (or load from the cache) every program, `threads` at a time.
+    ///
+    /// One thread is the default everywhere a prove might be waiting: each
+    /// program takes the client's load gate on its own, so a prove arriving
+    /// mid-load waits for one program rather than for `threads` of them, and
+    /// that is the latency guarantee the per-program gate exists for. Warming
+    /// a single AIR is the case that wants more — nothing is proving, and the
+    /// serial loop is otherwise about an hour and a half for ~34 programs.
+    pub fn compile_all(&self, threads: usize) -> Result<(), Error> {
+        each_parallel(self.manifest.programs.keys().cloned().collect(), threads, |name| {
+            self.executable(name).map(|_| ())
+        })
     }
 
     /// Host words -> a device buffer shaped and typed by `spec`. Field words
@@ -439,9 +544,73 @@ impl Artifact {
 
 #[cfg(test)]
 mod tests {
-    use super::{CacheEntryLock, Gate};
+    use super::{each_parallel, eager_module_loads_from, CacheEntryLock, Gate};
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn each_parallel_runs_every_item_once_on_every_thread_count() {
+        for threads in [1, 2, 8, 64] {
+            let seen = std::sync::Mutex::new(Vec::new());
+            let items: Vec<usize> = (0..50).collect();
+            each_parallel(items, threads, |i| {
+                seen.lock().unwrap().push(*i);
+                Ok(())
+            })
+            .unwrap();
+            let mut got = seen.into_inner().unwrap();
+            got.sort_unstable();
+            assert_eq!(got, (0..50).collect::<Vec<_>>(), "threads={threads}");
+        }
+    }
+
+    #[test]
+    fn each_parallel_attempts_every_item_at_every_thread_count() {
+        // Fewer threads than items and a failure per live worker: the case a
+        // `threads >= items` test cannot see, because there no worker ever
+        // takes a second item. With `f(item)?` returning from the worker,
+        // items 2 and 3 are never attempted at threads=2.
+        for threads in [1, 2, 3, 8] {
+            let ran = std::sync::Mutex::new(Vec::new());
+            let err = each_parallel((0..4).collect(), threads, |i| {
+                ran.lock().unwrap().push(*i);
+                if *i < 2 {
+                    return Err(format!("item {i} failed").into());
+                }
+                Ok(())
+            })
+            .unwrap_err();
+            let mut got = ran.into_inner().unwrap();
+            got.sort_unstable();
+            assert_eq!(got, vec![0, 1, 2, 3], "threads={threads}");
+            // Both failures are eligible; which one lands first is a race
+            // above one thread, so pin the set rather than the order.
+            assert!(
+                ["item 0 failed", "item 1 failed"].contains(&err.to_string().as_str()),
+                "threads={threads} got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn eager_module_loads_follow_the_preload_unless_overridden() {
+        // Something preloads, so the loads happen off the prove path and may
+        // as well pull the modules across with them.
+        assert_eq!(eager_module_loads_from(None, None), Some(true));
+        assert_eq!(eager_module_loads_from(None, Some("all")), Some(true));
+        // Nothing preloads: every load is already inside a prove slot.
+        assert_eq!(eager_module_loads_from(None, Some("0")), None);
+        // The override moves this one thing on its own, which is what lets a
+        // run measure it without also changing what gets preloaded.
+        assert_eq!(eager_module_loads_from(Some("0"), None), None);
+        assert_eq!(eager_module_loads_from(Some("1"), Some("0")), Some(true));
+        // An empty value is unset, not "on": `ZZ_EAGER_MODULES=` falls through
+        // to the preload the same way an absent one does, and an empty
+        // `ZZ_PRELOAD` is the default (preloading) rather than `0`.
+        assert_eq!(eager_module_loads_from(Some(""), Some("0")), None);
+        assert_eq!(eager_module_loads_from(Some(""), None), Some(true));
+        assert_eq!(eager_module_loads_from(None, Some("")), Some(true));
+    }
 
     #[test]
     fn one_compile_per_cache_entry_at_a_time() {

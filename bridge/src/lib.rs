@@ -705,7 +705,7 @@ impl Bridge {
         // (Each program takes the client's load gate on its own, inside
         // `compile_all`, so a prove waits for one program, not a whole AIR.)
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            artifact::Artifact::load(client.clone(), &dir, Some(&cache)).and_then(|a| a.compile_all().map(|_| a))
+            artifact::Artifact::load(client.clone(), &dir, Some(&cache)).and_then(|a| a.compile_all(1).map(|_| a))
         }))
         .unwrap_or_else(|p| {
             Err(p

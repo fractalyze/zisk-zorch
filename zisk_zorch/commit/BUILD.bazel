@@ -82,6 +82,11 @@ py_test(
         ":trace_commit",
         requirement("absl_py"),
         requirement("frx"),
+        # The card this test needs an answer from. Without the plugin in the
+        # closure frx knows only cpu/tpu, and the run dies on "Unable to
+        # initialize backend 'cuda'" before reaching a single marker.
+        requirement("frx_cuda12_pjrt"),
+        requirement("frx_cuda12_plugin"),
         requirement("pyzorch"),
         requirement("zk_dtypes"),
     ],
