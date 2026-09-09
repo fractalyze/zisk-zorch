@@ -171,6 +171,25 @@ report generation. Set `ZZ_CLIENTS=1` by hand when wrapping the binary
 directly — the bridge's own default is 3, and three clients splitting one
 `ZZ_MEMORY_FRACTION` land under a client's floor and abort mid-prove.
 
+Two things about reading the result, both learned by getting them wrong.
+
+**Quote the share of the *leg*, not of the idle.** They differ by more than
+2x and the milestone's criterion is wall time. On the 2026-09-09 captures
+`cuModuleLoadFatBinary` is the same 2.94 s whether it is called 34 % (of the
+idle) or 15 % (of the leg); the second is the one that decides anything.
+
+**Module loads are once per (AIR, program) pair, not per execution and not
+per instance.** A program that runs four times in a prove loads once, and
+every later instance of an AIR already seen loads nothing — measured on the
+block-shaped workload, where 16 of 38 proves load a full program set and the
+other 22 load zero. Eviction does not undo it: a module lives in the CUDA
+context, and `ZZ_RESIDENT_AIRS` only drops device buffers. So this cost
+scales with how many *families* a workload touches, and a guest whose
+instances are all distinct AIRs — hello-world — is its worst case and a bad
+place to size it from. Per-load cost is not constant either (~4.2 ms on
+hello-world against ~5.5 ms on the block-shaped mix), so scaling by program
+count alone under-predicts.
+
 Cross-check any figure this produces against `ZZ_LOG=2`, which prints each
 `Artifact::run`'s enqueue time from the bridge's own clock with no profiler
 attached; on the 2026-09-09 runs the two agreed to within 8 % (3.448 s of
