@@ -148,13 +148,21 @@ impl Client {
 /// magnitude -- a static split leaves one thread holding every slow one. A
 /// panic in a worker propagates, since callers wrap this in `catch_unwind` to
 /// clear their in-flight marks.
+///
+/// Every item is attempted whatever the thread count, and the first error is
+/// the one returned: a failure part-way through must leave the same set
+/// compiled at one thread as at eight, or the preload path (which runs at one)
+/// would fill the cache differently from a warm.
 fn each_parallel<T: Send + Sync>(
     items: Vec<T>,
     threads: usize,
     f: impl Fn(&T) -> Result<(), Error> + Sync,
 ) -> Result<(), Error> {
     if threads <= 1 {
-        return items.iter().try_for_each(|i| f(i));
+        return items.iter().fold(Ok(()), |first, item| match (first, f(item)) {
+            (Ok(()), Err(e)) => Err(e),
+            (first, _) => first,
+        });
     }
     let queue = std::sync::Mutex::new(items.iter());
     let mut first = Ok(());
@@ -209,11 +217,15 @@ fn eager_module_loads() -> Option<bool> {
 }
 
 /// The decision on its own, so the table in the tests can state it.
+///
+/// `0` is the off spelling for both variables, as it is for `ZZ_PRELOAD`; an
+/// empty value is not a value at all but an unset one, which is how every
+/// other variable here reads it (`filter(|s| !s.is_empty())` in `Bridge::global`).
 fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option<bool> {
-    let on = match eager {
+    let on = match eager.filter(|s| !s.is_empty()) {
         Some("0") => false,
         Some(_) => true,
-        None => preload != Some("0"),
+        None => preload.filter(|s| !s.is_empty()) != Some("0"),
     };
     on.then_some(true)
 }
@@ -223,7 +235,10 @@ pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
     if crate::log_level() >= 1 {
         // A run's own log has to say which way this went: two runs that differ
         // only by this option are otherwise indistinguishable after the fact.
-        zzlog!("eager module loads {}", if eager.is_some() { "on" } else { "off" });
+        // Once per run, not per client -- the value is read from the
+        // environment, so every client of a run reports the same thing.
+        static SAID: std::sync::Once = std::sync::Once::new();
+        SAID.call_once(|| zzlog!("eager module loads {}", if eager.is_some() { "on" } else { "off" }));
     }
     let options = SessionOptions {
         preallocate: Some(memory_fraction.is_some()),
@@ -415,7 +430,6 @@ impl Artifact {
         Ok(exe)
     }
 
-    /// Compile every program now rather than on first use.
     /// Compile (or load from the cache) every program, `threads` at a time.
     ///
     /// One thread is the default everywhere a prove might be waiting: each
@@ -544,20 +558,41 @@ mod tests {
 
     #[test]
     fn each_parallel_reports_a_failure_and_still_drains_the_queue() {
-        // More threads than items, so the queue empties while workers are live.
-        let ran = std::sync::atomic::AtomicUsize::new(0);
-        let err = each_parallel((0..4).collect(), 8, |i| {
-            ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if *i == 2 {
-                return Err("program 2 failed".into());
-            }
-            Ok(())
-        })
-        .unwrap_err();
-        assert_eq!(err.to_string(), "program 2 failed");
-        // The other three still ran: one failure must not strand the rest,
-        // since the caller retries nothing.
-        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 4);
+        // Pinned at 1 as well as above it: the bridge's own preload runs the
+        // serial path, so a failure there has to leave the cache in the same
+        // state a warm at eight threads would.
+        for threads in [1, 8] {
+            let ran = std::sync::atomic::AtomicUsize::new(0);
+            let err = each_parallel((0..4).collect(), threads, |i| {
+                ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if *i == 2 {
+                    return Err("program 2 failed".into());
+                }
+                Ok(())
+            })
+            .unwrap_err();
+            assert_eq!(err.to_string(), "program 2 failed", "threads={threads}");
+            // The other three still ran: one failure must not strand the rest,
+            // since the caller retries nothing.
+            assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 4, "threads={threads}");
+        }
+    }
+
+    #[test]
+    fn each_parallel_returns_the_first_failure_when_several_fail() {
+        for threads in [1, 8] {
+            let err = each_parallel(vec![0, 1, 2], threads, |i| match i {
+                0 => Ok(()),
+                _ => Err(format!("item {i} failed").into()),
+            })
+            .unwrap_err();
+            // At one thread "first" is positional; above it, whichever worker
+            // lost the race -- so only assert it is one of the two failures.
+            assert!(
+                ["item 1 failed", "item 2 failed"].contains(&err.to_string().as_str()),
+                "threads={threads} got {err}"
+            );
+        }
     }
 
     #[test]
@@ -572,6 +607,12 @@ mod tests {
         // run measure it without also changing what gets preloaded.
         assert_eq!(eager_module_loads_from(Some("0"), None), None);
         assert_eq!(eager_module_loads_from(Some("1"), Some("0")), Some(true));
+        // An empty value is unset, not "on": `ZZ_EAGER_MODULES=` falls through
+        // to the preload the same way an absent one does, and an empty
+        // `ZZ_PRELOAD` is the default (preloading) rather than `0`.
+        assert_eq!(eager_module_loads_from(Some(""), Some("0")), None);
+        assert_eq!(eager_module_loads_from(Some(""), None), Some(true));
+        assert_eq!(eager_module_loads_from(None, Some("")), Some(true));
     }
 
     #[test]
