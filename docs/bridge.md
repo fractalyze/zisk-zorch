@@ -298,15 +298,24 @@ kernel ending, having waited on exactly that event.
 The host is separately late — 71–75 % of uploads begin after the device
 has already been idle for more than a millisecond (median 1.6–2.0 ms, p90
 ~27 ms, up to 217 ms) — which is why the client idles 2.85–2.98 s of the
-leg against 0.30 s of in-leg uploads. Both have to be fixed to buy
-anything: issuing earlier wins nothing while the allocation still orders
-the copy behind compute, and removing that ordering wins nothing while
-there is no kernel running to overlap. Removing it means not allocating
-the destination behind the running prove — a reused pool, or PJRT's
-async host-to-device transfer manager, which creates the buffers up front
-and fills them later. Bandwidth is the smaller half of all this: pinning
-the pageable 5.29 GB at the 42 GB/s the already-pinned copies reach would
-take 0.34–0.47 s to about 0.13 s. #193 carries the overlap work.
+leg against 0.30 s of in-leg uploads. Removing the ordering was tried and
+does not help. Allocating an instance's four input buffers together, up
+front, through PJRT's async host-to-device transfer manager — so the sync
+point is taken at admission rather than once per buffer behind the
+previous copy — leaves the overlap at 0.00/0.01/0.00 s and the leg
+unmoved (6110/6188/6254 ms before against 6218/6140/6223 ms after, one
+session, same card). The second constraint is what binds: there is no
+kernel running to overlap with. 76–83 % of the leg's device idle is
+host-side dispatch inside `Artifact::run` (#197), so when the next
+instance uploads, the prove holding the client is on the host, not on the
+device.
+
+Which also means the 0.30 s is an upper bound that overstates its own
+cost here: an upload landing in idle the leg would have had anyway is not
+paid for twice. Uploads are not this leg's problem, and no change to the
+upload path makes them one. Bandwidth is smaller still: pinning the
+pageable 5.29 GB at the 42 GB/s the already-pinned copies reach would take
+0.34–0.47 s to about 0.13 s.
 
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
