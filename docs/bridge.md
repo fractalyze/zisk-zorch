@@ -127,6 +127,79 @@ carrying all of them. `pil2_timers.py` is per instance, and its rows are per
 air: a row carries the `x<n>` instances it sums and their average, because a
 workload runs several instances of the same air.
 
+### Where the leg's idle goes
+
+The per-program table above says what the device *did*; on the hello-world
+guest it is busy for under half the bridge's leg, so the larger question is
+what the host was doing for the rest. The bridge opens a second family of
+NVTX ranges, prefixed `host/`, one per step of `Bridge::take`, `prove_owned`
+and the schedule in `AirDriver::prove`; `host_idle.py` charges every idle
+nanosecond of the leg to the phase that was running.
+
+Only the prove *holding the client* can explain the idle. The bridge proves
+one instance at a time per client but gives every instance a thread, so a
+dozen threads are alive and all but one are queued: a queued thread's
+`host/admit` and `host/slot_wait` cover almost the whole leg by construction
+and are waits, not costs. So the report splits the idle at a prove's turn —
+from where its thread leaves `host/slot_wait` holding the slot mutex to the
+end of its `host/prove` — and reports what the other threads were doing
+separately, as overlapping rather than additive.
+
+```bash
+# A whole run, both provers on the card. The bridge must be built with the
+# feature ON inside the proofman build, which the fork does not expose: add
+# `default = ["nvtx"]` to the [features] of the bridge that zisk's Cargo.toml
+# [patch] points at, build cargo-zisk, and take it out again afterwards.
+nsys profile --cuda-graph-trace=node -t cuda,nvtx --sample=none --cpuctxsw=none \
+    -o run cargo-zisk prove -e guest.elf -k $PK -g -y -o proof -vv
+nsys stats --report cuda_gpu_trace --report nvtx_pushpop_trace \
+    --report cuda_api_trace --format csv -o s run.nsys-rep
+bench/host_idle.py s_cuda_gpu_trace.csv s_nvtx_pushpop_trace.csv \
+    s_cuda_api_trace.csv
+```
+
+The third CSV is optional and cuts the same idle a second way: which CUDA
+driver call the holding thread was inside. The phase cut says which step of a
+prove starved the device; this one says what the driver was doing there, and
+the two are answers about the same nanoseconds rather than separate budgets.
+`-t cuda` already collects it, so an existing capture can be re-exported
+without re-running anything.
+
+`--sample=none --cpuctxsw=none` is not optional here either: with CPU
+sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in
+report generation. Set `ZZ_CLIENTS=1` by hand when wrapping the binary
+directly — the bridge's own default is 3, and three clients splitting one
+`ZZ_MEMORY_FRACTION` land under a client's floor and abort mid-prove.
+
+Two things about reading the result, both learned by getting them wrong.
+
+**Quote the share of the *leg*, not of the idle.** The two denominators
+differ by about 2x, and the milestone's criterion is wall time. The same
+`cuModuleLoadFatBinary`, on the two workloads measured 2026-09-09: on the
+hello-world guest 1.53-1.60 s, which is 53-56 % of that leg's idle but
+28-29 % of the leg itself (1.9x); on the block-shaped `sha-hasher` mix
+2.94 s, 34 % of the idle and 15 % of the leg (2.25x). One number, two
+denominators — and the leg is the one that decides anything.
+
+**Module loads are once per (AIR, program) pair, not per execution and not
+per instance.** A program that runs four times in a prove loads once, and
+every later instance of an AIR already seen loads nothing — measured on the
+block-shaped workload, where 16 of 38 proves load a full program set and the
+other 22 load zero. Eviction does not undo it: a module lives in the CUDA
+context, and `ZZ_RESIDENT_AIRS` only drops device buffers. So this cost
+scales with how many *families* a workload touches, and a guest whose
+instances are all distinct AIRs — hello-world — is its worst case and a bad
+place to size it from. Per-load cost is not constant either (~4.2 ms on
+hello-world against ~5.5 ms on the block-shaped mix, over the calls that
+contributed idle — not over every load made), so scaling by program
+count alone under-predicts.
+
+Cross-check any figure this produces against `ZZ_LOG=2`, which prints each
+`Artifact::run`'s enqueue time from the bridge's own clock with no profiler
+attached; on the 2026-09-09 runs the two agreed to within 8 % (3.448 s of
+enqueue summed, against 3.457-3.731 s of NVTX range time under nsys), which
+is what says the dispatch cost is real and not an artifact of tracing.
+
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
 The wall-clock comparison the issue asks for, on the closest stand-in for

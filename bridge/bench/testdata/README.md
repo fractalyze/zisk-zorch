@@ -1,6 +1,6 @@
 # Bench fixtures
 
-Both captures come from the go hello-world guest on an RTX 5090
+The captures come from the go hello-world guest on an RTX 5090
 (build-server-2, 2026-09-08), against the artifacts exported from proving key
 `v1.0.0-alpha`. They are trimmed, not synthesised: every row and every timer
 block is what the tool wrote. What was cut is named below, and nothing else
@@ -15,6 +15,16 @@ of that run.
   runs once per quotient chunk (`quotient_524288`) — plus two of XLA's own
   `TSL` ranges, which `nvtx_programs.py` must leave out of the totals.
 
+  Two rows in this file come from a **different capture** and are the one
+  exception to the paragraph above: `host/prove` and `host/stage1`, PID
+  576916, from a whole-run capture of 2026-09-09. Every other row is PID
+  366825 from the 2026-09-08 run described above. They could not come from
+  that run — it predates the `host/` ranges entirely — and they are here
+  because `nvtx_programs.py` must exclude phases: a phase encloses the
+  programs it runs and `nvtx_kern_sum` counts a kernel under every enclosing
+  range, so counting them doubles every kernel. Read this file as one run's
+  program rows plus two later phase rows, not as one capture.
+
 - `pil2_prove.log` — `cargo-zisk-dev prove -vv` on the same guest through
   pil2's own GPU prover at one basic stream (`ZZ_GPU_HEADROOM_GB=15` on this
   card). Cut to the `TIMERS FOR INSTANCE` blocks of two airs, Main (`[0:0]`)
@@ -26,3 +36,24 @@ of that run.
 
 - `pilout.globalInfo.json` — the `airs` section of the proving key's
   global info, the only place the air ids in a timer block are named.
+
+- `host_cuda_gpu_trace.csv` / `host_nvtx_pushpop_trace.csv` — a few rows out
+  of one `nsys` capture of a whole bridged `cargo-zisk prove` run
+  (2026-09-09, artifacts `zz-artifacts-191`, `ZZ_CLIENTS=1`), which
+  `host_idle.py` reads together. These pin the schema and nothing else:
+  `host_idle_test.py` builds its attribution cases from a handful of ranges
+  in the test, because pinning that logic against a real capture would mean
+  carrying thousands of rows to make one assertion. So what is kept is one
+  row per thing a reader has to tell apart — three of the bridge's kernels,
+  two of pil2's, two copies and a memset for the kernel filter; a prove's
+  phases on one thread, a `host/take/trace` from a proof worker on another,
+  and one of XLA's `TSL` ranges for the domain filter. The leading `:` on
+  every bridge range name is how `nsys` writes the default (unnamed) NVTX
+  domain, and the `(ns)` in each time column is the unit the reader scales
+  by.
+
+- `host_cuda_api_trace.csv` — four rows of the same capture's
+  `cuda_api_trace`, the optional third input. Three are the prove thread's
+  own driver calls (a module load, a graph instantiation, a kernel launch)
+  and the fourth is a module load on another thread, which must not be
+  counted: only a holder's calls can explain the device being idle.

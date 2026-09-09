@@ -19,15 +19,25 @@ import re
 import statistics
 import sys
 
+# The prefix `src/nvtx.rs` puts on a host phase, which this table excludes.
+HOST = "host/"
+
 
 def program(nvtx_range: str) -> str | None:
-    """The range name if it is one of the bridge's, else None. `nsys` writes a
-    range that has a domain as `<domain>:<name>`; the bridge's ranges are in
-    the default domain, which has no name."""
+    """The range name if it is one of the bridge's programs, else None.
+
+    `nsys` writes a range that has a domain as `<domain>:<name>`; the bridge's
+    ranges are in the default domain, which has no name. Two kinds share it:
+    one range per program, which this table is about, and the `host/` phases
+    `host_idle.py` reads. A phase encloses the programs it runs, and
+    `nvtx_kern_sum` counts a kernel under *every* enclosing range, so counting
+    phases here would add each kernel to the total again — once for its
+    program and once more for the phase around it."""
     domain, sep, name = nvtx_range.partition(":")
-    if not sep:
-        return nvtx_range
-    return name if not domain else None
+    if sep and domain:
+        return None
+    name = name if sep else nvtx_range
+    return None if name.startswith(HOST) else name
 
 
 def family(kernel: str) -> str:

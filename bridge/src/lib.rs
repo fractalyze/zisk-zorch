@@ -795,11 +795,16 @@ impl Bridge {
     /// `req.inputs` must point at buffers of the lengths the artifact's
     /// manifest implies, valid during this call.
     pub unsafe fn take(&self, req: &ProveRequest) -> Result<OwnedRequest, Error> {
+        // This runs on proofman's proof worker, not on a prove thread, so its
+        // phases sit beside a running prove's on the profile rather than
+        // inside them (`bench/host_idle.py`).
+        let mut phase = nvtx::Phase::start("take/manifest");
         let t0 = Instant::now();
         let key = format!("{}_n{}", req.air, req.n_bits);
         let m = manifest::Manifest::load(&self.artifacts.join(&key))?;
         let n = 1usize << m.n_bits;
         let p = &req.inputs;
+        phase.set("take/trace");
         let trace = match req.packed {
             Some((words_per_row, bits)) => {
                 if bits.len() != m.widths.cm1 {
@@ -813,6 +818,7 @@ impl Bridge {
             }
             None => copy_canonical(std::slice::from_raw_parts(p.trace, n * m.widths.cm1)),
         };
+        phase.set("take/scalars");
         let proof_words = driver::AirDriver::proof_words_of(&m);
         if self.log {
             zzlog!(
@@ -909,6 +915,7 @@ impl Bridge {
     }
 
     pub fn prove_owned(&self, req: &OwnedRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+        let mut phase = nvtx::Phase::start("artifact");
         let t0 = Instant::now();
         let key = req.key.clone();
         self.note_used(&key);
@@ -919,6 +926,7 @@ impl Bridge {
         // per client: streamed instances pin their slot, so a bridge-wide
         // count would let every admission land on one client.
         let per_client = std::env::var("ZZ_PENDING").ok().and_then(|s| s.parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(2);
+        phase.set("admit");
         let _admitted = self.pending[slot_idx].acquire(per_client);
         let mut inputs = InstanceInputs {
             trace: &req.trace,
@@ -934,14 +942,18 @@ impl Bridge {
         // device, the key's files and their upload. A stale glance at
         // residency only costs a read.
         let t = Instant::now();
+        phase.set("upload_inputs");
         let uploaded = driver::upload_inputs(&art, &inputs)?;
         let plan = self.fixed_ahead[slot_idx].plan(&key);
+        phase.set("fixed_ahead");
         let prefetched = self.read_ahead_fixed(plan, &art, req)?;
         let ahead = t.elapsed().as_secs_f64();
+        phase.set("slot_wait");
         let mut slot = self.slots[slot_idx].lock().unwrap_or_else(|p| p.into_inner());
         // No load may enter the plugin while this prove has work in flight.
         let _exclusive = self.clients[slot_idx].enter_prove();
         let waited = t0.elapsed().as_secs_f64();
+        phase.set("resident");
         if !slot.drivers.contains_key(&key) {
             slot.drivers.insert(key.clone(), driver::AirDriver::new(art.clone()));
         }
@@ -965,6 +977,7 @@ impl Bridge {
                 }
             }
         }
+        phase.set("fixed_install");
         let driver = slot.drivers.get_mut(&key).unwrap();
         if !driver.has_fixed() {
             let t = Instant::now();
@@ -1037,6 +1050,9 @@ impl Bridge {
                 format!("{{\"air\": \"{}\", \"n_bits\": {}}}\n", m.air, m.n_bits),
             );
         }
+        // `prove` opens phases of its own inside this one, so what stays
+        // here is only the transcript's own setup.
+        phase.set("prove");
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
         let out = driver.prove(&inputs, &mut transcript, proof_out)?;
         if self.log {
