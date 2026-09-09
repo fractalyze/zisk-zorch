@@ -1,6 +1,6 @@
 # Bench fixtures
 
-Both captures come from the go hello-world guest on an RTX 5090
+The captures come from the go hello-world guest on an RTX 5090
 (build-server-2, 2026-09-08), against the artifacts exported from proving key
 `v1.0.0-alpha`. They are trimmed, not synthesised: every row and every timer
 block is what the tool wrote. What was cut is named below, and nothing else
@@ -26,3 +26,18 @@ of that run.
 
 - `pilout.globalInfo.json` — the `airs` section of the proving key's
   global info, the only place the air ids in a timer block are named.
+
+- `host_cuda_gpu_trace.csv` / `host_nvtx_pushpop_trace.csv` — a few rows out
+  of one `nsys` capture of a whole bridged `cargo-zisk prove` run
+  (2026-09-09, artifacts `zz-artifacts-191`, `ZZ_CLIENTS=1`), which
+  `host_idle.py` reads together. These pin the schema and nothing else:
+  `host_idle_test.py` builds its attribution cases from a handful of ranges
+  in the test, because pinning that logic against a real capture would mean
+  carrying thousands of rows to make one assertion. So what is kept is one
+  row per thing a reader has to tell apart — three of the bridge's kernels,
+  two of pil2's, two copies and a memset for the kernel filter; a prove's
+  phases on one thread, a `host/take/trace` from a proof worker on another,
+  and one of XLA's `TSL` ranges for the domain filter. The leading `:` on
+  every bridge range name is how `nsys` writes the default (unnamed) NVTX
+  domain, and the `(ns)` in each time column is the unit the reader scales
+  by.

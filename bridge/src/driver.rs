@@ -280,6 +280,11 @@ impl AirDriver {
             }
         };
 
+        // One phase per stage of the schedule. The program ranges nest inside
+        // them, so what a phase keeps to itself is the host work between two
+        // enqueues — the downloads, the transcript, the query draw — which is
+        // what `bench/host_idle.py` charges the device's idle time to.
+        let mut phase = crate::nvtx::Phase::start("stage1");
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
         let mut env = fixed.clone();
@@ -314,6 +319,7 @@ impl AirDriver {
         env.remove("trace");
         art.run_into("commit2", &mut env, None)?;
         env.remove("cm2");
+        phase.set("stage2");
         let mut result = ProveOutputs::default();
         result.airvalues = art.download_words(&env["airvalues"], &out_spec("logup", "airvalues")?)?;
         let root2 = art.download_words(&env["root2"], &out_spec("commit2", "root2")?)?;
@@ -331,6 +337,7 @@ impl AirDriver {
         }
 
         squeeze(transcript, &mut challenges, m.n_stages + 1);
+        phase.set("quotient");
         env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
         let single = m.quotient_chunks.len() == 1;
         let qprog0 = if single { "quotient".to_string() } else { format!("quotient_{}", m.quotient_chunks[0]) };
@@ -356,6 +363,7 @@ impl AirDriver {
         transcript.put(&rootq);
 
         squeeze(transcript, &mut challenges, m.n_stages + 2);
+        phase.set("evals");
         let xi_id = m.challenge_id("std_xi")?;
         env.insert("xi".into(), art.upload_words(&challenges[xi_id * 3..xi_id * 3 + 3], &in_spec("lev", "xi")?)?);
         let lev = art.run("lev", &env)?.remove(0);
@@ -366,12 +374,14 @@ impl AirDriver {
         let evals = art.download_words(&env["evals"], &out_spec("evals", "evals")?)?;
         transcript.absorb_section(&evals, m.hash_commits);
         squeeze(transcript, &mut challenges, m.n_stages + 3);
+        phase.set("deep");
         let vf1 = m.challenge_id("std_vf1")?;
         let vf2 = m.challenge_id("std_vf2")?;
         env.insert("vf1".into(), art.upload_words(&challenges[vf1 * 3..vf1 * 3 + 3], &in_spec("deep", "vf1")?)?);
         env.insert("vf2".into(), art.upload_words(&challenges[vf2 * 3..vf2 * 3 + 3], &in_spec("deep", "vf2")?)?);
         let mut codeword = art.run("deep", &env)?.remove(0);
 
+        phase.set("fri");
         let rounds = m.steps.len() - 1;
         let mut fri_roots = Vec::with_capacity(rounds * DIGEST);
         let mut fri_layers: Vec<Env> = Vec::with_capacity(rounds);
@@ -394,11 +404,13 @@ impl AirDriver {
             codeword = art.run(&fold, &fenv)?.remove(0);
             fri_layers.push(layer);
         }
+        phase.set("fri_final");
         let mut fenv = Env::new();
         fenv.insert("codeword".into(), codeword);
         let final_buf = art.run("fri_final", &fenv)?.remove(0);
         let final_pol = art.download_words(&final_buf, &out_spec("fri_final", "final_pol")?)?;
         transcript.absorb_section(&final_pol, m.hash_commits);
+        phase.set("grind");
         let challenge = transcript.get_field();
         let mut genv = Env::new();
         genv.insert("challenge".into(), art.upload_words(&challenge, &in_spec("grind", "challenge")?)?);
@@ -412,6 +424,7 @@ impl AirDriver {
         };
         let pos_ext = art.upload_words(&positions, &in_spec("open_cm1", "positions")?)?;
 
+        phase.set("openings");
         // The wire, in `proof2pointer` order (`proof_serializer.serialize_proof`).
         let mut proof: Vec<u64> = Vec::with_capacity(self.proof_words());
         push_values3(&mut proof, &result.airgroupvalues, &m.airgroupvalues);

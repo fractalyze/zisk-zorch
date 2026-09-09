@@ -1,0 +1,9 @@
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+2019338346,928,1410,,,,,,,,,,0.033,35172.407,Device,,NVIDIA GeForce RTX 5090 (0),1,,31,[CUDA memset]
+2113057155,768,1560,,,,,,,,,,0.000,10.417,Pinned,Device,NVIDIA GeForce RTX 5090 (0),1,,14,[CUDA memcpy Host-to-Device]
+5948721376,416,2176,,,,,,,,,,0.001,2884.615,Pageable,Device,NVIDIA GeForce RTX 5090 (0),1,,7,[CUDA memcpy Host-to-Device]
+5952159418,338079,2228,1,1,1,1,1,1,16,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,65,"evalTwiddleFirstKernel(gl64_t *, gl64_t *, unsigned int)"
+5952502265,291008,2232,4096,1,1,1,1,1,28,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,65,"evalTwiddleSecondKernel(gl64_t *, gl64_t *, unsigned int)"
+9095574567,928,10922,1,1,1,1,1,1,16,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,72,loop_multiply_fusion
+9095576743,832,10922,1,1,1,1,1,1,18,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,72,input_concatenate_fusion_3
+9095577639,4160,10922,1,1,1,1,1,1,34,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,72,input_concatenate_fusion_2

@@ -70,3 +70,22 @@ py_test(
         requirement("absl_py"),
     ],
 )
+
+py_library(
+    name = "host_idle",
+    srcs = ["host_idle.py"],
+)
+
+py_test(
+    name = "host_idle_test",
+    size = "small",
+    srcs = ["host_idle_test.py"],
+    data = [
+        "testdata/host_cuda_gpu_trace.csv",
+        "testdata/host_nvtx_pushpop_trace.csv",
+    ],
+    deps = [
+        ":host_idle",
+        requirement("absl_py"),
+    ],
+)

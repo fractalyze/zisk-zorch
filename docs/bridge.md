@@ -127,6 +127,48 @@ carrying all of them. `pil2_timers.py` is per instance, and its rows are per
 air: a row carries the `x<n>` instances it sums and their average, because a
 workload runs several instances of the same air.
 
+### Where the leg's idle goes
+
+The per-program table above says what the device *did*; on the hello-world
+guest it is busy for under half the bridge's leg, so the larger question is
+what the host was doing for the rest. The bridge opens a second family of
+NVTX ranges, prefixed `host/`, one per step of `Bridge::take`, `prove_owned`
+and the schedule in `AirDriver::prove`; `host_idle.py` charges every idle
+nanosecond of the leg to the phase that was running.
+
+Only the prove *holding the client* can explain the idle. The bridge proves
+one instance at a time per client but gives every instance a thread, so a
+dozen threads are alive and all but one are queued: a queued thread's
+`host/admit` and `host/slot_wait` cover almost the whole leg by construction
+and are waits, not costs. So the report splits the idle at a prove's turn —
+from where its thread leaves `host/slot_wait` holding the slot mutex to the
+end of its `host/prove` — and reports what the other threads were doing
+separately, as overlapping rather than additive.
+
+```bash
+# A whole run, both provers on the card. The bridge must be built with the
+# feature ON inside the proofman build, which the fork does not expose: add
+# `default = ["nvtx"]` to the [features] of the bridge that zisk's Cargo.toml
+# [patch] points at, build cargo-zisk, and take it out again afterwards.
+nsys profile --cuda-graph-trace=node -t cuda,nvtx --sample=none --cpuctxsw=none \
+    -o run cargo-zisk prove -e guest.elf -k $PK -g -y -o proof -vv
+nsys stats --report cuda_gpu_trace --report nvtx_pushpop_trace \
+    --format csv -o s run.nsys-rep
+bench/host_idle.py s_cuda_gpu_trace.csv s_nvtx_pushpop_trace.csv
+```
+
+`--sample=none --cpuctxsw=none` is not optional here either: with CPU
+sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in
+report generation. Set `ZZ_CLIENTS=1` by hand when wrapping the binary
+directly — the bridge's own default is 3, and three clients splitting one
+`ZZ_MEMORY_FRACTION` land under a client's floor and abort mid-prove.
+
+Cross-check any figure this produces against `ZZ_LOG=2`, which prints each
+`Artifact::run`'s enqueue time from the bridge's own clock with no profiler
+attached; on the 2026-09-09 runs the two agreed to within 8 % (3.448 s of
+enqueue summed, against 3.457-3.731 s of NVTX range time under nsys), which
+is what says the dispatch cost is real and not an artifact of tracing.
+
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
 The wall-clock comparison the issue asks for, on the closest stand-in for
