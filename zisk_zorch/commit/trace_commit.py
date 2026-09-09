@@ -112,30 +112,12 @@ def unextend(extended: Array, blowup: int) -> Array:
     return lax.ntt(unscaled, ntt_type="NTT", ntt_length=n, generator=_PIL2_GENERATOR).T
 
 
-# How much of an extended section one LDE block may occupy. `extend` splits
-# the columns into blocks of at most this many bytes and writes each block
-# into the result, so the transform's temporaries scale with a block rather
-# than with the section.
-#
-# Three block-sized temporaries are live at the peak — the interpolated
-# coefficients, the coset-scaled block on the extended domain, and the
-# transform's output — so the extend's own working set settles near three
-# times this. Extending the whole matrix at once is the degenerate case
-# where a block is the section: it costs two extended copies beside the
-# result, which on ZisK's widest constants (VirtualTableZisk0_n21, 88
-# columns) is 5.50 GiB, the single allocation that set a PJRT client's
-# memory floor (docs/bridge.md "Memory budget"). A section that already
-# fits in one block extends exactly as it did before.
-#
-# 256 MiB is the measured knee on an RTX 5090: it takes the LDE from 31.9
-# to 39.5 ms on those constants (2.75 GiB of temporaries down to 0.75) and
-# the smaller blocks below it buy little memory for a steepening cost.
-#
-# The blocking stays on this side of the zorch seam because the doubling
-# does: `ReedSolomon.extend` transforms the last axis of whatever it is
-# given and materializes nothing extra, and it is the row-major/column-major
-# turn below — pil2's section layout meeting the transform's — that puts two
-# extended copies on the device at once.
+# How much of an extended section one LDE block may occupy. Three
+# block-sized temporaries are live at the peak — the coefficients, the
+# coset-scaled block, the transform's output — so `extend`'s working set is
+# near three times this whatever the section's width. 256 MiB is the
+# measured knee; docs/bridge.md "Memory budget" carries the walk behind it
+# and what a smaller block costs.
 LDE_BLOCK_BYTES = 256 << 20
 
 
@@ -155,9 +137,9 @@ def extend(trace: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES) -> 
     columns (`trace.T`) and back out as rows. `_PIL2_GENERATOR` keeps the
     transform in pil2's domain order.
 
-    Columns are transformed a block at a time and written into the result
-    (`LDE_BLOCK_BYTES`); the bytes are the same either way, since each
-    column's LDE is independent of every other's.
+    Columns are transformed a block at a time (`LDE_BLOCK_BYTES`). Each
+    column's LDE is independent of every other's, so the codeword does not
+    depend on how they are split.
     """
     if trace.ndim != 2:
         raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
@@ -179,12 +161,10 @@ def extend(trace: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES) -> 
         return rs.extend(trace.T).T
     out = fnp.zeros((ne, n_cols), F)
     for j in range(0, n_cols, cols):
-        # Ordering, not placement. The blocks are independent, so left to
-        # itself XLA schedules several of their transforms at once and their
-        # temporaries pile up — five blocks live at a time on the 88-column
-        # constants, which is the whole allocation this is here to remove.
-        # Threading the trace through the barrier with the result makes each
-        # block's read depend on the previous block's write.
+        # A dependency, not a scheduling hint. The blocks are independent,
+        # so without it XLA runs several transforms at once and their
+        # temporaries are live together; threading `trace` through with the
+        # result makes each block's read wait on the previous block's write.
         trace, out = lax.optimization_barrier((trace, out))
         block = rs.extend(trace[:, j : j + cols].T).T
         out = lax.dynamic_update_slice(out, block, (0, j))

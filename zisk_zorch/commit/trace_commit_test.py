@@ -73,11 +73,9 @@ class BlockedLdeTest(parameterized.TestCase):
         # section extends in as many blocks as it has columns.
         ("one_column_a_block", 1),
         # Two of the first golden's 256-byte columns, so its three split
-        # 2 + 1. A block size that divides `n_cols` never reaches that tail,
-        # and the shipping default does: 39 columns on `Binary_n22`, 4 a
-        # block. The other two goldens take the single-block fast path and
-        # one column a block at this size, so the three cases together cover
-        # all three shapes.
+        # 2 + 1 — the ragged tail a block size dividing `n_cols` never
+        # reaches and the default leaves (`Binary_n22`, 39 columns, 4 a
+        # block).
         ("ragged_tail", 512),
     )
     def test_block_size_does_not_move_the_codeword(self, block_bytes: int) -> None:
