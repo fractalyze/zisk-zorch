@@ -13,7 +13,11 @@ of that run.
   programs — enough to carry one program that runs once per prove
   (`commit1`), one that runs once per family (`const_setup`) and one that
   runs once per quotient chunk (`quotient_524288`) — plus two of XLA's own
-  `TSL` ranges, which `nvtx_programs.py` must leave out of the totals.
+  `TSL` ranges, which `nvtx_programs.py` must leave out of the totals, and
+  two of the bridge's `host/` phase ranges (`host/prove`, `host/stage1`),
+  which it must leave out for a different reason: a phase encloses the
+  programs it runs, and `nvtx_kern_sum` counts a kernel under every
+  enclosing range, so counting phases doubles them.
 
 - `pil2_prove.log` — `cargo-zisk-dev prove -vv` on the same guest through
   pil2's own GPU prover at one basic stream (`ZZ_GPU_HEADROOM_GB=15` on this

@@ -209,3 +209,5 @@ NVTX Range,Style,PID,TID,NVTX Inst,Kern Inst,Total Time (ns),Avg (ns),Med (ns),M
 :quotient_commit,PushPop,366825,366825,2,2,1152,576.0,576.0,576,576,0.0,loop_slice_fusion_1
 TSL:Thunk:#hlo_op=command_buffer_1#,PushPop,366825,366825,19,19,68486023,3604527.5,461758.0,69023,8823825,4100588.2,sponge_hash_1
 TSL:Thunk:#hlo_op=command_buffer_1#,PushPop,366825,366825,13,13,17417728,1339825.2,2344796.0,100672,2368732,1147091.5,sparse_poseidon_11
+:host/prove,PushPop,576916,577249,1,9,39806331,4422925.7,456639.0,70912,18572479,6454366.6,sponge_hash_1
+:host/stage1,PushPop,576916,577249,1,2,27389232,13694616.0,13694616.0,8816753,18572479,6898340.0,sponge_hash_1

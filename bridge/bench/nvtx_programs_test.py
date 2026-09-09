@@ -20,6 +20,24 @@ class NvtxProgramsTest(parameterized.TestCase):
         super().setUp()
         self.programs = nvtx_programs.read(CAPTURE)
 
+    def test_the_bridges_host_phases_are_left_out(self):
+        # A phase encloses the programs it runs and `nvtx_kern_sum` counts a
+        # kernel under every enclosing range, so counting `host/prove` and
+        # `host/stage1` here would add their kernels to the total a second
+        # time. On the capture this fixture came from that inflated a 2.6 s
+        # run to 7.4 s.
+        self.assertFalse([n for n in self.programs if n.startswith("host/")])
+
+    @parameterized.named_parameters(
+        ("program", ":commit1", "commit1"),
+        ("no_domain_marker", "commit1", "commit1"),
+        ("host_phase", ":host/prove", None),
+        ("nested_host_phase", ":host/take/trace", None),
+        ("xlas_own", "TSL:Thunk:#hlo_op=loop_add_fusion#", None),
+    )
+    def test_program(self, nvtx_range, want):
+        self.assertEqual(nvtx_programs.program(nvtx_range), want)
+
     def test_xlas_own_ranges_are_left_out(self):
         # The fixture carries two TSL ranges around the same kernels; counting
         # them would double every program's device time.
