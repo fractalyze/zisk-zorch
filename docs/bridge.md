@@ -355,11 +355,16 @@ module loads off as well, so it moves two things at once). Of what is
 left, 0.3 s is the #176 plugin bump's own share — the same run on the
 previous plugin costs that much more init.
 
-The ordering this rests on — that an AIR the run will prove is loaded
-before a prove wants it — is pinned by two tests rather than by the
-timing: the preload queue drains the run's own AIRs ahead of the rest of
-the key, in order (`lib.rs`), and a prove waits for the loads already in
-flight instead of passing them (`artifact.rs`).
+Two tests pin the scheduling this leans on, and it is worth being exact
+about which: `lib.rs` pins that the preload queue keeps its callers'
+priority and order — a requested batch ahead of queued background work,
+in the order given — and `artifact.rs` pins the load/prove gate, where a
+prove waits for the loads already in flight and a waiting prove holds new
+loads back. Neither pins that a requested AIR is loaded *before* a prove
+wants it: a key still sitting in the queue is loaded by the prove itself
+(`Bridge::artifact`), which is also what keeps an AIR outside
+`.last-used` from waiting on the rest of the preload. That the preload
+finishes first is the 2.4 s of slack above, not an invariant.
 
 ### The uploads, measured (2026-09-09, post-#192)
 
@@ -470,7 +475,7 @@ three basic streams and its recursion (re-measured on the #171 artifacts,
 a second client is still 8.1 GiB more than this card has — "Memory budget"
 below); and `const_setup` recomputes each AIR's constant tree per run
 where pil2 reads it from disk. The bridge's own start is no longer one of
-them: it finishes well inside proofman's init ("Bridge start-up" below).
+them: it finishes well inside proofman's init ("Bridge start-up" above).
 Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
 comparison is the section above.
 

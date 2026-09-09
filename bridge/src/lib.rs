@@ -1425,18 +1425,19 @@ mod tests {
         assert_eq!(q.workers(), 3);
     }
 
-    /// Half of "the preload lands before the first prove": the AIRs the run
-    /// will prove are drained first, in the order given. The other half is
-    /// the gate (`artifact.rs`), where a prove waits for the loads in
-    /// flight rather than passing them.
+    /// The queue keeps its callers' priority and order: a requested batch
+    /// goes ahead of queued background work, and within the batch the order
+    /// the caller gave survives. Both callers choose that order for their
+    /// own reasons — `Bridge::global` passes the `.last-used` file, the
+    /// proofman fork its instance list — so a queue that reordered them
+    /// would be substituting its own order for theirs.
     #[test]
-    fn the_keys_the_run_asked_for_drain_ahead_of_the_background_ones_in_order() {
+    fn a_requested_batch_goes_ahead_of_background_work_in_the_order_given() {
         let mut q = PreloadQueue::default();
         // The rest of the proving key, queued as background work.
         q.push(vec![(0, "Keccakf_n17".into(), false), (0, "Sha256f_n18".into(), false)], false, 1);
-        // The run's own AIRs arrive after it and go to the front. Order
-        // inside the batch is what makes the head of the list the AIR the
-        // first prove wants; a plain `push_front` per key would reverse it.
+        // The run's own AIRs arrive after it and go to the front. Pushing
+        // each key to the front on its own would flip the batch.
         q.push(vec![(0, "Main_n22".into(), true), (0, "Rom_n22".into(), true)], true, 1);
         assert_eq!(q.take(), Some((0, "Main_n22".into(), true)));
         assert_eq!(q.take(), Some((0, "Rom_n22".into(), true)));
