@@ -65,6 +65,14 @@ export ZZ_ARTIFACTS=$ARTIFACTS
 export XLA_PJRT_PLUGIN=<venv>/site-packages/frx_plugins/xla_cuda12/xla_cuda_plugin.so
 export ZZ_LOG=1
 
+# The driver's variable, not the bridge's, and the environment is the only
+# place it can be set -- the driver reads it at initialization and pil2 has
+# initialized CUDA before any bridge client exists. Worth 0.48 s of the
+# hello-world leg and 1.08 s of the block-shaped one; see "The module-loading
+# mode decides where the first-execution cost lands". Pointless with
+# ZZ_PRELOAD=0, which is the same thing as ZZ_EAGER_MODULES off.
+export CUDA_MODULE_LOADING=EAGER
+
 cargo-zisk prove -e guest.elf -i input.bin -k $PK -g -y -o proof
 ```
 
@@ -90,6 +98,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_DUMP_PROOFS` | (fork) write every basic proof as raw words into this directory | off |
 | `ZZ_DUMP_INPUTS` | write each instance as a `zz_prove` case directory under this one | off |
 | `ZZ_DUMP_TRACES` | (fork) write each host trace as `gen_proof` receives it | off |
+| `CUDA_MODULE_LOADING` | the CUDA driver's, not the bridge's: `EAGER` puts a module's kernel code on the device as it loads, which is what makes `ZZ_EAGER_MODULES` pay | driver default `LAZY` |
 
 ## Profiling
 
@@ -247,10 +256,18 @@ only registers its fatbin: each kernel's code reaches the device when something
 first references it, and for the bridge that reference is the
 `cuGraphInstantiateWithFlags` building a program's graph inside the prove slot.
 So `eager_load_executable_modules` (#176) moves the registration to preload and
-leaves the code load on the prove path. That is why enabling it took
-`cuModuleLoadFatBinary` from 1.45-1.51 s to zero inside the leg and took
-`cuGraphInstantiateWithFlags` from 0.06-0.12 s to 1.16-1.33 s, for 2.3 % of
-the leg.
+leaves the code load on the prove path. Under the profiler (2026-09-09, two
+capture pairs, the bump-jax binary) enabling it took `cuModuleLoadFatBinary`
+from 1.45-1.51 s to zero inside the leg and took `cuGraphInstantiateWithFlags`
+from 0.06-0.12 s to 1.16-1.33 s, which moved the leg 5.10-5.11 s to
+4.94-5.04 s — 2.3 %.
+
+Unprofiled and interleaved (the arms below, five passes on `main`) the same
+flag moves the leg 5.77 s to 5.72 s, 0.9 %, with the ranges overlapping. Take
+that as the better-controlled figure and the 2.3 % as its profiled upper
+bound: the flag's own effect on the leg is at most ~2 % and this design cannot
+tell it from zero. What #176 bought is real but it is the driver-call
+bookkeeping, not the leg.
 
 `CUDA_MODULE_LOADING=EAGER` makes the driver do both at load time, which
 `ZZ_PRELOAD` has already put off the prove path. Measured 2026-09-09 on one
@@ -264,12 +281,24 @@ block-shaped mix:
 | `=1` + `CUDA_MODULE_LOADING=EAGER` | 5.24 s | 18.53 s |
 | `=0` + `CUDA_MODULE_LOADING=EAGER` | 5.71 s | — |
 
+Byte-gate green on every completed run of both workloads: 11 of 11 native
+dumps on hello-world across all four arms, 38 of 38 on the block-shaped mix
+across the first three.
+
 **The two knobs are only worth anything together.** The last row is the whole
 argument: the driver variable with lazy executable loading buys nothing,
 because there is no earlier place for the code load to go. Paired with the
 preload it returns 0.48 s of the hello-world leg (8.4 %) and 1.08 s of the
 block-shaped one (5.5 %), with graph instantiation dropping 1.32 s to 0.56 s
 over a whole run.
+
+That last row does a second job. `CUDA_MODULE_LOADING` is process-wide, so the
+0.48 s arm also changed how pil2 loads its own modules, and a plugin-side
+option scoped to the bridge's executables would not. The `=0` + `EAGER` arm is
+what bounds that share: with the bridge's executables loading lazily, the
+variable moves the leg 5.77 s to 5.71 s with the ranges overlapping. So at most
+~0.06 s of the 0.48 s belongs to everything that is not a bridge executable,
+and a scoped change should expect ~0.42-0.48 s rather than the whole of it.
 
 Read the two shares the way the difference implies rather than picking one:
 first-execution cost is paid once per (AIR, program) pair however many
@@ -285,14 +314,24 @@ four interleaved passes each). It has to be set before the process starts, or
 the plugin has to materialize the kernels itself after loading a module —
 which is where the durable fix belongs: beside `eager_load_executable_modules`,
 scoped to the executables loaded through it rather than to every module the
-process loads.
+process loads. Size that change against the ~0.42-0.48 s the arm above bounds,
+not against the 0.48 s measured with the variable set process-wide.
 
-A caveat for anyone sizing a lever off a per-program table: two captures of
-the *same* arm agree to 0.002 s on `deep` and disagree by 0.18 s on
-`fri_fold_0`, with `quotient_1048576` 0.10 s apart. Per-program attribution
-from a single capture supports claims above roughly 0.1 s and nothing below.
+A caveat for anyone sizing a lever off a per-program table. Across three
+captures of one arm (`ZZ_EAGER_MODULES=1`), a program's instantiate cost moves
+by more than most levers are worth: `fri_fold_0` 0.004 / 0.181 / 0.002 s,
+`deep` 0.106 / 0.108 / 0.002 s, `quotient_1048576` 0.490 / 0.387 / 0.275 s.
+The third capture is a different binary, which accounts for some of `deep`'s
+spread but not `fri_fold_0`'s — that one moves 0.18 s between two captures of
+one arm on one binary. So per-program attribution from a single capture
+supports claims above roughly **0.2 s** and nothing below, and two captures of
+one arm is the cheapest way to confirm that floor before trusting a table.
 
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
+
+> Measured before `CUDA_MODULE_LOADING=EAGER` joined the run recipe, so the
+> leg figures below are the lazy-loading ones: a run made with it proves
+> this workload with ~1.1 s less leg.
 
 The wall-clock comparison the issue asks for, on the closest stand-in for
 block 21740136 this host can run: the `sha-hasher` example guest at
@@ -355,6 +394,10 @@ process still releasing its memory makes pil2 size 20 streams from the
 1.6 GB it sees and exit.
 
 ## Status (2026-09-04, RTX 5090, go hello-world guest)
+
+> Measured before `CUDA_MODULE_LOADING=EAGER` joined the run recipe, so the
+> leg figures below are the lazy-loading ones: a run made with it proves
+> this guest with ~0.5 s less leg.
 
 `cargo-zisk prove -g -y` through the bridge completes and its final proof
 verifies. All 11 basic instances (Rom, Main, Mem, InputData, RomData,
