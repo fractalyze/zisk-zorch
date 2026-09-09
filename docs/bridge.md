@@ -54,10 +54,10 @@ FRX_PLATFORMS=cuda python -m zisk_zorch.export.export_air \
 # cache. The fused Poseidon1 kernels compile slowly (about a minute for a
 # leaf sponge, 15 s per tree level; ~40 min for the 11 hello-world AIRs on
 # 11 threads), and a compile inside a prove trips proofman's 10-minute
-# watchdog, so fill the cache ahead of the first run. Threads spread across
-# the AIRs named, and go inside one when there are fewer AIRs than threads --
-# so warming a single AIR, which is what bisecting a plugin does, is parallel
-# too.
+# watchdog, so fill the cache ahead of the first run. Threads spread across the
+# AIRs named first, and the rest go inside them -- one AIR at 11 threads
+# compiles 11 programs at once, and 6 AIRs at 11 threads run 5 of them two-wide.
+# Warming a single AIR is what bisecting a plugin build does.
 ZZ_WARM_THREADS=11 zz_prove --warm $ARTIFACTS Main_n22 Rom_n22 ...   # or no list: all
 
 # the bridge's inputs (the full list is the table below)
