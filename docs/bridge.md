@@ -114,7 +114,29 @@ bench/nvtx_programs.py main_nvtx_kern_sum.csv
 ZZ_GPU_HEADROOM_GB=15 cargo-zisk-dev prove -e guest.elf -k $PK -g -y -vv \
     -o proof > native.log
 bench/pil2_timers.py native.log --global-info $PK/pilout.globalInfo.json
+
+# Where the uploads sit: nsys over a WHOLE run (not one instance), then the
+# host-to-device time each prover's own kernels did not hide. --sample=none
+# --cpuctxsw=none is not optional either -- with CPU sampling on, nsys
+# 2026.1.3 collects the run fine and then deadlocks in report generation,
+# leaving an unusable .qdstrm and no .nsys-rep.
+nsys profile --cuda-graph-trace=node -t cuda --sample=none --cpuctxsw=none \
+    -o run --force-overwrite true \
+    $ZISK_BIN prove -e guest.elf -k $PK -g -y -o proof -vv
+nsys stats --report cuda_gpu_trace --format csv -o run run.nsys-rep
+bench/h2d_overlap.py run_cuda_gpu_trace.csv
 ```
+
+`h2d_overlap.py` reports the two provers apart, because one bridged run has
+both on the card: XLA writes a fusion's name with no argument list, pil2's
+kernels are C++ signatures, and a transfer stream belongs to whoever owns
+the kernels on it or, for a dedicated one, the kernels that follow its
+copies. Wrap the binary directly rather than `bench/run.sh` — nsys tracking
+the shell and `/usr/bin/time` between it and the prover is the other way to
+reach the same hang — and set `ZZ_CLIENTS=1` yourself, which run.sh
+otherwise does for you (the default is 3, and three clients splitting one
+`ZZ_MEMORY_FRACTION` are each below a client's floor, so the run aborts
+mid-prove and the capture holds no GPU data at all).
 
 The `nvtx` feature is off by default and stays off in proofman builds: it
 links the CUDA toolkit's `libnvtx3interop` and the ranges say nothing outside
@@ -223,6 +245,44 @@ run.sh's default is the ASM emulator's `-a -u`. So
 for the byte-gate and `summarize.py` for the rows. "Memory budget" below
 was measured this way, adding `ZZ_MEMORY_FRACTION` and
 `ZZ_GPU_HEADROOM_GB` per run.
+
+### The uploads, measured (2026-09-09, post-#192)
+
+Three `nsys` captures of the whole run on a quiet card, read by
+`bench/h2d_overlap.py` (recipe under "Profiling"). The bridge's leg here is
+its first kernel to its last, which is 0.8–1.2 s inside proofman's
+`GENERATING_INNER_PROOFS` (6.29, 6.63, 6.62 s here against 5.93–6.01 s
+uninstrumented — nsys costs the leg 5–11 %).
+
+| per run | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| bridge leg | 5.45 s | 5.47 s | 5.59 s |
+| its kernels, busy | 2.60 s | 2.60 s | 2.61 s |
+| its uploads, 9.75 GB | 0.58 s | 0.44 s | 0.49 s |
+| ├ on the critical path | 0.58 s | 0.44 s | 0.49 s |
+| ├ overlapped with its kernels | 0.00 s | 0.00 s | 0.00 s |
+| └ before the leg's first kernel | 0.27 s | 0.14 s | 0.19 s |
+| pageable, 5.29 GB | 11.2 GB/s | 15.7 GB/s | 13.4 GB/s |
+| pinned, 4.46 GB | 42.0 GB/s | 41.9 GB/s | 44.9 GB/s |
+
+Two things this settles. Uploads are **0.44–0.58 s**, not the ~1.9 s the
+pre-#175 profile put on them, and pageable transfers on this card run at
+11–16 GB/s rather than the 3–6 GB/s that number assumed — most of the
+difference is #182's read-ahead and #183's parallel key reads, which took
+the host-side staging out of the transfer. And **none of it overlaps**:
+0.00 s in all three runs, on both provers. The read-ahead gets a transfer
+off the slot's own thread, but PJRT still blocks on `done_with_host_buffer`
+and an execution blocks on its inputs' transfers, so on the device the
+uploads and the kernels of one client strictly alternate. The separate
+host-to-device stream (`local_device_state.h`) exists and is never busy at
+the same time as the compute stream.
+
+So of the 2.85–2.98 s the client stands idle inside the leg, uploads
+explain 0.30 s; the rest is host-side. Pinning the pageable 5.29 GB at the
+42 GB/s the already-pinned copies reach would take that 0.34–0.47 s to
+about 0.13 s — worth roughly 0.2–0.3 s of a 5.5 s leg, and only if the
+pinning itself is free (`cudaHostRegister` over 5.29 GB a run is not; a
+staging pool the untiling writes into is). #193 carries the decision.
 
 Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
 leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads

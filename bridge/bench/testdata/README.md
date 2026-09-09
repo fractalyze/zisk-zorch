@@ -1,11 +1,11 @@
 # Bench fixtures
 
-Both captures come from the go hello-world guest on an RTX 5090
-(build-server-2, 2026-09-08), against the artifacts exported from proving key
-`v1.0.0-alpha`. They are trimmed, not synthesised: every row and every timer
-block is what the tool wrote. What was cut is named below, and nothing else
-was edited, so the numbers the scripts print from these files are the numbers
-of that run.
+All captures come from the go hello-world guest on an RTX 5090
+(build-server-2, 2026-09-08, and `cuda_gpu_trace.csv` 2026-09-09), against
+the artifacts exported from proving key `v1.0.0-alpha`. They are trimmed,
+not synthesised: every row and every timer block is what the tool wrote.
+What was cut is named below, and nothing else was edited, so the numbers the
+scripts print from these files are the numbers of that run.
 
 - `nvtx_kern_sum.csv` — `nsys stats --report nvtx_kern_sum --format csv` over
   a `zz_prove <artifacts> <RomData case> --repeat 1` capture (two proves, so
@@ -26,3 +26,15 @@ of that run.
 
 - `pilout.globalInfo.json` — the `airs` section of the proving key's
   global info, the only place the air ids in a timer block are named.
+
+- `cuda_gpu_trace.csv` — `nsys stats --report cuda_gpu_trace --format csv`
+  over a whole bridged `cargo-zisk prove` (one client), cut to the 0.22 s
+  window around one prove's trace upload: the 1.31 GB pageable copy on the
+  bridge's transfer stream, the bridge kernels either side of it, pil2's
+  recursion kernels running in the same window on its own stream, and the
+  smaller copies on both. Nothing else was cut, so the window carries the
+  three cases `h2d_overlap.py` has to tell apart — a stream that carries a
+  side's kernels (13 the bridge's, 66 pil2's) and a dedicated transfer
+  stream that carries none (14) — and it carries the awkward part of the
+  last one: some of stream 14's copies are followed by a pil2 kernel, so
+  only the majority puts the stream on the right side.

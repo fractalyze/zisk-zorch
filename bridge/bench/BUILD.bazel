@@ -70,3 +70,19 @@ py_test(
         requirement("absl_py"),
     ],
 )
+
+py_library(
+    name = "h2d_overlap",
+    srcs = ["h2d_overlap.py"],
+)
+
+py_test(
+    name = "h2d_overlap_test",
+    size = "small",
+    srcs = ["h2d_overlap_test.py"],
+    data = ["testdata/cuda_gpu_trace.csv"],
+    deps = [
+        ":h2d_overlap",
+        requirement("absl_py"),
+    ],
+)
