@@ -627,6 +627,15 @@ to establish the expensive way.
 
 The leg is proofman's own `GENERATING_INNER_PROOFS` on both sides.
 
+Three figures the older table carries are absent here rather than stale: the
+`cargo-zisk prove` wall, the eleven proves' own time on the client, and the
+summed client waiting. No arm since has quoted them and the runs that could
+have yielded them are gone from the rig, so the rows would need a fresh sweep
+rather than a re-read. Take their shape from "The per-stage shape" below
+without carrying the values forward. The fourth, the fixed sections uploaded
+under the prove's own slot, is current and lives in "Raising the read-ahead
+permit": 1.42 s summed at the default permit, on the pre-bump wheel.
+
 **The two leg figures are from different sessions**, which the rule above
 forbids leaving unsaid. What licenses pairing them is that the two sessions
 share a condition and agree on it: #209 read the pre-bump wheel at 6.06–6.11 s
