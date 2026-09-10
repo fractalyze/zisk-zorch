@@ -287,6 +287,54 @@ class WithoutCallTest(absltest.TestCase):
         self.assertEqual(sum(rest.values()), held - took["cuGraphInstantiateWithFlags"])
 
 
+class MinusCallFlagTest(absltest.TestCase):
+    """The two ways `--minus-call` could answer instead of refusing.
+
+    Both print something that looks like a result. The report already
+    raises rather than guesses elsewhere — `column` on an unknown unit,
+    `owner` on a memory operation — and this flag is the same shape: a
+    wrong subtraction silently rescales the lever someone is about to
+    build."""
+
+    def test_it_is_refused_without_the_api_trace(self):
+        # `report` returns before the driver-call cut when there is no API
+        # CSV, so the flag would be dropped in silence and exit 0 — a table
+        # the user asked for and did not get, with nothing said.
+        with self.assertRaises(SystemExit) as cm:
+            host_idle.main(
+                ["", str(TRACE), str(NVTX), "--minus-call", "cuModuleLoadFatBinary"]
+            )
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_a_call_absent_from_the_capture_is_refused(self):
+        # Subtracting a name nothing matches returns the phase column
+        # unchanged, which reads as "this call is free". The driver-call
+        # table above is --top-capped, so its absence there proves nothing.
+        with self.assertRaisesRegex(ValueError, "no such call"):
+            host_idle.main(
+                ["", str(TRACE), str(NVTX), str(API), "--minus-call", "cuNoSuchThing"]
+            )
+
+    def test_a_call_that_cost_no_idle_is_answered_not_refused(self):
+        # The other side of the line: a call really made, but never while
+        # the device starved, is a legitimate question with the phase
+        # column as its true answer — `cuModuleLoadFatBinary` under
+        # ZZ_EAGER_MODULES=1 is exactly this. It must not raise.
+        self.assertEqual(
+            host_idle.main(
+                [
+                    "",
+                    str(TRACE),
+                    str(NVTX),
+                    str(API),
+                    "--minus-call",
+                    "cuLaunchKernelEx",
+                ]
+            ),
+            0,
+        )
+
+
 class ReadingTest(parameterized.TestCase):
     """The filters the two readers apply, against real `nsys` rows."""
 

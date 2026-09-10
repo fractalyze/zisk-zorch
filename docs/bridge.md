@@ -215,7 +215,12 @@ that driver call leaves the prove path. It is how a bridge-side lever is
 sized against a bump that is already coming: with
 `--minus-call cuGraphInstantiateWithFlags` the leg's largest phase rows on
 hello-world (`lev`, the quotient chunks) fall to milliseconds, because they
-were graph instantiation wearing a phase's name.
+were graph instantiation wearing a phase's name. It needs the API CSV and
+refuses a name no call in the capture carries — subtracting nothing prints the
+phase column back unchanged, which reads as "that call is free" rather than
+"that is not its name". A call the capture *does* carry but which never ran
+while the device starved is a real answer, and the report says so on the
+header rather than leaving two identical tables to tell apart.
 
 `--sample=none --cpuctxsw=none` is not optional here either: with CPU
 sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in
@@ -353,6 +358,16 @@ proofman's `GENERATING_INNER_PROOFS`:
 | `FIXED_AHEAD = 0` | the fixed-section read-ahead, so every upload is under the slot | 6047 ms [5886-6210] |
 | `constants` shared per program | 9 of 11 runs of `constants` | 6010 ms [5820-6198] |
 
+> Read these against each other, not against the 5.72 s the `=1` arm shows
+> above: that table is another session's, and the absolute leg and init on
+> this host are not reproducible across sessions. 39 runs over two of them
+> failed to explain the level — run order moved init 0.57 s in one session and
+> nothing in another, and two same-binary populations ten minutes apart
+> differed by 1.18 s. Every arm here is interleaved against the baseline beside
+> it, minutes apart, which is what makes the comparison sound while the level
+> is not. Take a baseline in your own session and never quote a cross-session
+> delta.
+
 Both arms are nulls, and the phase table says why. Dropping the read-ahead
 grows `host/fixed_install` (0.37-0.50 s to 0.62-0.89 s) and shrinks `constants`
 (0.46-0.77 s to 0.32-0.64 s); sharing `constants` takes its row to zero and
@@ -383,11 +398,14 @@ a control like this says only that the harness did not see anything.
 
 **Why neither removal recovered anything.** The same three captures answer it,
 because `nsys` sees more than kernels. Splitting each phase's idle by whether
-the device was moving bytes or doing nothing at all, the fixed-section install
-(`constants` + `host/fixed_install` + `const_setup` + `custom_setup_*`) is
-0.93-1.51 s of idle, of which only 0.27-0.36 s is host-to-device transfer:
-**70 % is dead device time, no kernel and no copy.** The leg's whole H2D is
-0.42-0.51 s for 22.6 GB, and the bridge's upload calls cost exactly their DMA
+the device was moving bytes or doing nothing at all — counting only the
+*bridge's* copies, which under `cargo-zisk` means the ones PJRT issues through
+the CUDA driver API, since pil2 shares the process and owns more of the
+traffic than we do — the fixed-section install (`constants` +
+`host/fixed_install` + `const_setup` + `custom_setup_*`) is 0.93-1.51 s of
+idle, of which only 0.27-0.35 s is host-to-device transfer: **71-77 % is dead
+device time, no kernel and no copy.** The bridge's whole H2D is 9.75 GB a run
+("The uploads, measured" below), and its upload calls cost exactly their DMA
 (`const_base` 1408 MB in 68.07 ms against 67.88 ms of DMA), so the uploads are
 neither a bandwidth floor nor a staging cost. Nor is the dead time the
 allocator reclaiming the AIR just evicted: against the size of what was freed,

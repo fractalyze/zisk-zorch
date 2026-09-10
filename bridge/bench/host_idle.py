@@ -375,11 +375,27 @@ def report(
         print(line(name, ns) + f"  x{calls[name]}")
     if minus_call is None:
         return
+    # A name that is in no call in the capture would subtract nothing and
+    # print the phase column back unchanged, which reads as "this call is
+    # free" rather than "you misspelled it" — and the table above is
+    # `--top`-capped, so its absence there proves nothing either way.
+    if not any(row.name == minus_call for row in api_rows):
+        raise ValueError(
+            f"{minus_call}: no such call in {api.name}."
+            f" The capture holds {len({row.name for row in api_rows})} call names;"
+            " run without --minus-call to see the ones that cost idle."
+        )
     rest = without_call(api_rows, rows, by_tid, idle, minus_call)
-    print(f"   what each phase keeps once {minus_call} leaves the prove path")
+    kept = sum(rest.values())
+    # A call that is made but never while the device starves is a real
+    # answer, and its table is the phase column exactly. Say which of the
+    # two identical-looking tables this is.
+    took = held - kept
+    note = "" if took else " — it contributed no idle, so this is the column above"
+    print(f"   what each phase keeps once {minus_call} leaves the prove path{note}")
     for name, ns in rank(rest, top):
         print(line(name, ns))
-    print(line("all phases", sum(rest.values()), "   "))
+    print(line("all phases", kept, "   "))
 
 
 def main(argv: list[str]) -> int:
@@ -403,6 +419,10 @@ def main(argv: list[str]) -> int:
         " for sizing what survives the call leaving the prove path",
     )
     args = ap.parse_args(argv[1:])
+    if args.minus_call and args.api is None:
+        # `report` returns before the driver-call cut when there is no API
+        # trace, so the flag would otherwise be dropped in silence.
+        ap.error("--minus-call needs the cuda_api_trace CSV argument")
     report(args.trace, args.nvtx, args.api, args.top, args.proves, args.minus_call)
     return 0
 
