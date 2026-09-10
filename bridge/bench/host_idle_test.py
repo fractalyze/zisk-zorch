@@ -189,6 +189,104 @@ class DriverCallTest(absltest.TestCase):
         self.assertGreater(idle["cuModuleLoadFatBinary"], idle["cuLaunchKernelEx"])
 
 
+class WithoutCallTest(absltest.TestCase):
+    """Crossing the two cuts: what a phase keeps when a driver call goes.
+
+    Sizing a bridge-side lever off the phase column alone over-states it by
+    whatever the driver was doing inside that phase — which is how the leg's
+    largest phase rows turned out to be graph instantiation wearing a phase's
+    name."""
+
+    def test_a_phase_that_is_all_driver_call_keeps_nothing(self):
+        rows = [
+            phase("host/slot_wait", 0, 100),
+            phase("lev", 100, 400, parent="p"),
+            phase("host/prove", 100, 1000, rid="p"),
+        ]
+        api = [host_idle.ApiRow("cuGraphInstantiateWithFlags", (100, 400), HOLDER)]
+        rest = host_idle.without_call(
+            api,
+            rows,
+            host_idle.turns(rows),
+            [(100, 400)],
+            "cuGraphInstantiateWithFlags",
+        )
+        self.assertEqual(rest["lev"], 0)
+
+    def test_a_phase_the_call_never_entered_keeps_all_of_it(self):
+        # The bridge's own host work is not a driver call, so a bump that
+        # moves one leaves `host/fixed_install` exactly where it was.
+        rows = [
+            phase("host/slot_wait", 0, 100),
+            phase("host/fixed_install", 100, 400),
+            phase("host/prove", 400, 1000),
+        ]
+        api = [host_idle.ApiRow("cuGraphInstantiateWithFlags", (500, 600), HOLDER)]
+        rest = host_idle.without_call(
+            api,
+            rows,
+            host_idle.turns(rows),
+            [(100, 400)],
+            "cuGraphInstantiateWithFlags",
+        )
+        self.assertEqual(rest["host/fixed_install"], 300)
+
+    def test_only_a_holders_calls_subtract(self):
+        # Same rule the driver-call cut turns on: a queued thread's
+        # instantiate runs beside the holder and explains none of its idle,
+        # so subtracting it would make a lever look already spent.
+        rows = [
+            phase("host/slot_wait", 0, 100),
+            phase("host/fixed_install", 100, 400),
+            phase("host/prove", 400, 1000),
+            phase("host/slot_wait", 0, 1000, tid=QUEUED),
+        ]
+        api = [host_idle.ApiRow("cuGraphInstantiateWithFlags", (100, 400), QUEUED)]
+        rest = host_idle.without_call(
+            api,
+            rows,
+            host_idle.turns(rows),
+            [(100, 400)],
+            "cuGraphInstantiateWithFlags",
+        )
+        self.assertEqual(rest["host/fixed_install"], 300)
+
+    def test_a_partly_covered_phase_keeps_the_rest(self):
+        rows = [
+            phase("host/slot_wait", 0, 100),
+            phase("constants", 100, 400, parent="p"),
+            phase("host/prove", 100, 1000, rid="p"),
+        ]
+        api = [host_idle.ApiRow("cuGraphInstantiateWithFlags", (100, 250), HOLDER)]
+        rest = host_idle.without_call(
+            api,
+            rows,
+            host_idle.turns(rows),
+            [(100, 400)],
+            "cuGraphInstantiateWithFlags",
+        )
+        self.assertEqual(rest["constants"], 150)
+
+    def test_the_phases_keep_the_held_idle_minus_what_the_call_took(self):
+        # The two cuts are of one set of nanoseconds, so crossing them has to
+        # close: whatever the call did not take is still charged to a phase.
+        rows = [
+            phase("host/slot_wait", 0, 100),
+            phase("host/fixed_install", 100, 300),
+            phase("constants", 300, 600, parent="p"),
+            phase("host/prove", 300, 1000, rid="p"),
+        ]
+        idle = [(100, 600)]
+        turns = host_idle.turns(rows)
+        api = [host_idle.ApiRow("cuGraphInstantiateWithFlags", (350, 500), HOLDER)]
+        took, _ = host_idle.api_idle(api, turns, idle)
+        rest = host_idle.without_call(
+            api, rows, turns, idle, "cuGraphInstantiateWithFlags"
+        )
+        held = sum(host_idle.shares(rows, idle, turns).holding.values())
+        self.assertEqual(sum(rest.values()), held - took["cuGraphInstantiateWithFlags"])
+
+
 class ReadingTest(parameterized.TestCase):
     """The filters the two readers apply, against real `nsys` rows."""
 

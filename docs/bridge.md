@@ -210,6 +210,13 @@ the two are answers about the same nanoseconds rather than separate budgets.
 `-t cuda` already collects it, so an existing capture can be re-exported
 without re-running anything.
 
+`--minus-call <name>` crosses the two, reporting what each phase keeps once
+that driver call leaves the prove path. It is how a bridge-side lever is
+sized against a bump that is already coming: with
+`--minus-call cuGraphInstantiateWithFlags` the leg's largest phase rows on
+hello-world (`lev`, the quotient chunks) fall to milliseconds, because they
+were graph instantiation wearing a phase's name.
+
 `--sample=none --cpuctxsw=none` is not optional here either: with CPU
 sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in
 report generation. Set `ZZ_CLIENTS=1` by hand when wrapping the binary
@@ -328,6 +335,51 @@ spread but not `fri_fold_0`'s — that one moves 0.18 s between two captures of
 one arm on one binary. So per-program attribution from a single capture
 supports claims above roughly **0.2 s** and nothing below, and two captures of
 one arm is the cheapest way to confirm that floor before trusting a table.
+
+### A phase's share of the idle is where the device waits, not what for (2026-09-10)
+
+The report above charges every idle nanosecond to the host phase that was
+running. That is an exact split, and it is still not a list of levers: twice
+now, a change that removed a large share outright has left the leg where it
+was, because the cost re-appeared in the phase next door.
+
+Measured on the hello-world guest with `ZZ_EAGER_MODULES=1`, one binary per
+arm, arms interleaved pass by pass so run order cannot favour one, leg from
+proofman's `GENERATING_INNER_PROOFS`:
+
+| arm | what it removes | leg, mean [min-max] |
+|---|---|---|
+| baseline | — | 5963 ms [5818-6121] |
+| `FIXED_AHEAD = 0` | the fixed-section read-ahead, so every upload is under the slot | 6047 ms [5886-6210] |
+| `constants` shared per program | 9 of 11 runs of `constants` | 6010 ms [5820-6198] |
+
+Both arms are nulls, and the phase table says why. Dropping the read-ahead
+grows `host/fixed_install` (0.37-0.50 s to 0.62-0.89 s) and shrinks `constants`
+(0.46-0.77 s to 0.32-0.64 s); sharing `constants` takes its row to zero and
+grows `host/fixed_install` to 0.74-0.90 s with `const_setup` and `commit1`
+taking the rest. The sum over the fixed-section install — `constants`,
+`host/fixed_install`, `const_setup`, `custom_setup_*` — is what stays put. It
+is one quantity, and which phase is holding the bag when the device starves is
+not a property of the bridge's scheduling.
+
+This is the same shape as the module-load result above, where moving the loads
+off the prove path re-priced them into `cuGraphInstantiateWithFlags` instead of
+recovering them, and it is why the report's own header calls a phase's share an
+upper bound on what removing it returns.
+
+**So run a positive control before believing a null on this leg.**
+`CUDA_MODULE_LOADING=EAGER` is the one to use: same binary, an environment
+variable, no build, and an effect of the size most bridge-side levers are
+sized at. Five interleaved passes each on the arms above's baseline binary:
+
+| arm | leg, mean [min-max] |
+|---|---|
+| unset (the driver's `LAZY` default) | 6099 ms [5987-6219] |
+| `CUDA_MODULE_LOADING=EAGER` | 5510 ms [5264-5690] |
+
+0.59 s apart with the ranges disjoint, which is what says a 0.4-0.6 s effect
+would have shown in the table above had one been there. A null quoted without
+a control like this says only that the harness did not see anything.
 
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
