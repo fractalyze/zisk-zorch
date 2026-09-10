@@ -89,6 +89,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
 | `ZZ_PRELOAD_THREADS` | AIRs loading at once | 6 |
 | `ZZ_EAGER_MODULES` | executables load their modules into the CUDA context as they are deserialized, not on first execute: `0` off, anything else on, empty or unset follows `ZZ_PRELOAD` | on unless `ZZ_PRELOAD=0` |
+| `ZZ_STAGING_THRESHOLD` | bytes at or above which the plugin DMAs a host-to-device transfer out of pageable memory instead of copying it through its pinned staging pool; `0` sends no option, which is what a plugin older than fractalyze/xla#718 needs | 2 GiB — over the largest section the bridge uploads |
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
 | `ZZ_FIXED_AHEAD` | AIRs whose fixed sections may be uploaded ahead of the running prove's, per client; `0` sends every upload under the slot, and the value is capped at `ZZ_PENDING` — the permit is taken and given back inside that admission, so no more proves than it admits can hold one | 1 |
 | `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |

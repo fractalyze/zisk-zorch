@@ -238,20 +238,64 @@ fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option
     on.then_some(true)
 }
 
+/// The transfer size at or above which the plugin stops copying a
+/// host-to-device transfer through its pinned staging pool and DMAs it out of
+/// the caller's pageable memory instead.
+///
+/// The plugin's default is 1 GiB, which is under the bridge's largest uploads:
+/// a wide AIR's `const_base` and `trace` run to 1.2-1.4 GiB each, so exactly
+/// the copies that move the most bytes are the ones that take the pageable
+/// rate. Raising it above them buys the pinned rate on all of them, at the
+/// cost of the pinned pool growing once by about the largest transfer.
+///
+/// `ZZ_STAGING_THRESHOLD` is the override, in bytes; `0` sends no option at
+/// all, which is both the plugin's own default behaviour and what a plugin
+/// built before fractalyze/xla#718 needs -- PJRT rejects a create option a
+/// plugin does not know, so any value at all fails client creation there.
+fn staging_threshold() -> Option<i64> {
+    staging_threshold_from(std::env::var("ZZ_STAGING_THRESHOLD").ok().as_deref())
+}
+
+/// The decision on its own, so the table in the tests can state it.
+///
+/// 2 GiB by default: over the largest section the bridge uploads with enough
+/// room that a wider AIR does not silently fall back to the pageable path,
+/// and small enough that the pinned pool it sizes stays a rounding error
+/// against the card. An unparseable value is not a licence to guess -- it
+/// reads as unset, the same way every other variable here treats an empty
+/// one.
+fn staging_threshold_from(threshold: Option<&str>) -> Option<i64> {
+    const DEFAULT: i64 = 2 << 30;
+    match threshold.filter(|s| !s.is_empty()).map(str::parse::<i64>) {
+        Some(Ok(0)) => None,
+        Some(Ok(bytes)) if bytes > 0 => Some(bytes),
+        _ => Some(DEFAULT),
+    }
+}
+
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
     let eager = eager_module_loads();
+    let staging = staging_threshold();
     if crate::log_level() >= 1 {
-        // A run's own log has to say which way this went: two runs that differ
-        // only by this option are otherwise indistinguishable after the fact.
-        // Once per run, not per client -- the value is read from the
-        // environment, so every client of a run reports the same thing.
+        // A run's own log has to say which way these went: two runs that
+        // differ only by one of these options are otherwise indistinguishable
+        // after the fact. Once per run, not per client -- the values are read
+        // from the environment, so every client of a run reports the same
+        // thing.
         static SAID: std::sync::Once = std::sync::Once::new();
-        SAID.call_once(|| zzlog!("eager module loads {}", if eager.is_some() { "on" } else { "off" }));
+        SAID.call_once(|| {
+            zzlog!("eager module loads {}", if eager.is_some() { "on" } else { "off" });
+            match staging {
+                Some(bytes) => zzlog!("staging threshold {} MiB", bytes >> 20),
+                None => zzlog!("staging threshold plugin default"),
+            }
+        });
     }
     let options = SessionOptions {
         preallocate: Some(memory_fraction.is_some()),
         memory_fraction,
         eager_load_executable_modules: eager,
+        staging_threshold_bytes: staging,
     };
     let session = Arc::new(unsafe { Session::with_options(options) });
     if memory_fraction.is_some() {
@@ -544,7 +588,7 @@ impl Artifact {
 
 #[cfg(test)]
 mod tests {
-    use super::{each_parallel, eager_module_loads_from, CacheEntryLock, Gate};
+    use super::{each_parallel, eager_module_loads_from, staging_threshold_from, CacheEntryLock, Gate};
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -610,6 +654,26 @@ mod tests {
         assert_eq!(eager_module_loads_from(Some(""), Some("0")), None);
         assert_eq!(eager_module_loads_from(Some(""), None), Some(true));
         assert_eq!(eager_module_loads_from(None, Some("")), Some(true));
+    }
+
+    #[test]
+    fn the_staging_threshold_clears_the_bridge_uploads_unless_turned_off() {
+        // Unset is the shipped setting: 2 GiB, over the 1.2-1.4 GiB sections
+        // that would otherwise take the pageable path.
+        assert_eq!(staging_threshold_from(None), Some(2 << 30));
+        assert_eq!(staging_threshold_from(Some("")), Some(2 << 30));
+        // `0` is the off spelling, as it is for the other variables here, and
+        // off means sending no option at all -- which is also the only thing a
+        // plugin built before fractalyze/xla#718 accepts.
+        assert_eq!(staging_threshold_from(Some("0")), None);
+        // An explicit size is the measurement knob: one run either side of the
+        // bridge's largest upload separates the staged path from the pageable
+        // one without changing anything else.
+        assert_eq!(staging_threshold_from(Some("1073741824")), Some(1 << 30));
+        // Neither a negative size nor a non-number is a threshold anyone meant;
+        // both read as unset rather than turning staging off by accident.
+        assert_eq!(staging_threshold_from(Some("-1")), Some(2 << 30));
+        assert_eq!(staging_threshold_from(Some("lots")), Some(2 << 30));
     }
 
     #[test]
