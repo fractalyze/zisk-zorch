@@ -211,6 +211,18 @@ the two are answers about the same nanoseconds rather than separate budgets.
 `-t cuda` already collects it, so an existing capture can be re-exported
 without re-running anything.
 
+`--minus-call <name>` crosses the two, reporting what each phase keeps once
+that driver call leaves the prove path. It is how a bridge-side lever is
+sized against a bump that is already coming: with
+`--minus-call cuGraphInstantiateWithFlags` the leg's largest phase rows on
+hello-world (`lev`, the quotient chunks) fall to milliseconds, because they
+were graph instantiation wearing a phase's name. It needs the API CSV and
+refuses a name no call in the capture carries — subtracting nothing prints the
+phase column back unchanged, which reads as "that call is free" rather than
+"that is not its name". A call the capture *does* carry but which never ran
+while the device starved is a real answer, and the report says so on the
+header rather than leaving two identical tables to tell apart.
+
 `--sample=none --cpuctxsw=none` is not optional here either: with CPU
 sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in
 report generation. Set `ZZ_CLIENTS=1` by hand when wrapping the binary
@@ -329,6 +341,121 @@ spread but not `fri_fold_0`'s — that one moves 0.18 s between two captures of
 one arm on one binary. So per-program attribution from a single capture
 supports claims above roughly **0.2 s** and nothing below, and two captures of
 one arm is the cheapest way to confirm that floor before trusting a table.
+
+### A phase's share of the idle is where the device waits, not what for (2026-09-10)
+
+The report above charges every idle nanosecond to the host phase that was
+running. That is an exact split, and it is still not a list of levers: twice
+now, a change that removed a large share outright has left the leg where it
+was, because the cost re-appeared in the phase next door.
+
+Measured on the hello-world guest with `ZZ_EAGER_MODULES=1`, one binary per
+arm, arms interleaved pass by pass so run order cannot favour one, leg from
+proofman's `GENERATING_INNER_PROOFS`:
+
+| arm | what it removes | leg, mean [min-max] |
+|---|---|---|
+| baseline | — | 5963 ms [5818-6121] |
+| `FIXED_AHEAD = 0` | the fixed-section read-ahead, so every upload is under the slot | 6047 ms [5886-6210] |
+| `constants` shared per program | 9 of 11 runs of `constants` | 6010 ms [5820-6198] |
+
+> Read these against each other, not against the 5.72 s the `=1` arm shows
+> above: that table is another session's, and the absolute leg and init on
+> this host are not reproducible across sessions. 39 runs over two of them
+> failed to explain the level — run order moved init 0.57 s in one session and
+> nothing in another, and two same-binary populations ten minutes apart
+> differed by 1.18 s. Every arm here is interleaved against the baseline beside
+> it, minutes apart, which is what makes the comparison sound while the level
+> is not. Take a baseline in your own session and never quote a cross-session
+> delta.
+
+Both arms are nulls, and the phase table says why. Dropping the read-ahead
+grows `host/fixed_install` (0.37-0.50 s to 0.62-0.89 s) and shrinks `constants`
+(0.46-0.77 s to 0.32-0.64 s); sharing `constants` takes its row to zero and
+grows `host/fixed_install` to 0.74-0.90 s with `const_setup` and `commit1`
+taking the rest. The sum over the fixed-section install — `constants`,
+`host/fixed_install`, `const_setup`, `custom_setup_*` — is what stays put. It
+is one quantity, and which phase is holding the bag when the device starves is
+not a property of the bridge's scheduling.
+
+This is the same shape as the module-load result above, where moving the loads
+off the prove path re-priced them into `cuGraphInstantiateWithFlags` instead of
+recovering them, and it is why the report's own header calls a phase's share an
+upper bound on what removing it returns.
+
+**So run a positive control before believing a null on this leg.**
+`CUDA_MODULE_LOADING=EAGER` is the one to use: same binary, an environment
+variable, no build, and an effect of the size most bridge-side levers are
+sized at. Five interleaved passes each on the arms above's baseline binary:
+
+| arm | leg, mean [min-max] |
+|---|---|
+| unset (the driver's `LAZY` default) | 6099 ms [5987-6219] |
+| `CUDA_MODULE_LOADING=EAGER` | 5510 ms [5264-5690] |
+
+0.59 s apart with the ranges disjoint, which is what says a 0.4-0.6 s effect
+would have shown in the table above had one been there. A null quoted without
+a control like this says only that the harness did not see anything.
+
+**Why neither removal recovered anything.** The same three captures answer it,
+because `nsys` sees more than kernels. Splitting each phase's idle by whether
+the device was moving bytes or doing nothing at all — counting only the
+*bridge's* copies, which under `cargo-zisk` means the ones PJRT issues through
+the CUDA driver API, since pil2 shares the process and owns more of the
+traffic than we do — the fixed-section install (`constants` +
+`host/fixed_install` + `const_setup` + `custom_setup_*`) is 0.93-1.51 s of
+idle, of which only 0.27-0.35 s is host-to-device transfer: **71-77 % is dead
+device time, no kernel and no copy.** The bridge's whole H2D is 9.75 GB a run
+("The uploads, measured" below), and its upload calls cost exactly their DMA
+(`const_base` 1408 MB in 68.07 ms against 67.88 ms of DMA), so the uploads are
+neither a bandwidth floor nor a staging cost. Nor is the dead time the
+allocator reclaiming the AIR just evicted: against the size of what was freed,
+r = -0.15 over 30 installs, and the proves that freed the most were faster.
+
+What it is, is a cost with no per-AIR structure. `constants` is the cleanest
+probe in the leg — one program, no inputs, identical outputs on every prove of
+a given size — and its dispatch cost for **the same AIR** across three captures
+of one arm runs 0.82 / 62.97 / 95.94 ms (`Rom_n22`), 233.03 / 0.63 / 26.99 ms
+(`Binary_n22`), 8.13 / 3.51 / 386.91 ms (`VirtualTableZisk0_n21`). Correlating
+the eleven AIRs between captures gives r = -0.28, -0.27, -0.30 — no structure,
+if anything anti-correlated. The per-run total carries (473 / 614 / 779 ms);
+which prove pays it is redrawn every run.
+
+So the cost is not in the phase, which is why removing a phase cannot remove
+it, and not in the AIR, which is why residency and ordering cannot reach it. It
+lands wherever the holder happens to be. Almost none of it is inside a CUDA
+driver call, so what is left is XLA/PJRT host code between `Artifact::run` and
+the device having work — the same place graph instantiation lives, but making
+no driver call at all. **Read this as a bound on bridge-side scheduling work in
+the leg, not as a lever waiting to be pulled**: three captures cannot separate
+"no per-AIR structure" from "structure far below the share being sized", and
+either way a change to what the bridge schedules is not what reaches it.
+
+**The check to run before building any lever that moves or removes a phase.**
+It costs one extra capture of the arm you already have, and it predicts the
+result:
+
+```bash
+# Two or three captures of ONE arm, then the same report on each.
+for c in c1 c2 c3; do
+    bench/host_idle.py ${c}_cuda_gpu_trace.csv ${c}_nvtx_pushpop_trace.csv \
+        ${c}_cuda_api_trace.csv --minus-call cuGraphInstantiateWithFlags
+done
+```
+
+Compare the phase you mean to attack across the captures. A phase whose share
+moves by more than the win you are sizing is not a lever, however large its
+mean: the cost is landing there rather than living there, and moving the phase
+will move the cost somewhere else in the same run. `constants` above swings
+0.46-0.77 s across three captures of one arm while the win being sized was
+0.4-0.6 s — the check fails, and both removals that were built on it measured
+null. Sharper still if the capture lets you name the per-prove unit: correlate
+the same AIR's cost between captures, and an r near zero says the phase is not
+where the cost lives.
+
+This is the same discipline as the positive control, from the other side. The
+control asks whether the harness could see the effect; this asks whether the
+effect is attached to the thing you are about to change.
 
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 

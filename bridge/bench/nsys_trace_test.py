@@ -125,6 +125,21 @@ class OwnerTest(parameterized.TestCase):
     def test_owner(self, kernel, side):
         self.assertEqual(nsys_trace.owner(kernel), side)
 
+    @parameterized.named_parameters(
+        ("h2d", "[CUDA memcpy Host-to-Device]"),
+        ("d2h", "[CUDA memcpy Device-to-Host]"),
+        ("d2d", "[CUDA memcpy Device-to-Device]"),
+        ("memset", "[CUDA memset]"),
+    )
+    def test_owner_refuses_a_memory_operation(self, name):
+        # A copy carries no signature, so the `(` rule would silently call
+        # every copy in the capture the bridge's — pil2's included, since the
+        # two provers share the process under `cargo-zisk`. Wrong answers are
+        # worse than errors here: it is how a report can attribute another
+        # prover's transfers to this one and nothing looks amiss.
+        with self.assertRaises(ValueError):
+            nsys_trace.owner(name)
+
 
 if __name__ == "__main__":
     absltest.main()

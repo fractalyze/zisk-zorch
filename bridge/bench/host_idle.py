@@ -53,7 +53,7 @@ Capture recipe in docs/bridge.md "Profiling". The prover must be built with
 (nsys 2026.1.3 deadlocks in report generation on a run this size).
 
 Usage: host_idle.py <cuda_gpu_trace.csv> <nvtx_pushpop_trace.csv>
-                    [cuda_api_trace.csv] [--top N]"""
+                    [cuda_api_trace.csv] [--top N] [--minus-call NAME]"""
 from __future__ import annotations
 
 import argparse
@@ -236,6 +236,37 @@ def api_idle(
     }, calls
 
 
+def without_call(
+    api: list[ApiRow],
+    rows: list[RangeRow],
+    turns: dict[str, list[Span]],
+    idle: list[Span],
+    call: str,
+) -> dict[str, int]:
+    """Idle under each phase that the holder did **not** spend inside `call`.
+
+    The two cuts above answer "which step of the prove" and "what the driver
+    was doing" about the same nanoseconds; this crosses them, which is what
+    sizing a bridge-side lever needs. When a driver call leaves the prove path
+    it takes its share of every phase with it, and what a phase keeps is the
+    rest — so the phase column alone over-states a lever by whatever the
+    driver was doing inside that phase.
+
+    Holder-only, for the reason the phase cut turns on: a call on a queued
+    thread explains none of the holder's idle."""
+    held = {tid: intersect(idle, spans) for tid, spans in turns.items() if spans}
+    calls: dict[str, list[Span]] = collections.defaultdict(list)
+    for row in api:
+        if row.name == call and row.tid in held:
+            calls[row.tid].append(row.span)
+    in_call = {tid: intersect(merge(spans), held[tid]) for tid, spans in calls.items()}
+    rest: dict[str, int] = collections.defaultdict(int)
+    for row, own in self_spans(rows):
+        hit = intersect(intersect(merge(own), idle), turns.get(row.tid, []))
+        rest[row.name] += covered(subtract(hit, in_call.get(row.tid, [])))
+    return dict(rest)
+
+
 class Shares(typing.NamedTuple):
     """Idle time under each phase name, split by whether the phase's own
     thread held the client at the time."""
@@ -274,6 +305,7 @@ def report(
     api: pathlib.Path | None,
     top: int,
     proves: int | None,
+    minus_call: str | None = None,
 ) -> None:
     kernels = merge(read_kernels(trace))
     if not kernels:
@@ -333,13 +365,41 @@ def report(
         print(line(name, ns) + f"  x{s.counts[name]}")
     if api is None:
         return
-    driver, calls = api_idle(read_api(api), by_tid, idle)
+    api_rows = read_api(api)
+    driver, calls = api_idle(api_rows, by_tid, idle)
     print(
         "   the same idle, by what the holder was inside (CUDA driver call;"
         " x<n> counts the calls that contributed, not every call made)"
     )
     for name, ns in rank(driver, top):
         print(line(name, ns) + f"  x{calls[name]}")
+    if minus_call is None:
+        return
+    # A name that is in no call in the capture would subtract nothing and
+    # print the phase column back unchanged, which reads as "this call is
+    # free" rather than "you misspelled it" — and the table above is
+    # `--top`-capped, so its absence there proves nothing either way.
+    if not any(row.name == minus_call for row in api_rows):
+        raise ValueError(
+            f"{minus_call}: no such call in {api.name}."
+            f" The capture holds {len({row.name for row in api_rows})} call names;"
+            " run without --minus-call to see the ones that cost idle."
+        )
+    rest = without_call(api_rows, rows, by_tid, idle, minus_call)
+    kept = sum(rest.values())
+    # A call that is made but never while the device starves is a real
+    # answer, and its table is the phase column exactly. Say which of the
+    # two identical-looking tables this is.
+    took = held - kept
+    # Name the table it equals: the one directly above this is the
+    # driver-call cut, and the one this reproduces is two up.
+    note = (
+        "" if took else " — it contributed no idle, so this repeats `idle, client held`"
+    )
+    print(f"   what each phase keeps once {minus_call} leaves the prove path{note}")
+    for name, ns in rank(rest, top):
+        print(line(name, ns))
+    print(line("all phases", kept, "   "))
 
 
 def main(argv: list[str]) -> int:
@@ -356,8 +416,24 @@ def main(argv: list[str]) -> int:
     ap.add_argument(
         "--proves", type=int, help="proves in the capture, when the guess is wrong"
     )
+    ap.add_argument(
+        "--minus-call",
+        metavar="NAME",
+        help="also report each phase's idle outside this CUDA driver call,"
+        " for sizing what survives the call leaving the prove path",
+    )
     args = ap.parse_args(argv[1:])
-    report(args.trace, args.nvtx, args.api, args.top, args.proves)
+    if args.minus_call is not None:
+        # `is not None`, not truthiness: an empty name is a value the user
+        # supplied, and letting it fall through here is how `--minus-call ""`
+        # reached `report` and exited 0 with no table at all.
+        if not args.minus_call.strip():
+            ap.error("--minus-call needs the name of a CUDA driver call")
+        if args.api is None:
+            # `report` returns before the driver-call cut when there is no
+            # API trace, so the flag would otherwise be dropped in silence.
+            ap.error("--minus-call needs the cuda_api_trace CSV argument")
+    report(args.trace, args.nvtx, args.api, args.top, args.proves, args.minus_call)
     return 0
 
 
