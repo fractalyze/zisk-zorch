@@ -381,6 +381,37 @@ sized at. Five interleaved passes each on the arms above's baseline binary:
 would have shown in the table above had one been there. A null quoted without
 a control like this says only that the harness did not see anything.
 
+**Why neither removal recovered anything.** The same three captures answer it,
+because `nsys` sees more than kernels. Splitting each phase's idle by whether
+the device was moving bytes or doing nothing at all, the fixed-section install
+(`constants` + `host/fixed_install` + `const_setup` + `custom_setup_*`) is
+0.93-1.51 s of idle, of which only 0.27-0.36 s is host-to-device transfer:
+**70 % is dead device time, no kernel and no copy.** The leg's whole H2D is
+0.42-0.51 s for 22.6 GB, and the bridge's upload calls cost exactly their DMA
+(`const_base` 1408 MB in 68.07 ms against 67.88 ms of DMA), so the uploads are
+neither a bandwidth floor nor a staging cost. Nor is the dead time the
+allocator reclaiming the AIR just evicted: against the size of what was freed,
+r = -0.15 over 30 installs, and the proves that freed the most were faster.
+
+What it is, is a cost with no per-AIR structure. `constants` is the cleanest
+probe in the leg — one program, no inputs, identical outputs on every prove of
+a given size — and its dispatch cost for **the same AIR** across three captures
+of one arm runs 0.82 / 62.97 / 95.94 ms (`Rom_n22`), 233.03 / 0.63 / 26.99 ms
+(`Binary_n22`), 8.13 / 3.51 / 386.91 ms (`VirtualTableZisk0_n21`). Correlating
+the eleven AIRs between captures gives r = -0.28, -0.27, -0.30 — no structure,
+if anything anti-correlated. The per-run total carries (473 / 614 / 779 ms);
+which prove pays it is redrawn every run.
+
+So the cost is not in the phase, which is why removing a phase cannot remove
+it, and not in the AIR, which is why residency and ordering cannot reach it. It
+lands wherever the holder happens to be. Almost none of it is inside a CUDA
+driver call, so what is left is XLA/PJRT host code between `Artifact::run` and
+the device having work — the same place graph instantiation lives, but making
+no driver call at all. **Read this as a bound on bridge-side scheduling work in
+the leg, not as a lever waiting to be pulled**: three captures cannot separate
+"no per-AIR structure" from "structure far below the share being sized", and
+either way a change to what the bridge schedules is not what reaches it.
+
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
 > Measured 2026-09-06, on that date's binary and plugin. Do not adjust these
