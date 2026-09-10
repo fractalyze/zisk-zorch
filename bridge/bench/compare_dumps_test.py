@@ -46,6 +46,22 @@ class CompareDumpsTest(absltest.TestCase):
         b = _run(self.root, "sha", SHA, self.proofs)
         self.assertEqual(compare_dumps.main(["", str(a), str(b)]), 2)
 
+    def test_a_directory_with_no_dumps_fails_rather_than_passing_empty(self):
+        # A gate that greenlights on nothing compared is worse than no gate:
+        # every way of pointing it at the wrong path — the run directory
+        # instead of its `dumps/`, a tag whose run aborted before dumping —
+        # produces zero files, and "0 dumps, 0 identical" must not exit 0.
+        a = _run(self.root, "native", HELLO, {})
+        b = _run(self.root, "bridge", HELLO, self.proofs)
+        self.assertEqual(compare_dumps.main(["", str(a), str(b)]), 1)
+
+    def test_dumps_missing_on_the_other_side_fail(self):
+        # The other half of the same hole: the left side has proofs and the
+        # right has none, so every comparison is skipped and `same` stays 0.
+        a = _run(self.root, "native", HELLO, self.proofs)
+        b = _run(self.root, "bridge", HELLO, {})
+        self.assertEqual(compare_dumps.main(["", str(a), str(b)]), 1)
+
     def test_a_missing_log_falls_back_to_comparing_by_id(self):
         a = _run(self.root, "native", None, self.proofs)
         b = _run(self.root, "bridge", HELLO, self.proofs)
