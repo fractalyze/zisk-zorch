@@ -1513,6 +1513,27 @@ mod tests {
         assert_eq!(q.workers(), 3);
     }
 
+    /// The queue keeps its callers' priority and order: a requested batch
+    /// goes ahead of queued background work, and within the batch the order
+    /// the caller gave survives. It cannot tell one caller's order from
+    /// another's — the proofman fork sends its instance list, while
+    /// `Bridge::global` sends `.last-used`, which is alphabetical because
+    /// `note_used` writes it from a `BTreeSet` — so preserving what it is
+    /// handed is the only thing it can do that is right for both.
+    #[test]
+    fn a_requested_batch_goes_ahead_of_background_work_in_the_order_given() {
+        let mut q = PreloadQueue::default();
+        // The rest of the proving key, queued as background work.
+        q.push(vec![(0, "Keccakf_n17".into(), false), (0, "Sha256f_n18".into(), false)], false, 1);
+        // The run's own AIRs arrive after it and go to the front. Pushing
+        // each key to the front on its own would flip the batch.
+        q.push(vec![(0, "Main_n22".into(), true), (0, "Rom_n22".into(), true)], true, 1);
+        assert_eq!(q.take(), Some((0, "Main_n22".into(), true)));
+        assert_eq!(q.take(), Some((0, "Rom_n22".into(), true)));
+        assert_eq!(q.take(), Some((0, "Keccakf_n17".into(), false)));
+        assert_eq!(q.take(), Some((0, "Sha256f_n18".into(), false)));
+    }
+
     #[test]
     fn read_words_skips_the_header_and_spans_slices() {
         let dir = std::env::temp_dir().join(format!("zz-read-words-{}", std::process::id()));

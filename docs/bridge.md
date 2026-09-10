@@ -423,7 +423,7 @@ either stack's init):
 | | native (3 basic streams + 1 recursive) | bridge (1 client) |
 |---|---|---|
 | `cargo-zisk prove` wall | 11.2–11.6 s | 15.3–16.9 s |
-| proofman init | 3.0 s | 5.4 s (bridge up 0.2 s, then init beside the executable loads) |
+| proofman init | 3.0 s | 5.4 s (bridge up 0.2 s, then init beside the executable loads) — closed since, see "Bridge start-up" |
 | inner-proof leg | 3.7 s (28 proofs) | 6.5 s |
 | ├ proves, one client, back to back, own time | | 5.45 s (InputData 0.17, RomData 0.30, MemAlign 0.32, Arith 0.42, VirtualTableZisk1 0.45, Rom 0.49, BinaryExtension 0.57, VirtualTableZisk0 0.57, Mem 0.62, Binary 0.75, Main 0.64–0.79) |
 | ├ waiting for the client, summed over the 11 instances | | 28 s (the serialization) |
@@ -438,6 +438,80 @@ run.sh's default is the ASM emulator's `-a -u`. So
 for the byte-gate and `summarize.py` for the rows. "Memory budget" below
 was measured this way, adding `ZZ_MEMORY_FRACTION` and
 `ZZ_GPU_HEADROOM_GB` per run.
+
+### Bridge start-up (2026-09-09/10, post-#176)
+
+The bridge's start is hidden inside proofman's init with time to spare.
+`ZZ_LOG` timestamps a run against that start, so every figure in this
+paragraph is on the bridge's zero rather than proofman's: over 23 runs at
+the default six preload threads, the client is up at 0.16–0.19 s, the
+whole preload — 11 AIRs, 380 programs out of the cache — is done at
+1.03–1.19 s, and `INITIALIZING_PROOFMAN` does not end until 3.40–5.19 s.
+proofman's own timer starts once the client is up, so the same runs read
+0.16–0.19 s shorter on it — 3.23–5.00 s — and that is the figure the rest
+of this section compares against native. The preload finishes
+2.30–4.09 s before init does, in every one of them, a difference of two
+timestamps on the same zero and so the same on either clock. Starving it
+makes that point rather than breaking it: at three preload threads it
+lands 1.90–2.03 s early, and at two, where it takes nearly twice as long
+to run, still 1.49–1.56 s early.
+
+Beside native, treat the bridge's init as bounded rather than known. It
+was 0.07–0.26 s behind on one session (0.26–0.45 s counting the client
+creation that precedes the timer) and ahead of native on both paired
+sets of another. Do not read the levels as a property of either stack:
+over 31 bridge runs and 15 native ones, on identical source, wheel and
+artifacts, the bridge's init ranged 3.16–5.00 s and native's
+3.00–5.75 s. The two covariates that look explanatory each fail
+somewhere. Run order was worth 570 ms on 2026-09-10 — a bridge run
+after a native one took 3.38 s against 3.95 s after another bridge,
+reproduced in a second block either side of the control — and did
+nothing at all across twelve runs the day before. Blocks read
+(`/usr/bin/time -v`, which `bench/run.sh` already captures) tracks init
+inside a bridge-after-bridge sequence at r ≈ +0.9, then inverts between
+the arms, where the faster arm read *more*; and it counts a whole run,
+not an init. Nor does run order exhaust it: a sibling session's
+bridge-after-bridge runs on the same binary averaged 5.13 s against
+3.95 s for the same arm here about ten minutes later — a residual
+larger than the ordering effect and with no account of its own. Those
+runs are not among the 31 above, which is why the range there stops at
+5.00 s.
+
+That instability is why the comparison above is stated as a bound, and
+also why the conclusion survives it: the slower init gets, the more of
+it the bridge's start hides inside. The tightest margin of the 23 came
+from the *fastest* init, not the slowest. What the instability does bind
+is anyone quoting init later — a figure means nothing without a native
+baseline taken in the same session and interleaved with it, and the run
+order stated beside it.
+
+So neither lever #178 proposed has anything to buy. Hooking the bridge in
+earlier moves work that already finishes with slack; deferring the client
+to the first prove would give up what `ZZ_MEMORY_FRACTION` is for, since
+the clients claim their share before pil2 sizes its stream buffers from
+the memory it sees free. Nor is the preload's own cost a lever.
+Swept in one interleaved session, `ZZ_PRELOAD_THREADS` at six,
+three and two moves when the preload *finishes*, by the better part of
+a second, and leaves proofman's init within 0.1 s of itself — the
+preload runs beside init, not inside it. In the same session
+`ZZ_PRELOAD=0` reaches native's init only by moving the loads into the
+contributions phase rather than removing them, and that spelling turns
+eager module loads off as well, so it moves two things at once. The
+#176 bump is worth 0.24–0.71 s of init on the same measure: the
+pre-#176 configuration ran 3.50–3.94 s against the default's
+3.23–3.26 s. That arm changed the plugin and disabled eager module
+loads together, so that belongs to the pair, not to the plugin.
+
+Two tests pin the scheduling this leans on, and it is worth being exact
+about which: `lib.rs` pins that the preload queue keeps its callers'
+priority and order — a requested batch ahead of queued background work,
+in the order given — and `artifact.rs` pins the load/prove gate, where a
+prove waits for the loads already in flight and a waiting prove holds new
+loads back. Neither pins that a requested AIR is loaded *before* a prove
+wants it: a key still sitting in the queue is loaded by the prove itself
+(`Bridge::artifact`), which is also what keeps an AIR outside
+`.last-used` from waiting on the rest of the preload. That the preload
+finishes first is the margin measured above, not an invariant.
 
 ### The uploads, measured (2026-09-09, post-#192)
 
@@ -546,9 +620,9 @@ What remains above native is structural, tracked in #170: the bridge
 proves the 11 instances back to back on one client while pil2 overlaps
 three basic streams and its recursion (re-measured on the #171 artifacts,
 a second client is still 8.1 GiB more than this card has — "Memory budget"
-below); the bridge comes up beside proofman's init on the same cores; and
-`const_setup` recomputes each AIR's constant tree per run where pil2 reads
-it from disk.
+below); and `const_setup` recomputes each AIR's constant tree per run
+where pil2 reads it from disk. The bridge's own start is no longer one of
+them: it finishes well inside proofman's init ("Bridge start-up" above).
 Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
 comparison is the section above.
 
@@ -891,8 +965,11 @@ is unmeasured here for that reason, not overlooked.
   optimization barrier, which it now does. Loads are CPU-bound (XLA
   rebuilds the executable from its HLO) and scale with the instruction
   count: an AIR's programs load in ~0.5 s with the hash kernels fused,
-  ~4.5 CPU-s when the markers inlined (#168); more preload threads slow
-  proofman's init by as much as they gain.
+  ~4.5 CPU-s when the markers inlined (#168). The thread count is not a
+  lever in either direction: swept in one interleaved session, six, three
+  and two preload threads put proofman's init within 0.1 s of each other,
+  because the preload is done long before init is either way ("Bridge
+  start-up", where the levels are only comparable within a session).
 - **Compile cost.** Compiling an AIR's programs takes many minutes:
   the fused Poseidon1 sponge and permute kernels are each a fully
   unrolled straight-line body (3358 multiplies, 1.9 MB of LLVM IR for one
