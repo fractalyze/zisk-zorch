@@ -346,17 +346,20 @@ pass, four passes each, one binary and one artifacts directory with both plugin
 builds warm. Four of the arms are the module-loading question; the fifth is the
 staging threshold, and it has its own section below:
 
-| arm | leg, median | sd |
-|---|---|---|
-| the previous wheel, eager module loads on | 5.970 s | 0.087 |
-| + `CUDA_MODULE_LOADING=EAGER` | 5.675 s | 0.307 |
-| this wheel, eager module loads **off** | 6.167 s | 0.018 |
-| this wheel, eager module loads on | **5.517 s** | 0.240 |
-| this wheel, eager on + staging at 2 GiB | 5.986 s | 0.262 |
+| arm | | leg, median | sd |
+|---|---|---|---|
+| `old` | the previous wheel, eager module loads on | 5.970 s | 0.087 |
+| `oldctl` | + `CUDA_MODULE_LOADING=EAGER` | 5.675 s | 0.307 |
+| `newoff` | this wheel, eager module loads **off** | 6.167 s | 0.018 |
+| `new` | this wheel, eager module loads on | **5.517 s** | 0.240 |
+| `newstg` | this wheel, eager on + staging at 2 GiB | 5.986 s | 0.262 |
+
+The short names are this page's handle for these five arms; sections below
+cite them.
 
 **−0.453 s**, against the ~0.42–0.48 s the `=0` + `EAGER` arm above bounds it
-at. The scoped change reaches the process-wide variable's ceiling — the second
-and fourth rows overlap — without changing how pil2 loads its own modules.
+at. The scoped change reaches the process-wide variable's ceiling — `oldctl`
+and `new` overlap — without changing how pil2 loads its own modules.
 
 The driver calls say the same thing directly. Over one capture per arm,
 `cuGraphInstantiateWithFlags` falls **1.457 s → 0.359 s** across the same 245
@@ -391,10 +394,11 @@ it does exactly that:
 | upload time inside the leg | 0.31 s | 0.12 s |
 
 **And the leg gets worse by 0.469 s** (5.517 s → 5.986 s, four interleaved
-passes each — the last two rows of the table above, the same sweep). The pinned pool has to grow to hold a 1.4 GB transfer and pays
-for it inside the prove: `cuMemHostAlloc` goes from 0.258 s over 16 calls to
-1.071 s over 17. One allocation costs more than every faster copy returns,
-because this guest uploads each large section once.
+passes each — the `new` and `newstg` arms of the same sweep). The pinned pool
+has to grow to hold a 1.4 GB transfer and pays for it inside the prove:
+`cuMemHostAlloc` goes from 0.258 s over 16 calls to 1.071 s over 17. One
+allocation costs more than every faster copy returns, because this guest
+uploads each large section once.
 
 So the option ships **off**. A workload that uploads the same large section
 repeatedly would amortize the pool growth this one cannot — the block-shaped
@@ -608,8 +612,8 @@ Where #170 leaves this guest. On `main` at c4fd42a, frx quad pinned to
 `0.10.2.dev20260910150749` (fractalyze/jax@1b7c92fe, xla `fff9509ab012`, which
 carries fractalyze/xla#698 and #718), proving key v1.0.0-alpha, artifacts
 `zz-artifacts-191` with both plugin generations warm in its `.pjrt-cache`. The
-leg sweep itself ran at PR #203's head 392ed92, which is this commit's tree
-less the docs fixes that landed on top of it.
+leg sweep itself ran at 392ed92 on `chore/bump-jax`, one docs commit below the
+9193ea1 that merged here as c4fd42a.
 
 Every row names the session that measured it, and none of them is re-derived
 from another. That is not bookkeeping: on this rig both init and the leg drift
@@ -666,9 +670,11 @@ so interleave the arms pass by pass and rotate them within a pass.
 
 The leg is the criterion that did not close, and nothing on the list below
 closes it: of everything #170 tried, only eager kernels moved the leg, and the
-1.077 s still owed is more than twice the 0.453 s that one was worth. Whatever
-the remaining 1.817 s is, it is not among the things this issue knew to look
-for.
+1.077 s the bridge sits above the 1.2x bar is more than twice the 0.453 s that
+one was worth. The gap to native is a wider figure measured to a different
+reference — 1.817 s, of which the bar forgives the first 0.740 s — so the two
+are not quantities to subtract from each other. Whatever the rest of either is,
+it is not among the things this issue knew to look for.
 
 ### The levers, each closed with a measurement
 
