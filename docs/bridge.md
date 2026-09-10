@@ -357,7 +357,10 @@ nothing at all across twelve runs the day before. Blocks read
 (`/usr/bin/time -v`, which `bench/run.sh` already captures) tracks init
 inside a bridge-after-bridge sequence at r ≈ +0.9, then inverts between
 the arms, where the faster arm read *more*; and it counts a whole run,
-not an init.
+not an init. Nor does run order exhaust it: two bridge-after-bridge
+populations on the same binary about ten minutes apart averaged 5.13 s
+and 3.95 s, a residual larger than the ordering effect and with no
+account of its own.
 
 That instability is why the conclusion is stated the way it is, and it
 is also why the conclusion survives it: the slower init gets, the more
