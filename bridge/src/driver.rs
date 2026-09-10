@@ -77,7 +77,9 @@ pub struct Uploaded {
 
 /// Upload an instance's sections. Separate from `prove` so a prove queued
 /// behind another on the same client can have its uploads (a gigabyte for
-/// Main, staged through pinned memory) done before its turn.
+/// Main, DMA'd straight out of pageable host memory: the plugin stages a
+/// transfer through pinned memory only below `staging_threshold_bytes`,
+/// which defaults to 1 GiB) done before its turn.
 pub fn upload_inputs(art: &Artifact, inp: &InstanceInputs) -> Result<Uploaded, Error> {
     let m = &art.manifest;
     let spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {

@@ -74,7 +74,11 @@ py_library(
 
 py_test(
     name = "queries_test",
+    # ~28 s warm, but a dependency bump invalidates the cache and the cold run
+    # under CI's parallel load passes 60 s -- the cap `small` derives. Size is
+    # still the right resource hint; only the wall-clock cap needed raising.
     size = "small",
+    timeout = "moderate",
     srcs = ["queries_test.py"],
     data = [
         "testdata/golden/grinding.json",
