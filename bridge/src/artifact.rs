@@ -245,32 +245,34 @@ fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option
 /// The plugin's default is 1 GiB, which is under the bridge's largest uploads:
 /// a wide AIR's `const_base` and `trace` run to 1.2-1.4 GiB each, so exactly
 /// the copies that move the most bytes are the ones that take the pageable
-/// rate. Raising it above them buys the pinned rate on all of them, at the
-/// cost of the pinned pool growing once by about the largest transfer.
+/// rate rather than the pinned one.
 ///
-/// `ZZ_STAGING_THRESHOLD` is the override, in bytes; `0` sends no option at
-/// all, which is both the plugin's own default behaviour and what a plugin
-/// built before fractalyze/xla#718 needs -- PJRT rejects a create option a
-/// plugin does not know, so any value at all fails client creation there.
+/// **Off by default, on the measurement rather than on the arithmetic.**
+/// Raising the threshold above those sections makes the plugin's pinned pool
+/// grow by about the largest transfer, and that growth is paid inside the
+/// prove. On a workload that uploads each large section once it costs more
+/// than the faster copies return. Left on, it gave back what
+/// fractalyze/xla#698 won on the same runs. A workload that uploads the same
+/// large section repeatedly could still come out ahead, so this is a knob and
+/// not a deletion.
+///
+/// `ZZ_STAGING_THRESHOLD` turns it on, in bytes. Unset or `0` sends no option
+/// at all, which is both the plugin's own behaviour and what a plugin built
+/// before fractalyze/xla#718 needs -- PJRT rejects a create option a plugin
+/// does not know, so any value at all fails client creation there.
 fn staging_threshold() -> Option<i64> {
     staging_threshold_from(std::env::var("ZZ_STAGING_THRESHOLD").ok().as_deref())
 }
 
 /// The decision on its own, so the table in the tests can state it.
 ///
-/// 2 GiB by default: over the largest section the bridge uploads with enough
-/// room that a wider AIR does not silently fall back to the pageable path,
-/// and small enough that the pinned pool it sizes stays a rounding error
-/// against the card. An unparseable value is not a licence to guess -- it
-/// reads as unset, the same way every other variable here treats an empty
-/// one.
+/// A value that is not a positive size is not a threshold anyone meant, so it
+/// reads as unset rather than being guessed at.
 fn staging_threshold_from(threshold: Option<&str>) -> Option<i64> {
-    const DEFAULT: i64 = 2 << 30;
-    match threshold.filter(|s| !s.is_empty()).map(str::parse::<i64>) {
-        Some(Ok(0)) => None,
-        Some(Ok(bytes)) if bytes > 0 => Some(bytes),
-        _ => Some(DEFAULT),
-    }
+    threshold
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse::<i64>().ok())
+        .filter(|&bytes| bytes > 0)
 }
 
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
@@ -657,23 +659,22 @@ mod tests {
     }
 
     #[test]
-    fn the_staging_threshold_clears_the_bridge_uploads_unless_turned_off() {
-        // Unset is the shipped setting: 2 GiB, over the 1.2-1.4 GiB sections
-        // that would otherwise take the pageable path.
-        assert_eq!(staging_threshold_from(None), Some(2 << 30));
-        assert_eq!(staging_threshold_from(Some("")), Some(2 << 30));
-        // `0` is the off spelling, as it is for the other variables here, and
-        // off means sending no option at all -- which is also the only thing a
-        // plugin built before fractalyze/xla#718 accepts.
+    fn the_staging_threshold_is_off_unless_a_positive_size_asks_for_it() {
+        // Unset is off: no option sent, so the plugin keeps its own 1 GiB
+        // behaviour and a plugin older than fractalyze/xla#718 still creates a
+        // client.
+        assert_eq!(staging_threshold_from(None), None);
+        assert_eq!(staging_threshold_from(Some("")), None);
         assert_eq!(staging_threshold_from(Some("0")), None);
-        // An explicit size is the measurement knob: one run either side of the
-        // bridge's largest upload separates the staged path from the pageable
-        // one without changing anything else.
+        // An explicit size turns it on: one run either side of the bridge's
+        // largest upload separates the staged path from the pageable one
+        // without changing anything else.
         assert_eq!(staging_threshold_from(Some("1073741824")), Some(1 << 30));
+        assert_eq!(staging_threshold_from(Some("2147483648")), Some(2 << 30));
         // Neither a negative size nor a non-number is a threshold anyone meant;
-        // both read as unset rather than turning staging off by accident.
-        assert_eq!(staging_threshold_from(Some("-1")), Some(2 << 30));
-        assert_eq!(staging_threshold_from(Some("lots")), Some(2 << 30));
+        // both read as unset rather than being guessed at.
+        assert_eq!(staging_threshold_from(Some("-1")), None);
+        assert_eq!(staging_threshold_from(Some("lots")), None);
     }
 
     #[test]
