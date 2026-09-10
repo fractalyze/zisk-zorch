@@ -344,17 +344,29 @@ preload — 11 AIRs, 380 programs out of the cache — is done at
 preload does not use.
 
 Beside native, treat the bridge's init as bounded rather than known. It
-was 0.07–0.26 s behind on the first session (0.26–0.45 s counting the
-client creation that precedes the timer) and 0.9–2.4 s *ahead* on the
-second. The bridge's own init is the reproducible half — 3.23–3.41 s
-over those eleven runs — while native's ran 3.00–3.16 s one day and
-4.27–5.75 s the next, on the same wheel, artifacts and bridge source,
-with native's contributions and leg unchanged. Which half of a run's
-init is on disk clearly differs between the two stacks, and no mechanism
-here has been established. What follows from it is a measurement rule:
-absolute init is not comparable across sessions on this host, so any
-claim about init has to carry a native baseline taken in the same
-session and interleaved with it.
+was 0.07–0.26 s behind on one session (0.26–0.45 s counting the client
+creation that precedes the timer) and ahead of native on both paired
+sets of another. Do not read the levels as a property of either stack:
+over 31 bridge runs and 15 native ones, on identical source, wheel and
+artifacts, the bridge's init ranged 3.16–5.00 s and native's
+3.00–5.75 s. The two covariates that look explanatory each fail
+somewhere. Run order was worth 570 ms on 2026-09-10 — a bridge run
+after a native one took 3.38 s against 3.95 s after another bridge,
+reproduced in a second block either side of the control — and did
+nothing at all across twelve runs the day before. Blocks read
+(`/usr/bin/time -v`, which `bench/run.sh` already captures) tracks init
+inside a bridge-after-bridge sequence at r ≈ +0.9, then inverts between
+the arms, where the faster arm read *more*; and it counts a whole run,
+not an init.
+
+That instability is why the conclusion is stated the way it is, and it
+is also why the conclusion survives it: the slower init gets, the more
+of it the bridge's start hides inside. The preload finished 2.3–4.1 s
+before init ended in every run of both sessions, and the worst case was
+the *fastest* init, not the slowest. What the instability does bind is
+anyone quoting init later — a figure means nothing without a native
+baseline taken in the same session and interleaved with it, and the run
+order stated beside it.
 
 So neither lever #178 proposed has anything to buy. Hooking the bridge in
 earlier moves work that already finishes with slack; deferring the client
