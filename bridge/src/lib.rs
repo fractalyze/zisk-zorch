@@ -1427,10 +1427,11 @@ mod tests {
 
     /// The queue keeps its callers' priority and order: a requested batch
     /// goes ahead of queued background work, and within the batch the order
-    /// the caller gave survives. Both callers choose that order for their
-    /// own reasons — `Bridge::global` passes the `.last-used` file, the
-    /// proofman fork its instance list — so a queue that reordered them
-    /// would be substituting its own order for theirs.
+    /// the caller gave survives. It cannot tell one caller's order from
+    /// another's — the proofman fork sends its instance list, while
+    /// `Bridge::global` sends `.last-used`, which is alphabetical because
+    /// `note_used` writes it from a `BTreeSet` — so preserving what it is
+    /// handed is the only thing it can do that is right for both.
     #[test]
     fn a_requested_batch_goes_ahead_of_background_work_in_the_order_given() {
         let mut q = PreloadQueue::default();

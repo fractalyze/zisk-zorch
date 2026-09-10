@@ -359,10 +359,12 @@ nothing at all across twelve runs the day before. Blocks read
 (`/usr/bin/time -v`, which `bench/run.sh` already captures) tracks init
 inside a bridge-after-bridge sequence at r ≈ +0.9, then inverts between
 the arms, where the faster arm read *more*; and it counts a whole run,
-not an init. Nor does run order exhaust it: two bridge-after-bridge
-populations on the same binary about ten minutes apart averaged 5.13 s
-and 3.95 s, a residual larger than the ordering effect and with no
-account of its own.
+not an init. Nor does run order exhaust it: a sibling session's
+bridge-after-bridge runs on the same binary averaged 5.13 s against
+3.95 s for the same arm here about ten minutes later — a residual
+larger than the ordering effect and with no account of its own. Those
+runs are not among the 31 above, which is why the range there stops at
+5.00 s.
 
 That instability is why the comparison above is stated as a bound, and
 also why the conclusion survives it: the slower init gets, the more of
@@ -376,15 +378,18 @@ So neither lever #178 proposed has anything to buy. Hooking the bridge in
 earlier moves work that already finishes with slack; deferring the client
 to the first prove would give up what `ZZ_MEMORY_FRACTION` is for, since
 the clients claim their share before pil2 sizes its stream buffers from
-the memory it sees free. Nor is what remains the preload's own cost.
-`ZZ_PRELOAD_THREADS` at six, three and two moves when the preload
-*finishes*, by the better part of a second, and leaves proofman's init
-within 0.1 s of itself — the preload is beside init, not inside it. And
+the memory it sees free. Nor is the preload's own cost a lever.
+Swept in one interleaved session, `ZZ_PRELOAD_THREADS` at six,
+three and two moves when the preload *finishes*, by the better part of
+a second, and leaves proofman's init within 0.1 s of itself — the
+preload runs beside init, not inside it. In the same session
 `ZZ_PRELOAD=0` reaches native's init only by moving the loads into the
-contributions phase rather than removing them (that spelling turns eager
-module loads off as well, so it moves two things at once). Of what is
-left, 0.3 s is the #176 plugin bump's own share — the same run on the
-previous plugin costs that much more init.
+contributions phase rather than removing them, and that spelling turns
+eager module loads off as well, so it moves two things at once. The
+#176 bump is worth about 0.3 s of init on the same measure: the
+pre-#176 configuration ran 3.50–3.94 s against the default's
+3.23–3.26 s. That arm changed the plugin and disabled eager module
+loads together, so the 0.3 s belongs to the pair, not to the plugin.
 
 Two tests pin the scheduling this leans on, and it is worth being exact
 about which: `lib.rs` pins that the preload queue keeps its callers'
@@ -782,9 +787,10 @@ Facts the gate surfaced, all now handled by the bridge:
   rebuilds the executable from its HLO) and scale with the instruction
   count: an AIR's programs load in ~0.5 s with the hash kernels fused,
   ~4.5 CPU-s when the markers inlined (#168). The thread count is not a
-  lever in either direction: six, three and two preload threads put
-  proofman's init within 0.1 s of each other, because the preload is done
-  long before init is ("Bridge start-up").
+  lever in either direction: swept in one interleaved session, six, three
+  and two preload threads put proofman's init within 0.1 s of each other,
+  because the preload is done long before init is either way ("Bridge
+  start-up", where the levels are only comparable within a session).
 - **Compile cost.** Compiling an AIR's programs takes many minutes:
   the fused Poseidon1 sponge and permute kernels are each a fully
   unrolled straight-line body (3358 multiplies, 1.9 MB of LLVM IR for one
