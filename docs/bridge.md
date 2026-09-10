@@ -330,8 +330,79 @@ four interleaved passes each). It has to be set before the process starts, or
 the plugin has to materialize the kernels itself after loading a module —
 which is where the durable fix belongs: beside `eager_load_executable_modules`,
 scoped to the executables loaded through it rather than to every module the
-process loads. Size that change against the ~0.42-0.48 s the arm above bounds,
-not against the 0.48 s measured with the variable set process-wide.
+process loads.
+
+### The plugin materializes the kernels now, and it is worth what the bound said
+
+[fractalyze/xla#698](https://github.com/fractalyze/xla/pull/698) made
+`eager_load_executable_modules` enumerate an executable's kernels and load each
+one (`cuModuleEnumerateFunctions` + `cuFuncLoad`, CUDA ≥ 12.3), so the code
+load happens where the module load already does rather than at first
+reference. Measured on the wheel that carries it, five arms interleaved pass by
+pass, four passes each, one binary and one artifacts directory with both plugin
+builds warm:
+
+| arm | leg, median | sd |
+|---|---|---|
+| the previous wheel, eager module loads on | 5.970 s | 0.087 |
+| + `CUDA_MODULE_LOADING=EAGER` | 5.675 s | 0.307 |
+| this wheel, eager module loads **off** | 6.167 s | 0.018 |
+| this wheel, eager module loads on | **5.517 s** | 0.240 |
+
+**−0.453 s**, against the ~0.42–0.48 s the `=0` + `EAGER` arm above bounds it
+at. The scoped change reaches the process-wide variable's ceiling — the two
+right-hand rows overlap — without changing how pil2 loads its own modules.
+
+The driver calls say the same thing directly. Over one capture per arm,
+`cuGraphInstantiateWithFlags` falls **1.457 s → 0.359 s** across the same 245
+calls, `cuFuncLoad` appears where it did not exist (0 → 6140 calls, 0.162 s),
+and `cuModuleLoadFatBinary` is unchanged at 0.21–0.23 s over 369 calls —
+that one was already moved by
+[#664](https://github.com/fractalyze/xla/pull/664). So the first-execution work
+is not removed, it is relocated a second time: out of the prove's
+`cuGraphInstantiateWithFlags` and into the load, which `ZZ_PRELOAD` has already
+put off the prove path.
+
+Note what this does to the knob's history. The same
+`ZZ_EAGER_MODULES=0 → 1` that was worth 5.77 → 5.72 s (null) before #698 is
+worth 6.167 → 5.517 s after it. The flag was never the lever; it was the
+place to put one.
+
+### Staging the big uploads is a faster copy and a slower leg
+
+The same wheel carries
+[fractalyze/xla#718](https://github.com/fractalyze/xla/pull/718), which turns
+the plugin's 1 GiB host-to-device staging cutoff into the
+`staging_threshold_bytes` create option. The bridge's four largest uploads sit
+above that cutoff, so they were being DMA'd out of pageable memory; setting the
+option above them (`ZZ_STAGING_THRESHOLD`) moves them onto the pinned path, and
+it does exactly that:
+
+| one capture each | option off | option at 2 GiB |
+|---|---|---|
+| bridge uploads, pageable | 1205 copies, 5.29 GB at 11.1 GB/s | 1201 copies, 0.01 GB at 11.3 GB/s |
+| bridge uploads, pinned | 356 copies, 4.46 GB at 43.0 GB/s | 360 copies, 9.75 GB at 46.4 GB/s |
+| the four over 1 GiB | 105, 73, 66, 234 ms — all pageable | 26, 23, 30, 28 ms — all pinned |
+| upload time inside the leg | 0.31 s | 0.12 s |
+
+**And the leg gets worse by 0.469 s** (5.517 s → 5.986 s, four interleaved
+passes each). The pinned pool has to grow to hold a 1.4 GB transfer and pays
+for it inside the prove: `cuMemHostAlloc` goes from 0.258 s over 16 calls to
+1.071 s over 17. One allocation costs more than every faster copy returns,
+because this guest uploads each large section once.
+
+So the option ships **off**. A workload that uploads the same large section
+repeatedly would amortize the pool growth this one cannot — the block-shaped
+mix is where that would show, and it is unmeasured, which is why the knob
+exists and why its default is the case that was measured.
+
+Two traps for anyone re-running this. The pageable copy *count* barely moves
+(1205 → 1201): those are sub-megabyte XLA runtime internals on the compute
+stream, not the bridge's uploads, so read the bytes and the rate, not the
+count. And `bench/h2d_overlap.py` is the instrument — it attributes by stream
+and reports `SrcMemKd`; a hand-rolled filter on `nsys_trace.owner()` gives
+`bridge` for both provers' copies, because `owner()` keys on `(` in the name
+and no memcpy row has one.
 
 A caveat for anyone sizing a lever off a per-program table. Across three
 captures of one arm (`ZZ_EAGER_MODULES=1`), a program's instantiate cost moves
