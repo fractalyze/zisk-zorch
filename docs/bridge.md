@@ -412,6 +412,32 @@ the leg, not as a lever waiting to be pulled**: three captures cannot separate
 "no per-AIR structure" from "structure far below the share being sized", and
 either way a change to what the bridge schedules is not what reaches it.
 
+**The check to run before building any lever that moves or removes a phase.**
+It costs one extra capture of the arm you already have, and it predicts the
+result:
+
+```bash
+# Two or three captures of ONE arm, then the same report on each.
+for c in c1 c2 c3; do
+    bench/host_idle.py ${c}_cuda_gpu_trace.csv ${c}_nvtx_pushpop_trace.csv \
+        ${c}_cuda_api_trace.csv --minus-call cuGraphInstantiateWithFlags
+done
+```
+
+Compare the phase you mean to attack across the captures. A phase whose share
+moves by more than the win you are sizing is not a lever, however large its
+mean: the cost is landing there rather than living there, and moving the phase
+will move the cost somewhere else in the same run. `constants` above swings
+0.46-0.77 s across three captures of one arm while the win being sized was
+0.4-0.6 s — the check fails, and both removals that were built on it measured
+null. Sharper still if the capture lets you name the per-prove unit: correlate
+the same AIR's cost between captures, and an r near zero says the phase is not
+where the cost lives.
+
+This is the same discipline as the positive control, from the other side. The
+control asks whether the harness could see the effect; this asks whether the
+effect is attached to the thing you are about to change.
+
 ## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
 
 > Measured 2026-09-06, on that date's binary and plugin. Do not adjust these
