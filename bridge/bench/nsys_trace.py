@@ -106,5 +106,17 @@ def owner(kernel_name: str) -> str:
     """Which prover emitted a kernel. XLA writes a fusion's name with no
     argument list (`loop_add_fusion`, `sponge_hash_1`); pil2's kernels are
     C++ signatures (`_add(Goldilocks::Element *, ...)`), so a `(` in the name
-    is what tells them apart."""
+    is what tells them apart.
+
+    **Kernels only.** A copy is named `[CUDA memcpy Host-to-Device]`, which
+    carries no signature, so the rule above would call every copy in the
+    capture the bridge's — including pil2's, which under `cargo-zisk` share the
+    process. That is a wrong answer rather than a missing one, so it raises
+    instead: attribute a copy by the stream it ran on (`h2d_overlap.Capture.
+    upload_owners`), which is what tells the two apart when the name cannot."""
+    if "memcpy" in kernel_name or "memset" in kernel_name:
+        raise ValueError(
+            f"owner() is for kernels; {kernel_name!r} is a memory operation."
+            " Attribute copies by stream — see h2d_overlap.Capture.upload_owners."
+        )
     return PIL2 if "(" in kernel_name else BRIDGE
