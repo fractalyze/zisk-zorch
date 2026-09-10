@@ -336,12 +336,14 @@ was measured this way, adding `ZZ_MEMORY_FRACTION` and
 ### Bridge start-up (2026-09-09/10, post-#176)
 
 The bridge's start is hidden inside proofman's init with time to spare.
-`ZZ_LOG` timestamps a run against that start, and over eleven runs across
-two sessions the shape holds: the client is up at 0.16–0.19 s,
-`INITIALIZING_PROOFMAN` runs from there to 3.40–3.61 s, and the whole
-preload — 11 AIRs, 380 programs out of the cache — is done at
-1.03–1.15 s. Every one of those runs leaves at least 2.3 s of init the
-preload does not use.
+`ZZ_LOG` timestamps a run against that start: over 23 runs at the default
+six preload threads, the client is up at 0.16–0.19 s, the whole preload —
+11 AIRs, 380 programs out of the cache — is done at 1.03–1.19 s, and
+`INITIALIZING_PROOFMAN` does not end until 3.40–5.19 s. The preload
+finishes 2.30–4.09 s before init does, in every one of them. Starving it
+makes that point rather than breaking it: at three preload threads it
+lands 1.90–2.03 s early, and at two, where it takes nearly twice as long
+to run, still 1.49–1.56 s early.
 
 Beside native, treat the bridge's init as bounded rather than known. It
 was 0.07–0.26 s behind on one session (0.26–0.45 s counting the client
@@ -362,12 +364,11 @@ populations on the same binary about ten minutes apart averaged 5.13 s
 and 3.95 s, a residual larger than the ordering effect and with no
 account of its own.
 
-That instability is why the conclusion is stated the way it is, and it
-is also why the conclusion survives it: the slower init gets, the more
-of it the bridge's start hides inside. The preload finished 2.3–4.1 s
-before init ended in every run of both sessions, and the worst case was
-the *fastest* init, not the slowest. What the instability does bind is
-anyone quoting init later — a figure means nothing without a native
+That instability is why the comparison above is stated as a bound, and
+also why the conclusion survives it: the slower init gets, the more of
+it the bridge's start hides inside. The tightest margin of the 23 came
+from the *fastest* init, not the slowest. What the instability does bind
+is anyone quoting init later — a figure means nothing without a native
 baseline taken in the same session and interleaved with it, and the run
 order stated beside it.
 
@@ -375,8 +376,10 @@ So neither lever #178 proposed has anything to buy. Hooking the bridge in
 earlier moves work that already finishes with slack; deferring the client
 to the first prove would give up what `ZZ_MEMORY_FRACTION` is for, since
 the clients claim their share before pil2 sizes its stream buffers from
-the memory it sees free. Nor is the residual the preload's own cost:
-`ZZ_PRELOAD_THREADS` at six, three and two lands within 0.1 s, and
+the memory it sees free. Nor is what remains the preload's own cost.
+`ZZ_PRELOAD_THREADS` at six, three and two moves when the preload
+*finishes*, by the better part of a second, and leaves proofman's init
+within 0.1 s of itself — the preload is beside init, not inside it. And
 `ZZ_PRELOAD=0` reaches native's init only by moving the loads into the
 contributions phase rather than removing them (that spelling turns eager
 module loads off as well, so it moves two things at once). Of what is
@@ -392,7 +395,7 @@ loads back. Neither pins that a requested AIR is loaded *before* a prove
 wants it: a key still sitting in the queue is loaded by the prove itself
 (`Bridge::artifact`), which is also what keeps an AIR outside
 `.last-used` from waiting on the rest of the preload. That the preload
-finishes first is the 2.4 s of slack above, not an invariant.
+finishes first is the margin measured above, not an invariant.
 
 ### The uploads, measured (2026-09-09, post-#192)
 
