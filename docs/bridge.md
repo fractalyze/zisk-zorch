@@ -618,12 +618,12 @@ figure without a native baseline taken in the same session and interleaved with
 it says nothing about either stack — which is what "Bridge start-up" below had
 to establish the expensive way.
 
-| | native | bridge | where the figure comes from |
-|---|---|---|---|
-| inner-proof leg | 3.700 s | **5.517 s** | bridge: #204, five arms interleaved pass by pass, four passes, one binary, median of 5.781 / 5.369 / 5.272 / 5.665 s, sd 0.240. native: #209's interleaved arm, same rig and day, pre-bump wheel |
-| proofman init | — | 0.10–0.23 s behind native | #178, four interleaved passes read pass by pass; 0.28–0.41 s counting each run's own client creation. Not re-measured since the bump — see "Bridge start-up" |
-| basic proofs byte-identical | 11 of 11 | | #204, one native and one bridged run in the shipped configuration, compared by `bench/compare_dumps.py` |
-| `MemAlign_n21` first prove | | 0 of 60 wrong | #204, 60 fresh processes doing one first prove each under `CUDA_LAUNCH_BLOCKING=1` |
+| | the figure | where it comes from |
+|---|---|---|
+| inner-proof leg | bridge **5.517 s**, native **3.700 s** | bridge: #204, five arms interleaved pass by pass, four passes, one binary, median of 5.781 / 5.369 / 5.272 / 5.665 s, sd 0.240. native: #209's interleaved arm, same rig and day, pre-bump wheel |
+| proofman init, bridge minus native | 0.10–0.23 s behind | #178, read pass by pass across four interleaved passes; 0.28–0.41 s counting each run's own client creation. A difference, not two levels: neither stack's init has a spread this page will quote (see "Bridge start-up"), and none of it is re-measured since the bump |
+| basic proofs byte-identical to native's | 11 of 11 | #204, one native and one bridged run in the shipped configuration, compared by `bench/compare_dumps.py` |
+| `MemAlign_n21` first prove, bridge | 0 of 60 wrong | #204, 60 fresh processes doing one first prove each under `CUDA_LAUNCH_BLOCKING=1` |
 
 The leg is proofman's own `GENERATING_INNER_PROOFS` on both sides.
 
@@ -632,8 +632,9 @@ forbids leaving unsaid. What licenses pairing them is that the two sessions
 share a condition and agree on it: #209 read the pre-bump wheel at 6.06–6.11 s
 and #204's `old` arm read that same wheel at 5.970 s, a spread inside the
 ~0.2 s this guest can resolve at all ("Raising the read-ahead permit"). The gap
-being judged is 1.8 s, an order above what the pairing can cost. A native arm
-interleaved against the bumped wheel is still a run nobody has spent.
+being judged is 1.817 s, nine times that. A native arm interleaved against the
+bumped wheel is still a run nobody has spent, and it is the one measurement
+that would settle the leg criterion outright.
 
 Reproduce with the same `bridge/bench/` scripts as the block-shaped
 section, minus the input: the guest takes none, and it needs
@@ -656,17 +657,19 @@ so interleave the arms pass by pass and rotate them within a pass.
 
 The leg is the criterion that did not close, and nothing on the list below
 closes it: of everything #170 tried, only eager kernels moved the leg, and the
-1.077 s still owed is more than twice what that one was worth. Whatever the
-remaining 1.8 s is, it is not among the things this issue knew to look for.
+1.077 s still owed is more than twice the 0.453 s that one was worth. Whatever
+the remaining 1.817 s is, it is not among the things this issue knew to look
+for.
 
 ### The levers, each closed with a measurement
 
 | lever | what it was worth |
 |---|---|
-| eager module loads, then eager kernels (#176, #200, #204 / xla#661, #698) | **−0.453 s** — the only leg lever that survived, and it reaches the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling. "The plugin materializes the kernels now" |
+| eager kernels at module load (xla#698, landed by #204) | **−0.453 s** — the only lever that moved this leg, and it lands at the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling. "The plugin materializes the kernels now" |
+| eager module loads on their own (#176 / xla#661) | null on the leg — 5.77 → 5.72 s with the ranges overlapping. They move the registration off the prove path and the kernels' code stays on it, so there is nothing to collect until #698; the two together are −0.650 s within one wheel. "The module-loading mode" |
 | upload overlap (#193) | null — an upload into a freshly allocated buffer waits on the client's own compute stream, so it never overlaps that client's kernels. "The uploads, measured" |
 | host-idle remainder (#205) | null — two built changes measured null against an `EAGER` control on the same binary; the cost re-prices into the phase next door. "A phase's share of the idle" |
-| read-ahead depth (#209) | null — −26 ms paired, against the −120 ms two labels of one configuration differ by. "Raising the read-ahead permit" |
+| read-ahead depth (#209) | null — −26 ms paired, smaller than the −120 ms that two labels of a single configuration differed by in the same sweep. "Raising the read-ahead permit" |
 | constant tree over the extended domain (#183, #206) | worse — the same 8.4 GB over the same read-ahead path took the leg 6.1–6.6 s to 7.3–7.5 s |
 | H2D staging threshold (#204 / xla#718) | **+0.469 s**, so it ships off — the copies do get faster, and the pinned pool's growth inside the prove costs more than they return. "Staging the big uploads" |
 | XLA fusion cap (#149) | retracted — the flag has no occurrence in this wheel, its replacement measured a net tree regression, and under the bridge pil2 proves the recursion tree on its own CUDA, where an XLA fusion cap has no surface |
