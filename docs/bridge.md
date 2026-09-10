@@ -336,11 +336,16 @@ was measured this way, adding `ZZ_MEMORY_FRACTION` and
 ### Bridge start-up (2026-09-09/10, post-#176)
 
 The bridge's start is hidden inside proofman's init with time to spare.
-`ZZ_LOG` timestamps a run against that start: over 23 runs at the default
-six preload threads, the client is up at 0.16–0.19 s, the whole preload —
-11 AIRs, 380 programs out of the cache — is done at 1.03–1.19 s, and
-`INITIALIZING_PROOFMAN` does not end until 3.40–5.19 s. The preload
-finishes 2.30–4.09 s before init does, in every one of them. Starving it
+`ZZ_LOG` timestamps a run against that start, so every figure in this
+paragraph is on the bridge's zero rather than proofman's: over 23 runs at
+the default six preload threads, the client is up at 0.16–0.19 s, the
+whole preload — 11 AIRs, 380 programs out of the cache — is done at
+1.03–1.19 s, and `INITIALIZING_PROOFMAN` does not end until 3.40–5.19 s.
+proofman's own timer starts once the client is up, so the same runs read
+0.16–0.19 s shorter on it — 3.23–5.00 s — and that is the figure the rest
+of this section compares against native. The preload finishes
+2.30–4.09 s before init does, in every one of them, a difference of two
+timestamps on the same zero and so the same on either clock. Starving it
 makes that point rather than breaking it: at three preload threads it
 lands 1.90–2.03 s early, and at two, where it takes nearly twice as long
 to run, still 1.49–1.56 s early.
@@ -386,10 +391,10 @@ preload runs beside init, not inside it. In the same session
 `ZZ_PRELOAD=0` reaches native's init only by moving the loads into the
 contributions phase rather than removing them, and that spelling turns
 eager module loads off as well, so it moves two things at once. The
-#176 bump is worth about 0.3 s of init on the same measure: the
+#176 bump is worth 0.24–0.71 s of init on the same measure: the
 pre-#176 configuration ran 3.50–3.94 s against the default's
 3.23–3.26 s. That arm changed the plugin and disabled eager module
-loads together, so the 0.3 s belongs to the pair, not to the plugin.
+loads together, so that belongs to the pair, not to the plugin.
 
 Two tests pin the scheduling this leans on, and it is worth being exact
 about which: `lib.rs` pins that the preload queue keeps its callers'
