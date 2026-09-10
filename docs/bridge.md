@@ -90,6 +90,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_PRELOAD_THREADS` | AIRs loading at once | 6 |
 | `ZZ_EAGER_MODULES` | executables load their modules into the CUDA context as they are deserialized, not on first execute: `0` off, anything else on, empty or unset follows `ZZ_PRELOAD` | on unless `ZZ_PRELOAD=0` |
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
+| `ZZ_FIXED_AHEAD` | AIRs whose fixed sections may be uploaded ahead of the running prove's, per client; `0` sends every upload under the slot, and the value is capped at `ZZ_PENDING` — the permit is taken and given back inside that admission, so no more proves than it admits can hold one | 1 |
 | `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
 | `ZZ_HOST_THREADS` | threads for the host-side copies and key reads | half the cores, at most 8 |
 | `ZZ_COMPILE_CACHE` | directory of serialized executables | `$ZZ_ARTIFACTS/.pjrt-cache` |
@@ -567,6 +568,74 @@ Facts the gate surfaced, all now handled by the bridge:
   layout on.
 - **Out-of-range words.** A trace holds raw machine words, some above the
   modulus; they are reduced on the way in (pil2 reads them as residues).
+
+### Raising the read-ahead permit moves the upload, not the leg
+
+`ZZ_FIXED_AHEAD` is how many AIRs' fixed sections may be uploaded ahead of the
+running prove's. **It has only two settings.** The permit is taken in `plan` and
+given back in `installed`, both inside the admission `prove_owned` holds for the
+whole prove, so at most `ZZ_PENDING` proves — two by default — can hold one at a
+time: 1 is the permit refusing, anything at or above the admission is the permit
+never refusing, and the value is capped to it. There is no third arm to run.
+
+At 1, four to six of hello-world's eleven proves find the permit taken and
+upload under their own slot; with it off, none do, and the bridge's own `fixed
+sections for X` line shows the work moving out from under the slot. **The leg
+does not follow it.** One binary, arms interleaved and rotated within each pass,
+leg from proofman's `GENERATING_INNER_PROOFS`:
+
+| | permit at 1 | permit off |
+|---|---|---|
+| leg, mean [min-max] | 6113 ms [5852-6247], n=14 | 6075 ms [5815-6351], n=20 |
+| proves uploading under the slot | 4-6 of 11 | 0 |
+| `under the slot`, summed | 1.42 s | 1.29 s |
+| `ahead of it`, summed | 1.67 s | 1.93 s |
+
+Paired inside each pass, which cancels the session drift, the permit off is
+**-26 ms** (sd 109 ms, 14 passes, 8 of them favouring it). Two things size that
+against the harness rather than against zero: a `CUDA_MODULE_LOADING=EAGER`
+control on the same binary and session is -450 ms with every pass the same sign,
+and two *labels for the same configuration* — the sweep ran the capped value as
+if it were an arm of its own — differ by -120 ms (sd 194, 6 passes), more than
+the effect. The run-to-run scatter is the whole of what the depth arms show.
+
+The reason is the ordering in "The uploads, measured" above: an upload into a
+freshly allocated buffer waits on the client's compute stream, so it never
+overlaps that client's own kernels. Two captures, one per setting, hold the same
+1205 copies and 9.75 GB in 0.47 s, still 0.00-0.01 s overlapped. A copy moved
+earlier lands in device idle either way, and there is no leg time to win by
+choosing which idle it lands in. This is the third arm on this leg to move
+host-side work without moving the leg — #205 measured the other two, switching
+the read-ahead off from below and sharing the `constants` program across AIRs
+(that one removed nine of eleven executions outright and was still null, so the
+shape is not "moving is free, removing pays").
+
+Read it as a prior with a control attached, rather than as a law that host-side
+work cannot matter. In those two captures the *capture's* leg — the bridge's
+first kernel to its last, which is 0.8-1.2 s inside proofman's timer and so not
+the 6.1 s above — has the client's kernels busy 2.4 s of 5.1-5.3 s, so host work
+is most of what the leg is; what these arms show is that taking a piece of it
+away lets the neighbouring pieces expand into the device idle it was living in.
+Nobody has a mechanism for that conservation, and it is a prediction that can
+fail — so a fourth arm is worth running, and what it has to beat is the `EAGER`
+control, not zero.
+
+Turning the permit off costs memory, so 1 stays the default: the sections held
+ahead are the AIR's `const_base`, 16-96 MiB for nine of hello-world's eleven
+AIRs but 1168 and 1408 MiB for the two virtual tables, and those two prove back
+to back. It does not move the client's floor, because the floor is not set by
+them — every failure walking `ZZ_MEMORY_FRACTION` down is the same 5.50 GiB
+allocation on `VirtualTableZisk0_n21`, at either setting (3 repeats per cell:
+0.41 passes 3/3 with the permit at 1 and 5/6 with it off, 0.39 passes 1/3 and
+3/6, 0.37 passes 0/3 and 1/6). That is the aggregate floor "Memory budget"
+describes, and the read-ahead's extra `const_base` neither raises nor lowers it
+within these repeats.
+
+Hello-world is the workload that puts the most pressure on this permit, not the
+least: its eleven instances are eleven distinct AIRs, so every prove needs a key
+no prove before it uploaded. On a mix where an AIR repeats, most proves find
+their sections resident and never plan a read-ahead at all. The block-shaped mix
+is unmeasured here for that reason, not overlooked.
 
 ## Design notes
 

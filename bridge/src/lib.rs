@@ -292,9 +292,40 @@ pub fn copy_canonical(words: &[u64]) -> Vec<u64> {
 }
 
 /// How many AIRs' fixed sections may be on the device beyond the running
-/// prove's. One: the read-ahead then costs the card a single key's worth
-/// of memory however many proves queue up behind the slot.
+/// prove's, before `ZZ_FIXED_AHEAD` overrides it. One: the read-ahead then
+/// costs the card a single key's worth of memory however many proves queue
+/// up behind the slot. Each step up buys one more AIR's sections ahead of
+/// the slot and holds that AIR's `const_base` in the client's arena until it
+/// installs.
 const FIXED_AHEAD: usize = 1;
+
+/// Proves admitted per client: one running, the rest with their uploads
+/// ahead of it. `ZZ_PENDING` overrides it.
+const PENDING: usize = 2;
+
+/// `ZZ_FIXED_AHEAD` as a depth: anything that is not a number leaves the
+/// built-in one, and `0` is a number — the read-ahead switched off.
+fn parse_fixed_ahead(v: Option<&str>) -> usize {
+    match v.map(str::trim) {
+        None | Some("") => FIXED_AHEAD,
+        Some(s) => s.parse().unwrap_or(FIXED_AHEAD),
+    }
+}
+
+/// `ZZ_PENDING` as a count. Zero would admit nothing, so it leaves the
+/// built-in two, as anything unreadable does.
+fn parse_pending(v: Option<&str>) -> usize {
+    v.and_then(|s| s.trim().parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(PENDING)
+}
+
+/// The depth a client actually runs at. A prove takes the read-ahead permit
+/// in `plan` and gives it back in `installed`, both inside the admission
+/// `prove_owned` holds for its whole length, so at most `admitted` proves can
+/// hold one at a time: a depth at or above that never refuses, and there is
+/// nothing past "off" to ask for.
+fn fixed_ahead_depth(v: Option<&str>, admitted: usize) -> usize {
+    parse_fixed_ahead(v).min(admitted)
+}
 
 /// One client's read-ahead schedule for the fixed sections: which AIRs' are
 /// on the device, and the permit that bounds how far ahead of the running
@@ -307,10 +338,11 @@ const FIXED_AHEAD: usize = 1;
 /// Both writers hold the slot lock, so the mirror only ever trails by the
 /// window between a prove's glance and its own turn — and a stale glance
 /// costs a read, never a wrong proof.
-#[derive(Default)]
 struct FixedAhead {
     resident: Mutex<std::collections::HashSet<String>>,
     permit: Arc<Pending>,
+    /// How many AIRs' sections may be ahead of the running prove's at once.
+    depth: usize,
 }
 
 /// What a prove does with its AIR's fixed sections on the way to the slot.
@@ -326,11 +358,15 @@ enum AheadPlan {
 }
 
 impl FixedAhead {
+    fn new(depth: usize) -> FixedAhead {
+        FixedAhead { resident: Mutex::default(), permit: Arc::default(), depth }
+    }
+
     fn plan(&self, key: &str) -> AheadPlan {
         if self.resident.lock().unwrap_or_else(|p| p.into_inner()).contains(key) {
             return AheadPlan::Resident;
         }
-        match self.permit.try_acquire(FIXED_AHEAD) {
+        match self.permit.try_acquire(self.depth) {
             Some(pass) => AheadPlan::ReadAndUpload(pass),
             None => AheadPlan::ReadOnly,
         }
@@ -639,6 +675,10 @@ impl Bridge {
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| artifacts.join(".pjrt-cache"));
+        let fixed_ahead = fixed_ahead_depth(
+            std::env::var("ZZ_FIXED_AHEAD").ok().as_deref(),
+            parse_pending(std::env::var("ZZ_PENDING").ok().as_deref()),
+        );
         let resident_airs = std::env::var("ZZ_RESIDENT_AIRS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
@@ -663,7 +703,7 @@ impl Bridge {
             used: Mutex::new(std::collections::BTreeSet::new()),
             next: AtomicUsize::new(0),
             pending: (0..clients).map(|_| Arc::new(Pending::default())).collect(),
-            fixed_ahead: (0..clients).map(|_| FixedAhead::default()).collect(),
+            fixed_ahead: (0..clients).map(|_| FixedAhead::new(fixed_ahead)).collect(),
             log,
         }
     }
@@ -925,7 +965,7 @@ impl Bridge {
         // with its uploads ahead (`ZZ_PENDING` overrides the count). Counted
         // per client: streamed instances pin their slot, so a bridge-wide
         // count would let every admission land on one client.
-        let per_client = std::env::var("ZZ_PENDING").ok().and_then(|s| s.parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(2);
+        let per_client = parse_pending(std::env::var("ZZ_PENDING").ok().as_deref());
         phase.set("admit");
         let _admitted = self.pending[slot_idx].acquire(per_client);
         let mut inputs = InstanceInputs {
@@ -1304,7 +1344,7 @@ mod tests {
     fn one_air_reads_its_fixed_sections_ahead_of_the_running_prove() {
         // `FixedAhead::plan` is the schedule `prove_owned` follows on the way
         // to the slot, in the order it follows it.
-        let client = FixedAhead::default();
+        let client = FixedAhead::new(FIXED_AHEAD);
         // Nothing on the device: the first prove reads its key and uploads it
         // while the prove ahead of it still holds the client.
         let first = client.plan("Main_n22");
@@ -1328,6 +1368,54 @@ mod tests {
         assert!(matches!(client.plan("Main_n22"), AheadPlan::Resident), "a resident AIR re-read its key");
         client.evicted("Main_n22");
         assert!(!matches!(client.plan("Main_n22"), AheadPlan::Resident), "an evicted AIR still looked resident");
+    }
+
+    #[test]
+    fn a_depth_at_the_admission_stops_refusing_rather_than_going_deeper() {
+        // Two proves are admitted per client, and both the taking and the
+        // giving back of the permit happen inside that admission, so two is
+        // as many as can ever hold one. At that depth the permit refuses
+        // nobody — which is the whole of what raising it does.
+        let client = FixedAhead::new(fixed_ahead_depth(Some("2"), PENDING));
+        // Both plans stay bound: a `ReadAndUpload` dropped on the spot hands
+        // its permit straight back, which is a prove finishing rather than a
+        // prove queueing behind another.
+        let first = client.plan("Main_n22");
+        let second = client.plan("Rom_n22");
+        assert!(matches!(first, AheadPlan::ReadAndUpload(_)), "the first prove did not take a read-ahead");
+        assert!(matches!(second, AheadPlan::ReadAndUpload(_)), "the second admitted prove waited for the slot");
+
+        let AheadPlan::ReadAndUpload(permit) = first else { unreachable!() };
+        client.installed("Main_n22", Some(permit));
+        assert_eq!(client.permit.pending(), 1, "the installed prove's permit did not come back, or the other prove's went with it");
+
+        // Zero is the read-ahead switched off: every prove's sections go up
+        // under its own slot, which is what #205 measured.
+        assert!(matches!(FixedAhead::new(0).plan("Main_n22"), AheadPlan::ReadOnly), "a client at depth 0 still read ahead");
+    }
+
+    #[test]
+    fn a_depth_beyond_the_proves_admitted_is_capped_to_it() {
+        // Asking for three when three can never be in flight would read as a
+        // third setting and behave as the second, which is what the sweep on
+        // #209 first mistook for an arm of its own.
+        assert_eq!(fixed_ahead_depth(Some("3"), PENDING), PENDING, "a depth above the admission was not capped");
+        assert_eq!(fixed_ahead_depth(Some("2"), 1), 1, "one admitted prove still allowed a second ahead");
+        assert_eq!(fixed_ahead_depth(Some("0"), PENDING), 0, "the cap raised the read-ahead off to on");
+        assert_eq!(fixed_ahead_depth(None, PENDING), FIXED_AHEAD, "the cap moved the built-in depth");
+    }
+
+    #[test]
+    fn an_unreadable_zz_fixed_ahead_leaves_the_built_in_depth() {
+        assert_eq!(parse_fixed_ahead(None), FIXED_AHEAD, "an unset variable moved the depth");
+        assert_eq!(parse_fixed_ahead(Some("")), FIXED_AHEAD, "an empty variable moved the depth");
+        assert_eq!(parse_fixed_ahead(Some(" 3 ")), 3, "a padded number was not read");
+        assert_eq!(parse_fixed_ahead(Some("0")), 0, "zero was not read as the read-ahead off");
+        assert_eq!(parse_fixed_ahead(Some("two")), FIXED_AHEAD, "a word was not rejected");
+        // The admission's own variable, read in one place for both.
+        assert_eq!(parse_pending(None), PENDING, "an unset variable moved the admission");
+        assert_eq!(parse_pending(Some("0")), PENDING, "zero admitted nothing instead of leaving the default");
+        assert_eq!(parse_pending(Some("1")), 1, "a one-prove admission was not read");
     }
 
     #[test]
@@ -1372,7 +1460,7 @@ mod tests {
 
     #[test]
     fn a_failed_read_ahead_upload_hands_the_permit_back() {
-        let client = FixedAhead::default();
+        let client = FixedAhead::new(FIXED_AHEAD);
         let AheadPlan::ReadAndUpload(permit) = client.plan("Main_n22") else {
             panic!("the first prove did not take the read-ahead")
         };
@@ -1397,7 +1485,7 @@ mod tests {
 
     #[test]
     fn the_read_ahead_permit_is_counted_per_client() {
-        let (one, two) = (FixedAhead::default(), FixedAhead::default());
+        let (one, two) = (FixedAhead::new(FIXED_AHEAD), FixedAhead::new(FIXED_AHEAD));
         let held = one.plan("Main_n22");
         assert!(matches!(held, AheadPlan::ReadAndUpload(_)));
         assert!(matches!(two.plan("Main_n22"), AheadPlan::ReadAndUpload(_)), "one client's read-ahead held another's back");
