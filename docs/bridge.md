@@ -333,16 +333,28 @@ for the byte-gate and `summarize.py` for the rows. "Memory budget" below
 was measured this way, adding `ZZ_MEMORY_FRACTION` and
 `ZZ_GPU_HEADROOM_GB` per run.
 
-### Bridge start-up (2026-09-09, post-#176)
+### Bridge start-up (2026-09-09/10, post-#176)
 
 The bridge's start is hidden inside proofman's init with time to spare.
-`ZZ_LOG` timestamps a run against that start, and over seven runs the
-shape holds: the client is up at 0.17–0.19 s, `INITIALIZING_PROOFMAN` runs
-from there to 3.40–3.44 s, and the whole preload — 11 AIRs, 380 programs
-out of the cache — is done at 1.03–1.07 s. Every run leaves at least 2.3 s
-of init the preload does not use. What is left beside native is
-0.07–0.26 s on proofman's own timer, or 0.26–0.45 s counting the client
-creation that precedes it.
+`ZZ_LOG` timestamps a run against that start, and over eleven runs across
+two sessions the shape holds: the client is up at 0.16–0.19 s,
+`INITIALIZING_PROOFMAN` runs from there to 3.40–3.61 s, and the whole
+preload — 11 AIRs, 380 programs out of the cache — is done at
+1.03–1.15 s. Every one of those runs leaves at least 2.3 s of init the
+preload does not use.
+
+Beside native, treat the bridge's init as bounded rather than known. It
+was 0.07–0.26 s behind on the first session (0.26–0.45 s counting the
+client creation that precedes the timer) and 0.9–2.4 s *ahead* on the
+second. The bridge's own init is the reproducible half — 3.23–3.41 s
+over those eleven runs — while native's ran 3.00–3.16 s one day and
+4.27–5.75 s the next, on the same wheel, artifacts and bridge source,
+with native's contributions and leg unchanged. Which half of a run's
+init is on disk clearly differs between the two stacks, and no mechanism
+here has been established. What follows from it is a measurement rule:
+absolute init is not comparable across sessions on this host, so any
+claim about init has to carry a native baseline taken in the same
+session and interleaved with it.
 
 So neither lever #178 proposed has anything to buy. Hooking the bridge in
 earlier moves work that already finishes with slack; deferring the client
