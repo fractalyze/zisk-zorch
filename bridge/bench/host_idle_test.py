@@ -12,6 +12,8 @@ schema the readers parse. See testdata/README.md."""
 import contextlib
 import io
 import pathlib
+import subprocess
+import sys
 
 from absl.testing import absltest, parameterized
 
@@ -486,6 +488,21 @@ class ReadingTest(parameterized.TestCase):
         # `take` runs on a proof worker; the prove's phases share one thread.
         self.assertNotEqual(rows["host/take/trace"].tid, rows["host/prove"].tid)
         self.assertEqual(rows["host/stage1"].parent_id, rows["host/prove"].range_id)
+
+
+class ScriptModeTest(absltest.TestCase):
+    """docs/bridge.md "Profiling" invokes this file by path, which puts its own
+    directory on sys.path rather than the repo root. Without the bootstrap the
+    `bridge.bench.nsys_trace` import fails and the documented recipe cannot
+    run."""
+
+    def test_the_documented_invocation_runs(self):
+        done = subprocess.run(
+            [sys.executable, "bridge/bench/host_idle.py", str(TRACE), str(NVTX)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
 
 
 if __name__ == "__main__":

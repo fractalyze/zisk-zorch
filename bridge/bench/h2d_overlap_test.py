@@ -6,6 +6,8 @@ is one prove's worth of a real run — see testdata/README.md."""
 import contextlib
 import io
 import pathlib
+import subprocess
+import sys
 
 from absl.testing import absltest, parameterized
 
@@ -229,6 +231,21 @@ class ReportTest(absltest.TestCase):
             "unattributed 1 copies, 0.06 GB on stream(s) 9: no kernel runs after them",
             "\n".join(lines),
         )
+
+
+class ScriptModeTest(absltest.TestCase):
+    """docs/bridge.md "Profiling" invokes this file by path, which puts its own
+    directory on sys.path rather than the repo root. Without the bootstrap the
+    `bridge.bench.nsys_trace` import fails and the documented recipe cannot
+    run."""
+
+    def test_the_documented_invocation_runs(self):
+        done = subprocess.run(
+            [sys.executable, "bridge/bench/h2d_overlap.py", str(CAPTURE)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
 
 
 if __name__ == "__main__":
