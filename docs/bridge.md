@@ -674,14 +674,24 @@ for.
 
 | lever | what it was worth |
 |---|---|
-| eager kernels at module load (xla#698, landed by #204) | **−0.453 s** — the only lever that moved this leg, and it lands at the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling. "The plugin materializes the kernels now" |
-| eager module loads on their own (#176 / xla#661) | null on the leg — 5.77 → 5.72 s with the ranges overlapping. They move the registration off the prove path and the kernels' code stays on it, so there is nothing to collect until #698; the two together are −0.650 s within one wheel. "The module-loading mode" |
+| eager kernels at module load (xla#698, landed by #204) | **−0.453 s** — #204's wheel bump with eager module loads already on (`old` 5.970 → `new` 5.517 s). The only lever that moved this leg, and it lands at the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling. "The plugin materializes the kernels now" |
+| eager module loads on their own (#176 / xla#661) | null — 5.77 → 5.72 s toggling the flag on the pre-#698 wheel, ranges overlapping. It moves the registration to preload and leaves the kernels' code on the prove path, so there is nothing to collect until #698 puts that at module load too. "The module-loading mode" |
 | upload overlap (#193) | null — an upload into a freshly allocated buffer waits on the client's own compute stream, so it never overlaps that client's kernels. "The uploads, measured" |
 | host-idle remainder (#205) | null — two built changes measured null against an `EAGER` control on the same binary; the cost re-prices into the phase next door. "A phase's share of the idle" |
 | read-ahead depth (#209) | null — −26 ms paired, smaller than the −120 ms that two labels of a single configuration differed by in the same sweep. "Raising the read-ahead permit" |
 | constant tree over the extended domain (#183, #206) | worse — the same 8.4 GB over the same read-ahead path took the leg 6.1–6.6 s to 7.3–7.5 s |
 | H2D staging threshold (#204 / xla#718) | **+0.469 s**, so it ships off — the copies do get faster, and the pinned pool's growth inside the prove costs more than they return. "Staging the big uploads" |
 | XLA fusion cap (#149) | retracted — the flag has no occurrence in this wheel, its replacement measured a net tree regression, and under the bridge pil2 proves the recursion tree on its own CUDA, where an XLA fusion cap has no surface |
+
+**The two eager rows do not add, and must not be subtracted from each other.**
+Each is a different baseline: −0.453 s toggles the wheel with the flag on,
+−0.05 s toggles the flag on the wheel that predates #698, and toggling the
+same flag on the post-#698 wheel is worth −0.650 s (`newoff` 6.167 → `new`
+5.517 s, #204). The parts sum to −0.503 s against that −0.650 s, and the
+0.147 s is not a lever anyone has left to claim: the two mechanisms gate each
+other, since #698 has nothing to do without an eager module load and the flag
+had nothing to collect before #698. Read the pair from one session's own two
+arms, never by adding a row here to a row there.
 
 ### The per-stage shape (2026-09-04, superseded)
 
