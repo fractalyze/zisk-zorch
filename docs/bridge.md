@@ -569,8 +569,8 @@ was measured this way, adding `ZZ_MEMORY_FRACTION` and
 ### Bridge start-up (2026-09-09/10, post-#176)
 
 The bridge's start is hidden inside proofman's init with time to spare.
-`ZZ_LOG` timestamps a run against that start, so every figure in this
-paragraph is on the bridge's zero rather than proofman's: over 23 runs at
+`ZZ_LOG` timestamps a run against that start, so the three figures after
+this colon are on the bridge's zero rather than proofman's: over 23 runs at
 the default six preload threads, the client is up at 0.16–0.19 s, the
 whole preload — 11 AIRs, 380 programs out of the cache — is done at
 1.03–1.19 s, and `INITIALIZING_PROOFMAN` does not end until 3.40–5.19 s.
@@ -584,12 +584,13 @@ lands 1.90–2.03 s early, and at two, where it takes nearly twice as long
 to run, still 1.49–1.56 s early.
 
 Beside native, treat the bridge's init as bounded rather than known. It
-was 0.07–0.26 s behind on one session (0.26–0.45 s counting the client
-creation that precedes the timer) and ahead of native on both paired
-sets of another. Do not read the levels as a property of either stack:
-over 31 bridge runs and 15 native ones, on identical source, wheel and
-artifacts, the bridge's init ranged 3.16–5.00 s and native's
-3.00–5.75 s. The two covariates that look explanatory each fail
+was 0.10–0.23 s behind on one session, taken pass by pass across four
+interleaved passes rather than as an envelope over the two arms' ranges,
+or 0.28–0.41 s adding each run's own client creation; and ahead of
+native on both paired sets of another. Do not read the levels as a
+property of either stack: over 31 bridge runs and 15 native ones, on
+identical source, wheel and artifacts, the bridge's init ranged
+3.16–5.00 s and native's 3.00–5.75 s. The two covariates that look explanatory each fail
 somewhere. Run order was worth 570 ms on 2026-09-10 — a bridge run
 after a native one took 3.38 s against 3.95 s after another bridge,
 reproduced in a second block either side of the control — and did
@@ -627,7 +628,7 @@ eager module loads off as well, so it moves two things at once. The
 #176 bump is worth 0.24–0.71 s of init on the same measure: the
 pre-#176 configuration ran 3.50–3.94 s against the default's
 3.23–3.26 s. That arm changed the plugin and disabled eager module
-loads together, so that belongs to the pair, not to the plugin.
+loads together, so the 0.24–0.71 s belongs to the pair, not the plugin.
 
 Two tests pin the scheduling this leans on, and it is worth being exact
 about which: `lib.rs` pins that the preload queue keeps its callers'
