@@ -65,13 +65,13 @@ export ZZ_ARTIFACTS=$ARTIFACTS
 export XLA_PJRT_PLUGIN=<venv>/site-packages/frx_plugins/xla_cuda12/xla_cuda_plugin.so
 export ZZ_LOG=1
 
-# The driver's variable, not the bridge's, and the environment is the only
-# place it can be set -- the driver reads it at initialization and pil2 has
-# initialized CUDA before any bridge client exists. Worth 0.48 s of the
-# hello-world leg and 1.08 s of the block-shaped one; see "The module-loading
-# mode decides where the first-execution cost lands". Pointless with
-# ZZ_PRELOAD=0, which is the same thing as ZZ_EAGER_MODULES off.
-export CUDA_MODULE_LOADING=EAGER
+# CUDA_MODULE_LOADING=EAGER is deliberately NOT exported here. It used to be
+# worth 0.48 s of this leg, but that was before fractalyze/xla#698 moved the
+# same work into the plugin's own module load: the leg now reaches its old
+# EAGER ceiling with the variable unset, and what it adds on top is unmeasured.
+# See "The plugin materializes the kernels now". If you do set it, set it in
+# the environment -- the driver reads it at initialization and pil2 has
+# initialized CUDA before any bridge client exists, so the bridge cannot.
 
 cargo-zisk prove -e guest.elf -i input.bin -k $PK -g -y -o proof
 ```
@@ -89,7 +89,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
 | `ZZ_PRELOAD_THREADS` | AIRs loading at once | 6 |
 | `ZZ_EAGER_MODULES` | executables load their modules into the CUDA context as they are deserialized, not on first execute: `0` off, anything else on, empty or unset follows `ZZ_PRELOAD` | on unless `ZZ_PRELOAD=0` |
-| `ZZ_STAGING_THRESHOLD` | bytes at or above which the plugin DMAs a host-to-device transfer out of pageable memory instead of copying it through its pinned staging pool. Raising it above the bridge's 1.2–1.4 GiB sections grows the pinned pool inside the prove and costs more than the faster copies return on a guest that uploads each section once — measured, see "The module-loading mode…" | off: no option sent, so the plugin's own 1 GiB stands (also what a plugin older than fractalyze/xla#718 needs) |
+| `ZZ_STAGING_THRESHOLD` | bytes at or above which the plugin DMAs a host-to-device transfer out of pageable memory instead of copying it through its pinned staging pool. Raising it above the bridge's 1.2–1.4 GiB sections grows the pinned pool inside the prove and costs more than the faster copies return on a guest that uploads each section once — measured, see "Staging the big uploads is a faster copy and a slower leg" | off: no option sent, so the plugin's own 1 GiB stands (also what a plugin older than fractalyze/xla#718 needs) |
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
 | `ZZ_FIXED_AHEAD` | AIRs whose fixed sections may be uploaded ahead of the running prove's, per client; `0` sends every upload under the slot, and the value is capped at `ZZ_PENDING` — the permit is taken and given back inside that admission, so no more proves than it admits can hold one | 1 |
 | `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
@@ -100,7 +100,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_DUMP_PROOFS` | (fork) write every basic proof as raw words into this directory | off |
 | `ZZ_DUMP_INPUTS` | write each instance as a `zz_prove` case directory under this one | off |
 | `ZZ_DUMP_TRACES` | (fork) write each host trace as `gen_proof` receives it | off |
-| `CUDA_MODULE_LOADING` | the CUDA driver's, not the bridge's: `EAGER` puts a module's kernel code on the device as it loads, which is what makes `ZZ_EAGER_MODULES` pay | driver default `LAZY` |
+| `CUDA_MODULE_LOADING` | the CUDA driver's, not the bridge's: `EAGER` puts a module's kernel code on the device as it loads, process-wide. It was what made `ZZ_EAGER_MODULES` pay until fractalyze/xla#698 gave the plugin its own way to do the same thing for the bridge's executables alone — `ZZ_EAGER_MODULES` is now worth 6.167 → 5.517 s with this unset | driver default `LAZY` |
 
 ## Profiling
 
@@ -340,7 +340,8 @@ one (`cuModuleEnumerateFunctions` + `cuFuncLoad`, CUDA ≥ 12.3), so the code
 load happens where the module load already does rather than at first
 reference. Measured on the wheel that carries it, five arms interleaved pass by
 pass, four passes each, one binary and one artifacts directory with both plugin
-builds warm:
+builds warm. Four of the arms are the module-loading question; the fifth is the
+staging threshold, and it has its own section below:
 
 | arm | leg, median | sd |
 |---|---|---|
@@ -348,10 +349,11 @@ builds warm:
 | + `CUDA_MODULE_LOADING=EAGER` | 5.675 s | 0.307 |
 | this wheel, eager module loads **off** | 6.167 s | 0.018 |
 | this wheel, eager module loads on | **5.517 s** | 0.240 |
+| this wheel, eager on + staging at 2 GiB | 5.986 s | 0.262 |
 
 **−0.453 s**, against the ~0.42–0.48 s the `=0` + `EAGER` arm above bounds it
-at. The scoped change reaches the process-wide variable's ceiling — the two
-right-hand rows overlap — without changing how pil2 loads its own modules.
+at. The scoped change reaches the process-wide variable's ceiling — the second
+and fourth rows overlap — without changing how pil2 loads its own modules.
 
 The driver calls say the same thing directly. Over one capture per arm,
 `cuGraphInstantiateWithFlags` falls **1.457 s → 0.359 s** across the same 245
@@ -386,7 +388,7 @@ it does exactly that:
 | upload time inside the leg | 0.31 s | 0.12 s |
 
 **And the leg gets worse by 0.469 s** (5.517 s → 5.986 s, four interleaved
-passes each). The pinned pool has to grow to hold a 1.4 GB transfer and pays
+passes each — the last two rows of the table above, the same sweep). The pinned pool has to grow to hold a 1.4 GB transfer and pays
 for it inside the prove: `cuMemHostAlloc` goes from 0.258 s over 16 calls to
 1.071 s over 17. One allocation costs more than every faster copy returns,
 because this guest uploads each large section once.
