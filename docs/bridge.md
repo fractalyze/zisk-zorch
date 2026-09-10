@@ -627,15 +627,6 @@ to establish the expensive way.
 
 The leg is proofman's own `GENERATING_INNER_PROOFS` on both sides.
 
-Three figures the older table carries are absent here rather than stale: the
-`cargo-zisk prove` wall, the eleven proves' own time on the client, and the
-summed client waiting. No arm since has quoted them and the runs that could
-have yielded them are gone from the rig, so the rows would need a fresh sweep
-rather than a re-read. Take their shape from "The per-stage shape" below
-without carrying the values forward. The fourth, the fixed sections uploaded
-under the prove's own slot, is current and lives in "Raising the read-ahead
-permit": 1.42 s summed at the default permit, on the pre-bump wheel.
-
 **The two leg figures are from different sessions**, which the rule above
 forbids leaving unsaid. What licenses pairing them is that the two sessions
 share a condition and agree on it: #209 read the pre-bump wheel at 6.06–6.11 s
@@ -644,6 +635,15 @@ and #204's `old` arm read that same wheel at 5.970 s, a spread inside the
 being judged is 1.817 s, nine times that. A native arm interleaved against the
 bumped wheel is still a run nobody has spent, and it is the one measurement
 that would settle the leg criterion outright.
+
+Three figures the older table carries are absent here rather than stale: the
+`cargo-zisk prove` wall, the eleven proves' own time on the client, and the
+summed client waiting. Nothing since that table has quoted them, and the runs
+that could have yielded them are off the rig, so the rows would need a fresh
+sweep rather than a re-read. Take their shape from "The per-stage shape" below
+without carrying the values forward. The fourth, the fixed sections uploaded
+under the prove's own slot, is current and lives in "Raising the read-ahead
+permit": 1.42 s summed at the default permit, on the pre-bump wheel.
 
 Reproduce with the same `bridge/bench/` scripts as the block-shaped
 section, minus the input: the guest takes none, and it needs
