@@ -9,12 +9,13 @@ capture cannot do without carrying thousands of rows to make one assertion.
 The fixtures are the other half: a few real `nsys` rows, kept only to pin the
 schema the readers parse. See testdata/README.md."""
 
+import contextlib
+import io
 import pathlib
 
 from absl.testing import absltest, parameterized
 
 from bridge.bench import host_idle
-from bridge.bench.nsys_trace import covered, intersect, merge, subtract
 
 TRACE = pathlib.Path("bridge/bench/testdata/host_cuda_gpu_trace.csv")
 NVTX = pathlib.Path("bridge/bench/testdata/host_nvtx_pushpop_trace.csv")
@@ -314,8 +315,12 @@ class MinusCallFlagTest(absltest.TestCase):
     wrong subtraction silently rescales the lever someone is about to
     build."""
 
-    def capture_files(self):
-        """The scenario above as the three CSVs `main` parses."""
+    def capture_files(self, call_span=None):
+        """The scenario above as the three CSVs `main` parses. `call_span`
+        moves the driver call: its default sits inside a running kernel and
+        costs no idle, and (2000, 3000) puts it in the gap where it costs
+        all of it — the two sides the note has to tell apart."""
+        calls = [host_idle.ApiRow(CALL, call_span, HOLDER)] if call_span else CALLS
         d = pathlib.Path(self.create_tempdir().full_path)
         (d / "gpu.csv").write_text(
             "Start (ns),Duration (ns),Name\n"
@@ -332,7 +337,7 @@ class MinusCallFlagTest(absltest.TestCase):
             "Start (ns),Duration (ns),Name,CorrID,Tid\n"
             + "".join(
                 f"{c.span[0]},{c.span[1] - c.span[0]},{c.name},1,{c.tid}\n"
-                for c in CALLS
+                for c in calls
             )
         )
         return [str(d / "gpu.csv"), str(d / "nvtx.csv"), str(d / "api.csv")]
@@ -377,16 +382,25 @@ class MinusCallFlagTest(absltest.TestCase):
         # nothing and a test over it passes whatever the code does. Pin the
         # three properties that make this scenario able to tell the cases
         # apart, so it cannot quietly decay back into that.
-        kernels = merge([(a, a + b) for a, b, _ in KERNELS])
+        kernels = host_idle.merge([(a, a + b) for a, b, _ in KERNELS])
         leg = [(kernels[0][0], kernels[-1][1])]
-        idle = subtract(leg, kernels)
-        held = merge([s for sp in host_idle.turns(RANGES).values() for s in sp])
+        idle = host_idle.subtract(leg, kernels)
+        held = host_idle.merge(
+            [s for sp in host_idle.turns(RANGES).values() for s in sp]
+        )
         call = [c.span for c in CALLS]
 
-        self.assertGreater(covered(intersect(idle, held)), 0, "no holder idle to miss")
-        self.assertTrue(intersect(call, leg), "the call never runs during the leg")
+        self.assertGreater(
+            host_idle.covered(host_idle.intersect(idle, held)),
+            0,
+            "no holder idle to miss",
+        )
+        self.assertTrue(
+            host_idle.intersect(call, leg), "the call never runs during the leg"
+        )
         self.assertFalse(
-            intersect(call, intersect(idle, held)), "the call does cost idle"
+            host_idle.intersect(call, host_idle.intersect(idle, held)),
+            "the call does cost idle",
         )
 
     def test_a_call_that_cost_no_idle_is_answered_not_refused(self):
@@ -404,6 +418,28 @@ class MinusCallFlagTest(absltest.TestCase):
         self.assertEqual(
             host_idle.main(["", *self.capture_files(), "--minus-call", CALL]), 0
         )
+
+    def test_the_note_names_the_table_this_one_repeats(self):
+        # Two identical tables are printed when a call cost no idle, and the
+        # one this repeats is `idle, client held` — two up, not the
+        # driver-call cut directly above it. Without the note a reader has
+        # to diff two tables to learn which case they are in.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            host_idle.main(["", *self.capture_files(), "--minus-call", CALL])
+        self.assertIn("it contributed no idle, so this repeats", out.getvalue())
+        self.assertIn("idle, client held", out.getvalue())
+
+    def test_a_call_that_did_cost_idle_carries_no_such_note(self):
+        # The other side, so inverting the condition cannot pass: put the
+        # call in the gap between the kernels and it costs the idle, the
+        # tables differ, and there is nothing to disambiguate.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            host_idle.main(
+                ["", *self.capture_files((2000, 3000)), "--minus-call", CALL]
+            )
+        self.assertNotIn("contributed no idle", out.getvalue())
 
     def test_the_no_idle_scenario_leaves_every_phase_whole(self):
         # The same case on the function rather than the exit code: a call

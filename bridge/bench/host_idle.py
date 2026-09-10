@@ -391,7 +391,11 @@ def report(
     # answer, and its table is the phase column exactly. Say which of the
     # two identical-looking tables this is.
     took = held - kept
-    note = "" if took else " — it contributed no idle, so this is the column above"
+    # Name the table it equals: the one directly above this is the
+    # driver-call cut, and the one this reproduces is two up.
+    note = (
+        "" if took else " — it contributed no idle, so this repeats `idle, client held`"
+    )
     print(f"   what each phase keeps once {minus_call} leaves the prove path{note}")
     for name, ns in rank(rest, top):
         print(line(name, ns))
