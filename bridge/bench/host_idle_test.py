@@ -14,6 +14,7 @@ import pathlib
 from absl.testing import absltest, parameterized
 
 from bridge.bench import host_idle
+from bridge.bench.nsys_trace import covered, intersect, merge, subtract
 
 TRACE = pathlib.Path("bridge/bench/testdata/host_cuda_gpu_trace.csv")
 NVTX = pathlib.Path("bridge/bench/testdata/host_nvtx_pushpop_trace.csv")
@@ -21,10 +22,27 @@ API = pathlib.Path("bridge/bench/testdata/host_cuda_api_trace.csv")
 
 HOLDER, QUEUED, WORKER = "100", "200", "300"
 
+# A capture the shipped fixtures cannot express: two kernels with a gap, one
+# holder turn covering the whole leg, and a driver call *inside* the first
+# kernel. So the call overlaps both the leg and the turn — it could have cost
+# idle — and costs none, which is the case `--minus-call` must answer rather
+# than refuse. In the fixtures the turn and the leg do not overlap at all, so
+# every call there costs nothing however the code behaves.
+CALL = "cuInsideAKernel"
+KERNELS = [(1000, 1000, "loop_add_fusion"), (3000, 1000, "loop_multiply_fusion")]
+
 
 def phase(name, start, end, tid=HOLDER, rid=None, parent=""):
     """One range instance, named the way the bridge opens it."""
     return host_idle.RangeRow(name, (start, end), tid, rid or f"{name}@{start}", parent)
+
+
+RANGES = [
+    phase("host/slot_wait", 0, 1000),
+    phase("host/fixed_install", 2000, 3000),
+    phase("host/prove", 3000, 4000),
+]
+CALLS = [host_idle.ApiRow(CALL, (1200, 1800), HOLDER)]
 
 
 class TurnsTest(absltest.TestCase):
@@ -296,6 +314,29 @@ class MinusCallFlagTest(absltest.TestCase):
     wrong subtraction silently rescales the lever someone is about to
     build."""
 
+    def capture_files(self):
+        """The scenario above as the three CSVs `main` parses."""
+        d = pathlib.Path(self.create_tempdir().full_path)
+        (d / "gpu.csv").write_text(
+            "Start (ns),Duration (ns),Name\n"
+            + "".join(f"{a},{b},{c}\n" for a, b, c in KERNELS)
+        )
+        (d / "nvtx.csv").write_text(
+            "Start (ns),End (ns),Name,TID,RangeId,ParentId\n"
+            + "".join(
+                f"{r.span[0]},{r.span[1]},:{r.name},{r.tid},{r.range_id},\n"
+                for r in RANGES
+            )
+        )
+        (d / "api.csv").write_text(
+            "Start (ns),Duration (ns),Name,CorrID,Tid\n"
+            + "".join(
+                f"{c.span[0]},{c.span[1] - c.span[0]},{c.name},1,{c.tid}\n"
+                for c in CALLS
+            )
+        )
+        return [str(d / "gpu.csv"), str(d / "nvtx.csv"), str(d / "api.csv")]
+
     def test_it_is_refused_without_the_api_trace(self):
         # `report` returns before the driver-call cut when there is no API
         # CSV, so the flag would be dropped in silence and exit 0 — a table
@@ -315,24 +356,63 @@ class MinusCallFlagTest(absltest.TestCase):
                 ["", str(TRACE), str(NVTX), str(API), "--minus-call", "cuNoSuchThing"]
             )
 
-    def test_a_call_that_cost_no_idle_is_answered_not_refused(self):
-        # The other side of the line: a call really made, but never while
-        # the device starved, is a legitimate question with the phase
-        # column as its true answer — `cuModuleLoadFatBinary` under
-        # ZZ_EAGER_MODULES=1 is exactly this. It must not raise.
-        self.assertEqual(
-            host_idle.main(
-                [
-                    "",
-                    str(TRACE),
-                    str(NVTX),
-                    str(API),
-                    "--minus-call",
-                    "cuLaunchKernelEx",
-                ]
-            ),
-            0,
+    def test_an_empty_call_name_is_refused(self):
+        # `--minus-call ""` is a value the user supplied, not an absent
+        # flag. Under a truthiness check it fell through to `report`, which
+        # returns before the driver-call cut when there is no API trace —
+        # exit 0, no table, nothing said.
+        for argv in (
+            ["", str(TRACE), str(NVTX), "--minus-call", ""],
+            ["", str(TRACE), str(NVTX), str(API), "--minus-call", "  "],
+        ):
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit) as cm:
+                    host_idle.main(argv)
+                self.assertEqual(cm.exception.code, 2)
+
+    def test_the_scenario_can_actually_distinguish_the_two_cases(self):
+        # The guard on the two tests below, and the defect they were
+        # rewritten for: a capture whose holder turn does not overlap the
+        # leg has no holder idle at all, so *every* call in it costs
+        # nothing and a test over it passes whatever the code does. Pin the
+        # three properties that make this scenario able to tell the cases
+        # apart, so it cannot quietly decay back into that.
+        kernels = merge([(a, a + b) for a, b, _ in KERNELS])
+        leg = [(kernels[0][0], kernels[-1][1])]
+        idle = subtract(leg, kernels)
+        held = merge([s for sp in host_idle.turns(RANGES).values() for s in sp])
+        call = [c.span for c in CALLS]
+
+        self.assertGreater(covered(intersect(idle, held)), 0, "no holder idle to miss")
+        self.assertTrue(intersect(call, leg), "the call never runs during the leg")
+        self.assertFalse(
+            intersect(call, intersect(idle, held)), "the call does cost idle"
         )
+
+    def test_a_call_that_cost_no_idle_is_answered_not_refused(self):
+        # A call really made, but never while the device starved, is a
+        # legitimate question with the phase column as its true answer —
+        # `cuModuleLoadFatBinary` under ZZ_EAGER_MODULES=1 is exactly this,
+        # 369 loads and no idle. It must not raise.
+        #
+        # The scenario is built rather than taken from the shipped fixtures:
+        # there the holder's turn does not overlap the leg at all, so *every*
+        # call costs no idle whatever the code does and a test over it passes
+        # for the wrong reason. Here the call sits inside a running kernel —
+        # overlapping both the leg and the turn, so it could have cost idle
+        # and did not.
+        self.assertEqual(
+            host_idle.main(["", *self.capture_files(), "--minus-call", CALL]), 0
+        )
+
+    def test_the_no_idle_scenario_leaves_every_phase_whole(self):
+        # The same case on the function rather than the exit code: a call
+        # that took nothing subtracts nothing, so the phase keeps all
+        # 1000 ns of the idle it was charged.
+        rest = host_idle.without_call(
+            CALLS, RANGES, host_idle.turns(RANGES), [(2000, 3000)], CALL
+        )
+        self.assertEqual(rest["host/fixed_install"], 1000)
 
 
 class ReadingTest(parameterized.TestCase):

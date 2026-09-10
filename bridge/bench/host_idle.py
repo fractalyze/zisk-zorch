@@ -419,10 +419,16 @@ def main(argv: list[str]) -> int:
         " for sizing what survives the call leaving the prove path",
     )
     args = ap.parse_args(argv[1:])
-    if args.minus_call and args.api is None:
-        # `report` returns before the driver-call cut when there is no API
-        # trace, so the flag would otherwise be dropped in silence.
-        ap.error("--minus-call needs the cuda_api_trace CSV argument")
+    if args.minus_call is not None:
+        # `is not None`, not truthiness: an empty name is a value the user
+        # supplied, and letting it fall through here is how `--minus-call ""`
+        # reached `report` and exited 0 with no table at all.
+        if not args.minus_call.strip():
+            ap.error("--minus-call needs the name of a CUDA driver call")
+        if args.api is None:
+            # `report` returns before the driver-call cut when there is no
+            # API trace, so the flag would otherwise be dropped in silence.
+            ap.error("--minus-call needs the cuda_api_trace CSV argument")
     report(args.trace, args.nvtx, args.api, args.top, args.proves, args.minus_call)
     return 0
 
