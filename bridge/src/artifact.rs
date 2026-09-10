@@ -251,10 +251,10 @@ fn eager_module_loads_from(eager: Option<&str>, preload: Option<&str>) -> Option
 /// Raising the threshold above those sections makes the plugin's pinned pool
 /// grow by about the largest transfer, and that growth is paid inside the
 /// prove. On a workload that uploads each large section once it costs more
-/// than the faster copies return. Left on, it gave back what
-/// fractalyze/xla#698 won on the same runs. A workload that uploads the same
-/// large section repeatedly could still come out ahead, so this is a knob and
-/// not a deletion.
+/// than the faster copies return -- the copies really do get faster and the
+/// leg really does get worse; docs/bridge.md "Staging the big uploads" has
+/// both sides. A workload that uploads the same large section repeatedly could
+/// still come out ahead, so this is a knob and not a deletion.
 ///
 /// `ZZ_STAGING_THRESHOLD` turns it on, in bytes. Unset or `0` sends no option
 /// at all, which is both the plugin's own behaviour and what a plugin built
