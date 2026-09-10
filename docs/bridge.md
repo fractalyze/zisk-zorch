@@ -297,9 +297,12 @@ block-shaped mix:
 
 Byte-gate green on every run gated — a sample of the sweep, not all of it: on
 hello-world, passes 1/3/5 of each arm, 12 of the 20 runs, at 11 of 11 native
-dumps each; on the block-shaped mix, nine of the 18 (arms A-C, the second
-sweep's three passes) at 38 of 38, except one that aborted mid-proof and
-matched on the seven dumps it had written.
+dumps each; on the block-shaped mix, passes 1/2/3 of the three arms that ran it
+(`ZZ_EAGER_MODULES=0`, `=1`, and `=1` + `CUDA_MODULE_LOADING=EAGER`), nine of
+the 18, at 38 of 38 — except one `ZZ_EAGER_MODULES=0` pass that aborted
+mid-proof and matched on the seven dumps it had written. That abort is also
+why the block-shaped `ZZ_EAGER_MODULES=0` leg above is a mean over five passes;
+the other two arms have all six.
 
 **The two knobs are only worth anything together.** The last row is the whole
 argument: the driver variable with lazy executable loading buys nothing,
@@ -599,13 +602,82 @@ here). Start a run only once `nvidia-smi` shows the card empty: a
 process still releasing its memory makes pil2 size 20 streams from the
 1.6 GB it sees and exit.
 
-## Status (2026-09-04, RTX 5090, go hello-world guest)
+## Status (2026-09-10, RTX 5090, go hello-world guest)
 
-> Measured 2026-09-04, on that date's binary and plugin. Do not adjust these
-> figures for `CUDA_MODULE_LOADING=EAGER`: the 2026-09-09 arms above read
-> 5.72 s of leg without it and 5.24 s with it, both under the 6.5 s here, so
-> this table is stale by more than that one knob. Take the shape of the gap
-> from here and the leg from those arms.
+Where #170 leaves this guest. On `main` at c4fd42a, frx quad pinned to
+`0.10.2.dev20260910150749` (fractalyze/jax@1b7c92fe, xla `fff9509ab012`, which
+carries fractalyze/xla#698 and #718), proving key v1.0.0-alpha, artifacts
+`zz-artifacts-191` with both plugin generations warm in its `.pjrt-cache`. The
+leg sweep itself ran at PR #203's head 392ed92, which is this commit's tree
+less the docs fixes that landed on top of it.
+
+Every row names the session that measured it, and none of them is re-derived
+from another. That is not bookkeeping: on this rig both init and the leg drift
+between sessions by more than most of the levers #170 chased are worth, so a
+figure without a native baseline taken in the same session and interleaved with
+it says nothing about either stack — which is what "Bridge start-up" below had
+to establish the expensive way.
+
+| | native | bridge | where the figure comes from |
+|---|---|---|---|
+| inner-proof leg | 3.700 s | **5.517 s** | bridge: #204, five arms interleaved pass by pass, four passes, one binary, median of 5.781 / 5.369 / 5.272 / 5.665 s, sd 0.240. native: #209's interleaved arm, same rig and day, pre-bump wheel |
+| proofman init | — | 0.10–0.23 s behind native | #178, four interleaved passes read pass by pass; 0.28–0.41 s counting each run's own client creation. Not re-measured since the bump — see "Bridge start-up" |
+| basic proofs byte-identical | 11 of 11 | | #204, one native and one bridged run in the shipped configuration, compared by `bench/compare_dumps.py` |
+| `MemAlign_n21` first prove | | 0 of 60 wrong | #204, 60 fresh processes doing one first prove each under `CUDA_LAUNCH_BLOCKING=1` |
+
+The leg is proofman's own `GENERATING_INNER_PROOFS` on both sides.
+
+**The two leg figures are from different sessions**, which the rule above
+forbids leaving unsaid. What licenses pairing them is that the two sessions
+share a condition and agree on it: #209 read the pre-bump wheel at 6.06–6.11 s
+and #204's `old` arm read that same wheel at 5.970 s, a spread inside the
+~0.2 s this guest can resolve at all ("Raising the read-ahead permit"). The gap
+being judged is 1.8 s, an order above what the pairing can cost. A native arm
+interleaved against the bumped wheel is still a run nobody has spent.
+
+Reproduce with the same `bridge/bench/` scripts as the block-shaped
+section, minus the input: the guest takes none, and it needs
+`ZISK_PROVE_FLAGS=` (empty) on a host with no ASM emulator built, since
+run.sh's default is the ASM emulator's `-a -u`. So
+`ZISK_PROVE_FLAGS= run.sh <tag> native|bridge`, then `compare_dumps.py`
+for the byte-gate and `summarize.py` for the rows. "Memory budget" below
+was measured this way, adding `ZZ_MEMORY_FRACTION` and
+`ZZ_GPU_HEADROOM_GB` per run. An arm is an env swap rather than a rebuild,
+so interleave the arms pass by pass and rotate them within a pass.
+
+### The acceptance #170 set, and where it lands
+
+| criterion | verdict |
+|---|---|
+| inner-proof leg within 1.2x of native's (≤ 4.44 s against 3.700 s) | **not met** — 5.517 s is 1.49x, over by 1.077 s |
+| proofman init within 0.5 s of native's | met on the pre-bump measurement, at 0.10–0.23 s behind (0.28–0.41 s counting client creation); unmeasured on the bumped wheel |
+| all 11 basic proofs byte-identical to native's dumps | met — 11 of 11 |
+| this section traces every number to a run recipe and a commit | met by the table above |
+
+The leg is the criterion that did not close, and nothing on the list below
+closes it: of everything #170 tried, only eager kernels moved the leg, and the
+1.077 s still owed is more than twice what that one was worth. Whatever the
+remaining 1.8 s is, it is not among the things this issue knew to look for.
+
+### The levers, each closed with a measurement
+
+| lever | what it was worth |
+|---|---|
+| eager module loads, then eager kernels (#176, #200, #204 / xla#661, #698) | **−0.453 s** — the only leg lever that survived, and it reaches the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling. "The plugin materializes the kernels now" |
+| upload overlap (#193) | null — an upload into a freshly allocated buffer waits on the client's own compute stream, so it never overlaps that client's kernels. "The uploads, measured" |
+| host-idle remainder (#205) | null — two built changes measured null against an `EAGER` control on the same binary; the cost re-prices into the phase next door. "A phase's share of the idle" |
+| read-ahead depth (#209) | null — −26 ms paired, against the −120 ms two labels of one configuration differ by. "Raising the read-ahead permit" |
+| constant tree over the extended domain (#183, #206) | worse — the same 8.4 GB over the same read-ahead path took the leg 6.1–6.6 s to 7.3–7.5 s |
+| H2D staging threshold (#204 / xla#718) | **+0.469 s**, so it ships off — the copies do get faster, and the pinned pool's growth inside the prove costs more than they return. "Staging the big uploads" |
+| XLA fusion cap (#149) | retracted — the flag has no occurrence in this wheel, its replacement measured a net tree regression, and under the bridge pil2 proves the recursion tree on its own CUDA, where an XLA fusion cap has no surface |
+
+### The per-stage shape (2026-09-04, superseded)
+
+Kept for the per-instance breakdown, which nothing since re-measures. Every
+figure here is from 2026-09-04's binary and plugin and none of them is current:
+the leg alone has moved 6.5 → 5.517 s across the units #170 landed and a wheel
+bump, so do not adjust these rows for one knob and do not quote them. Take the
+shape of the gap from here and every number from the table above.
 
 `cargo-zisk prove -g -y` through the bridge completes and its final proof
 verifies. All 11 basic instances (Rom, Main, Mem, InputData, RomData,
@@ -630,15 +702,6 @@ either stack's init):
 | ├ waiting for the client, summed over the 11 instances | | 28 s (the serialization) |
 | └ executable loads, per AIR from the cache | | 0.52 s |
 | Main, single stream on both sides | 0.61 s (commit 0.165 + proof 0.444) | 0.64–0.79 s |
-
-Reproduce with the same `bridge/bench/` scripts as the block-shaped
-section, minus the input: the guest takes none, and it needs
-`ZISK_PROVE_FLAGS=` (empty) on a host with no ASM emulator built, since
-run.sh's default is the ASM emulator's `-a -u`. So
-`ZISK_PROVE_FLAGS= run.sh <tag> native|bridge`, then `compare_dumps.py`
-for the byte-gate and `summarize.py` for the rows. "Memory budget" below
-was measured this way, adding `ZZ_MEMORY_FRACTION` and
-`ZZ_GPU_HEADROOM_GB` per run.
 
 ### Bridge start-up (2026-09-09/10, post-#176)
 
