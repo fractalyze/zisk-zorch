@@ -1,6 +1,7 @@
-"""Pins the one rule two readers share: how the bridge's `ZZ_LOG` line per
-instance is read. The loose match on the kind is the point of the module, so
-it is pinned as behaviour and not left to the regex."""
+"""Pins the rules more than one reader shares: how the bridge's `ZZ_LOG` line
+per instance is read, and whether a run finished. The loose match on the kind
+and the two verify wordings are the point of the module, so both are pinned as
+behaviour and not left to the regexes."""
 
 from absl.testing import absltest, parameterized
 
@@ -57,6 +58,44 @@ class RunLogTest(parameterized.TestCase):
         self.assertEqual(
             [one.kind for one in run_log.instances(log)], ["worker", "streamed"]
         )
+
+
+OOM = (
+    "2026-09-11T07:57:55.251173Z proofman::proofman ERROR: zisk-zorch bridge:"
+    " instance 1: PJRT error in Event_Await: Out of memory while trying to"
+    " allocate 1.88GiB.\n"
+)
+
+
+class FinishedTest(parameterized.TestCase):
+    @parameterized.named_parameters(
+        # Both wordings are a pass. A prover built before 2026-09-08 prints the
+        # first and a later one the second, and neither identifies the stack --
+        # a native and a bridged run of one vintage end the same way.
+        ("pre_09_08", "··· ✓ Proof verified successfully"),
+        ("post_09_08", "··· ✓ Vadcop Final proof was verified"),
+    )
+    def test_both_verify_wordings_count(self, phrase):
+        self.assertTrue(run_log.verified(phrase + "\n"))
+
+    def test_a_rescued_oom_is_a_run_that_finished(self):
+        """The bridge catches a read-ahead upload's OOM and uploads under the
+        slot; Rust's panic hook printed the message before `catch_unwind` saw
+        it. The text is identical to an aborted run's, so `exit=` decides."""
+        self.assertTrue(run_log.completed(OOM + "exit=0\n"))
+        self.assertFalse(run_log.completed(OOM + "exit=134\n"))
+
+    def test_exit_beats_the_text(self):
+        """A log that verified and then failed on the way out did not finish."""
+        self.assertFalse(
+            run_log.completed("··· ✓ Vadcop Final proof was verified\nexit=1\n")
+        )
+
+    def test_without_an_exit_line_a_quiet_log_is_not_called_an_abort(self):
+        """A partial capture, or a log not written by run.sh: say aborted only
+        when there is also a failure to point at."""
+        self.assertTrue(run_log.completed("nothing in particular\n"))
+        self.assertFalse(run_log.completed(OOM))
 
 
 if __name__ == "__main__":

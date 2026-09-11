@@ -2,13 +2,14 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 
 # Bench tooling for the bridge: the guest input writer, the native <-> bridge
-# dump comparison, two readers of a run log (the per-run summarizer, and the
-# leg's phase structure behind "The gap is the basic phase's wall"), and the
-# four capture readers behind that page's "Profiling" — two per-program (ours
-# and pil2's), one for where the uploads sit and one for where the leg's
-# device idle goes. Two rules with more than one reader live in a module of
-# their own so they cannot drift: :nsys_trace owns the span algebra and which
-# prover a kernel belongs to, :run_log owns the bridge's per-instance line.
+# dump comparison, three readers of a run log (the per-run summarizer, the
+# leg's phase structure behind "The gap is the basic phase's wall", and the
+# memory story behind "Memory budget"), and the four capture readers behind
+# that page's "Profiling" — two per-program (ours and pil2's), one for where
+# the uploads sit and one for where the leg's device idle goes. Rules with more
+# than one reader live in a module of their own so they cannot drift:
+# :nsys_trace owns the span algebra and which prover a kernel belongs to,
+# :run_log owns the bridge's per-instance line and whether a run finished.
 # run.sh drives one prove; see the page's "Running".
 
 py_library(
@@ -37,6 +38,22 @@ py_test(
     srcs = ["run_log_test.py"],
     deps = [
         ":run_log",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
+    name = "mem_budget",
+    srcs = ["mem_budget.py"],
+    deps = [":run_log"],
+)
+
+py_test(
+    name = "mem_budget_test",
+    size = "small",
+    srcs = ["mem_budget_test.py"],
+    deps = [
+        ":mem_budget",
         requirement("absl_py"),
     ],
 )

@@ -797,6 +797,12 @@ it carries, which puts the leg at about 3.6 s. So a second client is the only
 share anyone has left to take, it is worth about 1.1 s of the 1.9, and it does
 not on its own close the criterion.
 
+It also does not fit on this card. #215 re-walked the memory floors on this
+wheel: a client needs an 11.60 GiB arena and two of them can have at most 8.47
+GiB each before pil2 refuses to start, so the second client is 3.1-3.5 GiB per
+client out of reach and the 1.1 s above stays arithmetic. "Memory budget" has
+the walk, what is in the arena, and the sizes a memory unit would have to move.
+
 Reproduce: `ZISK_PROVE_FLAGS= bench/run.sh <tag> native|bridge`, the bridge arm
 with `ZZ_EAGER_MODULES=1 ZZ_STAGING_THRESHOLD=0` and run.sh's own `ZZ_CLIENTS=1
 ZZ_MEMORY_FRACTION=0.45`, alternating the arm order pass by pass. Probe warmth
@@ -1080,8 +1086,9 @@ the rest reshapes and slices) and loads in 75 ms.
 What remains above native is structural, tracked in #170: the bridge
 proves the 11 instances back to back on one client while pil2 overlaps
 three basic streams and its recursion (re-measured on the #171 artifacts,
-a second client is still 8.1 GiB more than this card has — "Memory budget"
-below); and `const_setup` recomputes each AIR's constant tree per run
+a second client is still more than this card has — "Memory budget"
+below, where the shortfall is 6.3 GiB on the shipped wheel); and
+`const_setup` recomputes each AIR's constant tree per run
 where pil2 reads it from disk. The bridge's own start is no longer one of
 them: it finishes well inside proofman's init ("Bridge start-up" above).
 Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
@@ -1160,7 +1167,9 @@ ahead are the AIR's `const_base`, 16-96 MiB for nine of hello-world's eleven
 AIRs but 1168 and 1408 MiB for the two virtual tables, and those two prove back
 to back. It does not move the client's floor, because the floor is not set by
 them — every failure walking `ZZ_MEMORY_FRACTION` down is the same 5.50 GiB
-allocation on `VirtualTableZisk0_n21`, at either setting (3 repeats per cell:
+allocation on `VirtualTableZisk0_n21` (on the `-168` artifacts this arm ran
+on: post-#191 the largest is that AIR's 2.75 GiB `const_ext`, and the verdict
+is unchanged — see "Memory budget"), at either setting (3 repeats per cell:
 0.41 passes 3/3 with the permit at 1 and 5/6 with it off, 0.39 passes 1/3 and
 3/6, 0.37 passes 0/3 and 1/6). That is the aggregate floor "Memory budget"
 describes, and the read-ahead's extra `const_base` neither raises nor lowers it
@@ -1214,57 +1223,119 @@ is unmeasured here for that reason, not overlooked.
 - **Memory budget (RTX 5090, 31.8 GiB).** Three pools share the card,
   and what each gets is `ZZ_MEMORY_FRACTION` (the clients' share, claimed
   up front), `ZZ_GPU_HEADROOM_GB` (held back from pil2's sizing) and
-  whatever is left (pil2's). The first two floors were measured on the
-  hello-world key by walking the fraction down until a run failed, one
-  client, repeats at each fraction — a single run at the boundary is a
-  race and lands either way. The client's floor is from #191's re-walk
-  (2026-09-09, both arms on one binary); pil2's and the module loads'
-  are from 2026-09-08 and the blocked LDE does not touch them:
-  - **A client needs 11.8 GiB**, at headroom 3 — the fraction every run
-    survives, below which the outcome is a coin flip rather than a
-    cliff. Both columns are `main` at c8da072, so only the artifacts
-    differ:
+  whatever is left (pil2's). The floors below were measured on the
+  hello-world key by walking the fraction down until a run failed, repeats
+  at each fraction — a single run at the boundary is a race and lands
+  either way — on the shipped wheel (`0.10.2.dev20260910150749`, eager
+  kernels on, staging off) against the #191 artifacts (#215, 2026-09-11).
+  `bench/mem_budget.py <run.log>...` reads these tables back out of the
+  logs they came from, and carries the traps below as its own rules.
 
-    | `ZZ_MEMORY_FRACTION` | the client's share | before #191 | after |
+  **A share is the arena the run allocated, not the fraction times the
+  card.** XLA divides `ZZ_MEMORY_FRACTION` by the client count and applies
+  it to its own base — 33670758400 B, which is 31.36 GiB, 0.48 GiB under
+  this card's 31.84 GiB — and every client of a run gets the same arena.
+  The run prints the product it allocated (`XLA backend allocating N bytes
+  on device 0 for BFCAllocator`), so read that rather than computing it.
+  An earlier version of this note computed the column as `fraction × 31.84
+  GiB`: the fractions below are unchanged, the GiB beside them are 1.5 %
+  lower than they were.
+  - **A client needs an 11.60 GiB arena**, at headroom 3 — the arena every
+    run survives, below which the outcome is a coin flip rather than a
+    cliff. The right column turns the fixed-section read-ahead's upload
+    off (`ZZ_FIXED_AHEAD=0`):
+
+    | `ZZ_MEMORY_FRACTION` | the client's arena | shipped | read-ahead off |
     |---|---|---|---|
-    | 0.45 | 14.3 GiB | — | 2/2 |
-    | 0.39 | 12.4 GiB | 3/3 | 3/3 |
-    | 0.37 | 11.8 GiB | 1/3 | 3/3 |
-    | 0.35 | 11.1 GiB | 0/3 | 4/5 |
-    | 0.34 | 10.8 GiB | 0/3 | 1/3 |
-    | 0.32 | 10.2 GiB | — | 0/3 |
-    | 0.30 | 9.5 GiB | — | 0/3 |
-    | 0.28 | 8.9 GiB | — | 0/2 |
+    | 0.45 | 14.11 GiB | 3/3 | — |
+    | 0.39 | 12.23 GiB | 3/3 | — |
+    | 0.37 | 11.60 GiB | 6/6 | 3/3 |
+    | 0.35 | 10.98 GiB | 5/6 | 3/3 |
+    | 0.34 | 10.66 GiB | 3/6 | 1/3 |
+    | 0.32 | 10.03 GiB | 0/3 | 0/3 |
+    | 0.30 | 9.41 GiB | 0/3 | 0/3 |
+    | 0.28 | 8.78 GiB | 0/3 | — |
 
-    #177 first put the floor at 12.1 GiB off one run per fraction and
-    #188 revised it to 12.4 off seven; a repeated figure supersedes a
-    single run. #188's own table below reads 0/4 at 0.37 where this one
-    reads 1/3 — that arm predates #190's stage-tree release, and is not
-    this binary.
-    That 11.8 GiB is what a client holds at once — one AIR's fixed
-    sections (the extended constants, their tree, the base constants the
-    stage-2 hints read: 4.6 GB for a table AIR with 88 constant columns),
-    the next AIR's sections read ahead of its slot, and a prove's working
-    set — though the sweep measures the total, not the split. Which AIR
-    aborts is not fixed, and at one fraction it varies run to run:
-    whichever wide one first finds the arena dry, so read the floor off
-    the fraction rather than off the AIR named in the log.
-  - **pil2 needs 14.3 GiB left to it and refuses to start below that**,
-    since `commit_witness` stays on the card. Left to it means the card
-    minus the clients' share minus the headroom, so one fraction can go
-    either way: at headroom 0, fraction 0.55 leaves 14.3 GiB and pil2
-    comes up with one basic stream and 5.05 GB of fixed pols, while 0.58
-    leaves 13.4 GiB and it exits with `Not enough GPU memory to run the
-    proof`; at headroom 3 that same 0.55 leaves 11.3 GiB and it refuses.
-    (The block-shaped section above reports 0.55 leaving pil2 13.3 GB,
-    which this model reproduces at neither headroom; that run's headroom
-    is not recorded, so the two are not the same measurement. #170
-    carries the discrepancy.)
-  - **Module loads come out of neither**, which is what
-    `ZZ_GPU_HEADROOM_GB` buys: at headroom 0 a run both pools fit in
-    still dies on `Failed to get module function:
-    CUDA_ERROR_OUT_OF_MEMORY`, with the card at 31.4 GiB. The bench's 3
-    is enough and 0 is not; the totals below budget ~2.
+    The surviving fraction is where #191 left it, so the wheel's eager
+    kernel loads and its pinned staging pool do not reach the client's
+    floor. #177 first put the floor at 0.38 off one run per fraction and
+    #188 revised it to 0.39 off seven; a repeated figure supersedes a
+    single run, and 0.37 here is six.
+
+    **Nor does the read-ahead reach it.** `ZZ_FIXED_AHEAD=0` takes the next
+    AIR's `const_base` off the device — up to 1.38 GiB, and the two virtual
+    tables that are 88 % of the 2928 MiB the eleven carry between them prove
+    back to back (#209) — and the two columns
+    are not told apart at these counts, with the same cliff between 10.66
+    and 10.03 GiB. `MaxInUse` at 10.03 GiB is 8.69–9.73 GiB with it off
+    against 8.73–9.55 GiB with it on. Only the *upload* is off at depth 0;
+    the key read still runs ahead of the slot, which is why the `ahead`
+    column of the `fixed sections for X` lines does not go to zero.
+
+    **What is in the 11.60 GiB.** A run that dies leaves BFC's own
+    accounting in the log, and 20 of these 21 report the same largest
+    single allocation: **2.75 GiB, `VirtualTableZisk0_n21`'s `const_ext`**
+    (88 constants × 2²² × 8 B from its manifest; the twenty-first died
+    earlier and got no further than 2.44 GiB). The running prove's own extended
+    trace is the next size down — `cm1_ext` 2.44 GiB on `Binary_n22`, 2.38
+    GiB on `Main_n22`, `cm2_ext` 1.50 GiB on `Main_n22` — and the last two
+    are both live in the chunk list of a `Main_n22` abort. #209's 5.50 GiB
+    is the pre-#191 figure on the `-168` artifacts: the blocked extend took
+    that scratch out, and what stands now is the section itself.
+
+    **At most 1.2 GiB of the arena is placement rather than data**, and the
+    aborts are placement: the run at 10.98 GiB died holding 8.86 GiB, with
+    2.11 GiB free in the pool, `LargestFreeBlock: 0B`, unable to place 1.88
+    GiB. The bound is 11.60 GiB against the highest `MaxInUse` seen, 10.40
+    — and it is a bound rather than a measurement, since `MaxInUse` on a
+    failing run is truncated at the abort. An allocator that need not find
+    2.75 GiB contiguous (the GPU plugin's `cuda_async` kind) is worth up to
+    that 1.2 GiB and no more; it is not reachable from here — fractalyze/
+    xla-pjrt's `SessionOptions` carries no allocator kind — and it would
+    have to keep claiming the share up front, which is what
+    `ZZ_MEMORY_FRACTION` exists for.
+
+    Which AIR aborts is not fixed: 13 of these 21 on `Main_n22`, 7 on
+    `VirtualTableZisk0_n21`, one on `Binary_n22`. Read the floor off the
+    arena, not off the AIR named in the log.
+  - **pil2 needs 12.904 GB left to it and refuses to start below that**,
+    since `commit_witness` stays on the card. It is pil2's own check and
+    pil2 prints both sides of it: at one client and headroom 0, fraction
+    0.55 leaves it 12.927 GB and it comes up with one basic stream and
+    5.05 GB of fixed pols, while 0.56 leaves 12.613 GB and it exits with
+    `Insufficient memory. Need 12.904107 GB but only 12.612976 GB
+    available`. The requirement is the same figure at either client count.
+
+    **That figure already contains the module loads**, because it is free
+    memory as pil2 finds it — after the clients have claimed their arenas
+    and their module loads have begun. An earlier version of this note put
+    pil2's floor at 14.3 GiB, which is the *card space* left at the last
+    fraction pil2 survived, and then added ~2 GiB of module loads on top of
+    it: that is the same memory counted twice, and it is most of why the
+    two-client shortfall below is smaller than the 8.1 GiB this note used
+    to carry.
+
+    The block-shaped section above says `ZZ_MEMORY_FRACTION=0.55` leaves pil2
+    13.3 GB and calls that below the minimum it will start with. That does not
+    reconcile with either number here — 0.55 leaves 12.93 GB on this key, and
+    12.93 is above the 12.904 pil2 asks for, so it starts. That run's headroom
+    is not recorded and its workload is the block-shaped one, so the two are
+    not the same measurement; #170 carries the discrepancy.
+
+    pil2 refuses in a second sentence as well. When what it can see is
+    small enough that its own stream sizing asks for a card nobody has, it
+    prints `Not enough GPU memory to run the proof` and no figures — at two
+    clients holding their floor it sized 20 basic streams and asked for
+    162.077 GB. That `Need` is the sizing, not a requirement.
+  - **Module loads come out of neither pool**, which is what
+    `ZZ_GPU_HEADROOM_GB` buys: at headroom 0 a run both pools fit in still
+    dies, on `Failed to get module function: CUDA_ERROR_OUT_OF_MEMORY` or
+    `too many resources requested for launch`. The bench's 3 is enough and
+    0 is not. The headroom does not come out of what pil2 reports as
+    available — across these runs the fraction alone accounts for pil2's
+    `Using minimum memory` to within 0.2 GB at headroom 0 and 3 alike — so
+    it acts on the stream sizing that follows and on what is left for the
+    loads, not on the check above.
   - **What pil2 actually allocates — 12.9 GiB — is already sized for
     recursion**, so taking its basic proofs away frees none of it
     (#194). It is 1.72 GiB of basic fixed pols, 3.33 GiB of aggregation
@@ -1305,29 +1376,65 @@ is unmeasured here for that reason, not overlooked.
     recursive streams and still finishes, recursion falling back to the
     basic stream.
 
-  So one client's floors total 11.8 + 14.3 + ~2 = **28.1 GiB** of the
-  31.8 available. (A run at the bench's `ZZ_MEMORY_FRACTION=0.45` peaks
-  at 28.7 GiB, which is not this sum: there the client claims 14.3 GiB,
-  well above its floor, and pil2 sizes itself down to what is left.)
-  **Two clients need 2 × 11.8 + 14.3 + ~2 = 39.9 GiB and are 8.1 GiB
-  short.** 6.1 GiB of that is the measured floors alone (2 × 11.8 +
-  14.3 = 37.9 against 31.8, before any headroom at all); the rest is the
-  headroom, which is estimated but cannot be zero. #194's counterfactual
-  does not close it either: had pil2 been sizable for recursion alone —
-  1.72 + 3.33 + one 1.53 GiB recursive stream, 6.3 GiB below what it
-  holds — two clients would still be 1.8 GiB short. The bullet above is
-  why that 6.3 GiB is not on offer.
+  One client fits with room: at the bench's `ZZ_MEMORY_FRACTION=0.45` a
+  whole run peaks at 28.33 GiB of the 31.84 the card has (`nvidia-smi`
+  every 50 ms, the same figure in three runs; 27.35 GiB at 0.37, and native
+  alone peaks at 30.95 GiB). The card is not full because pil2 sizes itself
+  down to what is left — which is why taking 2.51 GiB off the client's
+  arena moved the run's peak by 0.98 GiB, not by 2.51.
 
-  The runs bear it out: `ZZ_CLIENTS=2` aborts in three runs out of three
-  at fraction 0.45 (headroom 3), and again in three out of three with at
-  most one prove admitted per client (`ZZ_PENDING=1`, which does not stop
-  the fixed sections going up ahead of the slot — all 11 still do). No
-  fraction rescues it: pil2's floor caps the clients' total share near
-  0.55, so two clients can have at most ~8.8 GiB each, 3.0 GiB below the
-  floor, and that ceiling leaves the module loads nothing. **The unset
-  default is 3**, which 3 × 11.8 = 35.4 GiB puts past the whole card
-  before pil2 gets any; the bench pins `ZZ_CLIENTS=1`, and every number
-  here is from one client.
+  **Two clients are at least 6.3 GiB short** (#215), and both ends of that
+  are measured rather than summed. Give each client the 11.60 GiB it needs
+  (`ZZ_CLIENTS=2 ZZ_MEMORY_FRACTION=0.74`) and pil2 is left 6.55 GB against
+  the 12.904 GB it asks for. Walk down instead until pil2 will start, and
+  the clients get 8.15 GiB each — 8.47 GiB is the last arena at which pil2
+  still refuses, and it refuses by 0.076 GB:
+
+  | `ZZ_CLIENTS=2` | each client | outcome |
+  |---|---|---|
+  | 0.74 | 11.60 GiB | pil2 refused, sees 6.55 GB — 0/4 |
+  | 0.60 | 9.41 GiB | pil2 refused — 0/2 |
+  | 0.56 | 8.78 GiB | pil2 refused — 0/2 |
+  | 0.55 | 8.62 GiB | pil2 refused by 0.393 GB — 0/3 |
+  | 0.54 | 8.47 GiB | pil2 refused by 0.076 GB — 0/2 |
+  | 0.52 | 8.15 GiB | pil2 up on one basic stream, client OOM — 0/2 |
+  | 0.48 | 7.53 GiB | pil2 up, client OOM — 0/2 |
+  | 0.45 | 7.06 GiB | pil2 up, client OOM — 0/3 (headroom 3) |
+
+  So **a client has to fit in at most 8.47 GiB and needs 11.60: the target
+  is 3.1 to 3.5 GiB per client, 6.3 to 6.9 GiB over the pair.** It is a
+  lower bound on the shortfall — every row but the last runs at headroom 0,
+  where the module loads have no reserve and the clients abort anyway.
+  #194's counterfactual comes close and still does not close it, as
+  arithmetic on the rows above rather than a run: had pil2 been sizable for
+  recursion alone — 1.72 + 3.33 + one 1.53 GiB recursive stream, 6.58 GiB
+  against the 12.02 GiB it asks for — the rows' 31.37 GB per unit fraction
+  puts its break-even near 0.72, which is about 11.35 GiB a client, still
+  under the 11.60 they need. The bullet above is why that saving is not on
+  offer anyway. **The unset `ZZ_CLIENTS`
+  default is 3**, which puts three arenas past the whole card before pil2
+  gets any; the bench pins `ZZ_CLIENTS=1`, and every number here is from
+  one client.
+
+  Where a client's 3.2 GiB could come from, sized above: the 2.75 GiB
+  `const_ext` it holds resident, the 2.38–2.44 GiB `cm1_ext` the running
+  prove computes, and at most 1.2 GiB of placement above the live set. Not
+  from the fixed-section read-ahead, which the table above measures as not
+  binding, and not from pil2, which the two bullets above close off.
+
+  Reproduce a cell, then read the table back out of the runs it made:
+
+  ```bash
+  # one cell: three runs at one arena size, a pass being 11 proofs and a
+  # verified final proof. Distinct tags -- run.sh clears the tag it is given.
+  export ZZ_RUNS=./zz-runs            # run.sh's own default; name it so the
+                                      # read line below can find the logs
+  for r in 1 2 3; do
+    ZZ_CLIENTS=1 ZZ_GPU_HEADROOM_GB=3 ZZ_MEMORY_FRACTION=0.37 \
+      ZISK_PROVE_FLAGS= bench/run.sh walk-f0.37-r$r bridge
+  done
+  bench/mem_budget.py "$ZZ_RUNS"/walk-f0.37-r*/run.log
+  ```
 
 - **The resident-set trim does not reach a second client** (#188). Scoped
   as "re-upload the base constants per prove, drop the digest layers once
@@ -1335,13 +1442,13 @@ is unmeasured here for that reason, not overlooked.
   (one client, headroom 3, hello-world; a pass is all 11 proofs and a
   verified final proof):
 
-  | `ZZ_MEMORY_FRACTION` | the client's share | before | the trim in full | shipped |
+  | `ZZ_MEMORY_FRACTION` | the client's arena | before | the trim in full | shipped |
   |---|---|---|---|---|
-  | 0.45 | 14.3 GiB | 4/4 | 5/5 | 6/6 |
-  | 0.39 | 12.4 GiB | 7/7 | 7/10 | 5/7 |
-  | 0.38 | 12.1 GiB | 0/4 | 4/7 | 2/3 |
-  | 0.37 | 11.8 GiB | 0/4 | 2/4 | — |
-  | 0.36 | 11.5 GiB | 0/1 | 0/1 | — |
+  | 0.45 | 14.11 GiB | 4/4 | 5/5 | 6/6 |
+  | 0.39 | 12.23 GiB | 7/7 | 7/10 | 5/7 |
+  | 0.38 | 11.92 GiB | 0/4 | 4/7 | 2/3 |
+  | 0.37 | 11.60 GiB | 0/4 | 2/4 | — |
+  | 0.36 | 11.29 GiB | 0/1 | 0/1 | — |
 
   Before the change the floor is a cliff: every run at 0.39 and above, none
   below. With the trim there is no cliff, only a band from 0.39 down to 0.37
@@ -1413,9 +1520,11 @@ is unmeasured here for that reason, not overlooked.
   **Freeing memory inside a program is not the same as lowering the
   floor.** 3.4 GiB out of the biggest one buys 0.6 GiB of the client
   floor above, because that block was the arena's largest single
-  allocation rather than most of its high-water; the largest any failing
-  run now reports is 1.56 GiB, inside `commit2` on
-  `VirtualTableZisk0_n21` at fraction 0.28. So the extend is not what
+  allocation rather than most of its high-water; the largest a failing
+  run at fraction 0.28 now *asks* for is 1.56 GiB, inside `commit2` on
+  `VirtualTableZisk0_n21` — which is the request that found the arena dry,
+  not the largest allocation, and BFC still reports 2.75 GiB for that
+  ("Memory budget"). So the extend is not what
   stands between this card and a second client, and the next lever is
   what a client keeps rather than what one program computes.
 - **Exports carry no debug info and no folded power tables.** XLA
