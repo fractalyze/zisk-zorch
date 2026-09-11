@@ -52,18 +52,12 @@ if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from bridge.bench.nsys_trace import Span, covered, merge  # noqa: E402
+from bridge.bench.run_log import instances  # noqa: E402
 
 TS = r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+)Z"
 LEG = re.compile(TS + r".*<<< GENERATING_INNER_PROOFS \((\d+)ms\)")
 BASIC = re.compile(TS + r".*<<< GEN_PROOF_\d+ \[\d+:\d+\] \((\d+)ms\)")
 RECURSIVE = re.compile(TS + r".*<<< GEN_RECURSIVE_PROOF_\w+ \[\d+:\d+\] \((\d+)ms\)")
-# `[zz +  6.917] instance 9 Air_n21 (worker): 1.228 s, of which 0.681 s waiting`
-# -- a streamed instance says `(streamed)`, and a tally that matches only
-# `(worker)` silently drops it.
-HELD = re.compile(
-    r"\[zz \+\s*([\d.]+)\] instance \d+ \S+ \((?:worker|streamed)\): "
-    r"([\d.]+) s, of which ([\d.]+) s waiting"
-)
 
 NS = 1_000_000_000
 # Below this share of the leg, proofman's basic spans are not prove time and
@@ -90,11 +84,10 @@ def held(log: str) -> list[Span]:
     clock -- seconds since bridge-up, which is not proofman's clock. Only
     durations and unions are taken of these, never an intersection with a
     proofman span."""
-    spans = []
-    for m in HELD.finditer(log):
-        end = round(float(m.group(1)) * NS)
-        spans.append((end - round((float(m.group(2)) - float(m.group(3))) * NS), end))
-    return spans
+    return [
+        (round(start * NS), round(end * NS))
+        for start, end in (one.span for one in instances(log))
+    ]
 
 
 class Leg:
@@ -105,8 +98,10 @@ class Leg:
         if m is None:
             raise ValueError("no closing GENERATING_INNER_PROOFS in the log")
         self.leg = int(m.group(2)) / 1000
-        self.bridged = bool(HELD.search(log))
-        basic = held(log) if self.bridged else ended_at(BASIC, log)
+        basic = held(log)
+        self.bridged = bool(basic)
+        if not self.bridged:
+            basic = ended_at(BASIC, log)
         recursive = ended_at(RECURSIVE, log)
         self.n_basic, self.n_recursive = len(basic), len(recursive)
         self.basic_wall = covered(merge(basic)) / NS
@@ -172,8 +167,16 @@ def report(path: pathlib.Path, leg: Leg) -> None:
 def summarize(legs: list[Leg]) -> None:
     """Median and range per quantity. Every figure this page's docs quote
     carries a pass count and a spread, because on this rig the leg drifts by
-    more than most of what gets measured on it is worth."""
+    more than most of what gets measured on it is worth.
+
+    The overlap is printed twice because medianing it is not the same as
+    medianing what it is made of: each quantity here is medianed on its own, so
+    the per-pass bound's median does not satisfy `basic + recursion - leg` in
+    the medians above it. Both are true of different things, and quoting one in
+    a table whose other rows are the second is how a reader finds a row that
+    will not reconcile."""
     print(f"== {len(legs)} logs")
+    medians = {}
     for label, get in (
         ("leg", lambda x: x.leg),
         ("basic phase", lambda x: x.basic_wall),
@@ -182,10 +185,16 @@ def summarize(legs: list[Leg]) -> None:
         ("leg - basic", lambda x: x.remainder),
     ):
         vals = [get(x) for x in legs]
+        medians[label] = statistics.median(vals)
         print(
-            f"   {label:18s} median {statistics.median(vals):7.3f} s"
-            f"  [{min(vals):.3f}-{max(vals):.3f}]"
+            f"   {label:18s} median {medians[label]:7.3f} s"
+            f"  [{min(vals):.3f}-{max(vals):.3f}]  (median of the per-pass values)"
         )
+    from_medians = medians["basic phase"] + medians["recursion"] - medians["leg"]
+    print(
+        f"   {'overlap, at least':18s}        {max(0.0, from_medians):7.3f} s"
+        "                    (from the three medians above)"
+    )
 
 
 def main(argv: list[str]) -> int:

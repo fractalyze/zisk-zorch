@@ -706,23 +706,36 @@ the recursion's cost.** Both arms run the same seventeen recursive proofs on
 pil2, and the residual holds only the part of them the basic phase did not
 already cover. How much that is moves with how long the basic phase is:
 
-| | native | bridge | native, one basic stream |
+| | native, n=7 | bridge, n=7 | native, one basic stream, n=3 |
 |---|---|---|---|
-| the recursion's wall | 2.640 s | 3.006 s | 2.695 s |
-| of which inside the basic phase, at least | 1.419 s | 1.914 s | 1.965 s |
+| the recursion's wall | 2.640 s [2.330–2.764] | 3.006 s [2.231–3.513] | 2.695 s [2.509–2.938] |
+| of which inside the basic phase, at least | 1.528 s | 1.958 s | 1.977 s |
 | `leg − basic phase` | 1.112 s | 1.048 s | 0.718 s |
 
 The overlap row is `basic + recursion − leg`: both phases sit inside the leg,
 so whatever they cover past its length they cover at once. It is a lower bound
 and it needs no common clock, which matters because the bridge's basic phase is
-read off the bridge's clock and its recursion off proofman's.
+read off the bridge's clock and its recursion off proofman's. Like every other
+row here it is computed from the medians above it, so it reconciles with them;
+`leg_phases.py` also prints the median of the per-pass bounds, which is a
+different statistic of a different thing and reads 1.419 / 1.914 / 1.965 s.
 
-So the two arms' residuals coming out close is **not** evidence that the
-recursion costs the same on both. The one-stream column shows the mechanism
-inside one stack: its recursion is unchanged while its residual falls to
-0.718 s, purely because a longer basic phase hides more of it. What the leg
-table establishes is the identity — leg is the basic phase's wall plus whatever
-is left — and that the whole of the gap sits in the wall.
+**The bridge's recursion wall sits 0.366 s above native's, and that is not a
+share of the gap.** Its range contains native's whole range — it is the widest
+quantity in this section, sd 0.422 against the leg's 0.136 — so the difference
+between the two medians is not resolvable on seven passes. What is structural
+is the shape rather than the size: native's seventeen recursive proofs overlap
+one another, 5.413 s of spans inside a 2.640 s wall (2.05x), because they
+contend with its three basic streams and each one's span inflates while it
+waits; under the bridge, where pil2 has no basic proofs of its own to run, they
+go through clean and serial at 1.00x. Either way it does not reach the leg,
+because the residual row is where it would show and that row is −0.064 s.
+
+And the one-stream column shows why a residual must not be read as the
+recursion's cost even inside one stack: its recursion is unchanged while its
+residual falls to 0.718 s, purely because a longer basic phase hides more of
+it. What the leg table establishes is the identity — leg is the basic phase's
+wall plus whatever is left — and that the whole of the gap sits in the wall.
 
 Within the basic phase the bridge achieves 1.00x concurrency — 4.283 s of
 proving in 4.279 s of wall, which is one client doing eleven proves back to

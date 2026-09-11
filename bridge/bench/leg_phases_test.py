@@ -11,6 +11,8 @@ indistinguishable from a native run except by how little of the leg its
 import contextlib
 import io
 import pathlib
+import subprocess
+import sys
 
 from absl.testing import absltest
 
@@ -138,6 +140,60 @@ class LegPhasesTest(absltest.TestCase):
     def test_a_log_without_a_leg_is_an_error(self):
         with self.assertRaises(ValueError):
             leg_phases.Leg(LEG_OPEN)
+
+
+class SummarizeTest(absltest.TestCase):
+    """Medianing the overlap is not the same as medianing what it is made of,
+    and a table mixing the two has a row that will not reconcile. Three legs
+    whose two readings disagree, so the report has to carry both."""
+
+    LEGS = (
+        # basic, recursion, leg -> per-pass bound
+        (1000, 1000, 1200),  # 0.8
+        (1000, 1000, 2000),  # 0.0
+        (3000, 1000, 3500),  # 0.5
+    )
+
+    def legs(self):
+        return [
+            leg_phases.Leg(
+                LEG_OPEN
+                + gen_proof(0, "05.000000", basic)
+                + recursive("06.000000", recur)
+                + leg_shut(leg)
+            )
+            for basic, recur, leg in self.LEGS
+        ]
+
+    def test_both_readings_of_the_overlap_are_printed(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            leg_phases.summarize(self.legs())
+        lines = [ln for ln in out.getvalue().splitlines() if "overlap" in ln]
+        self.assertLen(lines, 2)
+        # medians of the per-pass bounds: 0.8 / 0.0 / 0.5 -> 0.5
+        self.assertIn("0.500", lines[0])
+        self.assertIn("median of the per-pass values", lines[0])
+        # from the medians: basic 1.0 + recursion 1.0 - leg 2.0 -> 0.0
+        self.assertIn("0.000", lines[1])
+        self.assertIn("from the three medians above", lines[1])
+
+
+class ScriptModeTest(absltest.TestCase):
+    """docs/bridge.md "The gap is the basic phase's wall" invokes this file by
+    path, which puts its own directory on sys.path rather than the repo root.
+    Without the bootstrap the `bridge.bench` imports fail and the documented
+    recipe cannot run."""
+
+    def test_the_documented_invocation_runs(self):
+        log = self.create_tempfile("run.log", content=NATIVE)
+        done = subprocess.run(
+            [sys.executable, "bridge/bench/leg_phases.py", log.full_path],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("basic phase", done.stdout)
 
 
 if __name__ == "__main__":

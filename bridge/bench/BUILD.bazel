@@ -6,8 +6,9 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 # leg's phase structure behind "The gap is the basic phase's wall"), and the
 # four capture readers behind that page's "Profiling" — two per-program (ours
 # and pil2's), one for where the uploads sit and one for where the leg's
-# device idle goes. Everything that takes a union of spans shares
-# :nsys_trace, which also owns the rule telling the provers' kernels apart.
+# device idle goes. Two rules with more than one reader live in a module of
+# their own so they cannot drift: :nsys_trace owns the span algebra and which
+# prover a kernel belongs to, :run_log owns the bridge's per-instance line.
 # run.sh drives one prove; see the page's "Running".
 
 py_library(
@@ -26,9 +27,27 @@ py_test(
 )
 
 py_library(
+    name = "run_log",
+    srcs = ["run_log.py"],
+)
+
+py_test(
+    name = "run_log_test",
+    size = "small",
+    srcs = ["run_log_test.py"],
+    deps = [
+        ":run_log",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
     name = "leg_phases",
     srcs = ["leg_phases.py"],
-    deps = [":nsys_trace"],
+    deps = [
+        ":nsys_trace",
+        ":run_log",
+    ],
 )
 
 py_test(
@@ -44,6 +63,7 @@ py_test(
 py_library(
     name = "summarize",
     srcs = ["summarize.py"],
+    deps = [":run_log"],
 )
 
 py_test(
