@@ -1306,13 +1306,6 @@ is unmeasured here for that reason, not overlooked.
     `Insufficient memory. Need 12.904107 GB but only 12.612976 GB
     available`. The requirement is the same figure at either client count.
 
-    The block-shaped section above says `ZZ_MEMORY_FRACTION=0.55` leaves pil2
-    13.3 GB and calls that below the minimum it will start with. That does not
-    reconcile with either number here — 0.55 leaves 12.93 GB on this key, and
-    12.93 is above the 12.904 pil2 asks for, so it starts. That run's headroom
-    is not recorded and its workload is the block-shaped one, so the two are
-    not the same measurement; #170 carries the discrepancy.
-
     **That figure already contains the module loads**, because it is free
     memory as pil2 finds it — after the clients have claimed their arenas
     and their module loads have begun. An earlier version of this note put
@@ -1321,6 +1314,13 @@ is unmeasured here for that reason, not overlooked.
     it: that is the same memory counted twice, and it is most of why the
     two-client shortfall below is smaller than the 8.1 GiB this note used
     to carry.
+
+    The block-shaped section above says `ZZ_MEMORY_FRACTION=0.55` leaves pil2
+    13.3 GB and calls that below the minimum it will start with. That does not
+    reconcile with either number here — 0.55 leaves 12.93 GB on this key, and
+    12.93 is above the 12.904 pil2 asks for, so it starts. That run's headroom
+    is not recorded and its workload is the block-shaped one, so the two are
+    not the same measurement; #170 carries the discrepancy.
 
     pil2 refuses in a second sentence as well. When what it can see is
     small enough that its own stream sizing asks for a card nobody has, it
