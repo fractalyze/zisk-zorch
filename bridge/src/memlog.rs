@@ -182,7 +182,7 @@ impl<F: Fn() -> Totals> Stage<F> {
     /// depend on PJRT.
     pub fn start(name: &str, totals: F) -> Stage<F> {
         let stage = Stage { phase: crate::nvtx::Phase::start(name), name: name.to_string(), totals };
-        stage.report();
+        stage.report(name);
         stage
     }
 
@@ -192,17 +192,15 @@ impl<F: Fn() -> Totals> Stage<F> {
     pub fn set(&mut self, name: &str) {
         self.phase.set(name);
         self.name = name.to_string();
-        self.report();
+        self.report(name);
     }
 
-    fn report(&self) {
+    /// One boundary's line and its rows, under `name` rather than
+    /// `self.name` so the drop can close the last stage as `done`.
+    fn report(&self, name: &str) {
         if !enabled() {
             return;
         }
-        self.report_as(&self.name);
-    }
-
-    fn report_as(&self, name: &str) {
         let t = (self.totals)();
         let rows = snapshot();
         let live_bytes: usize = rows.iter().map(|r| r.2).sum();
@@ -227,9 +225,7 @@ impl<F: Fn() -> Totals> Stage<F> {
 /// in its final stage would be attributed to the stage before it, or to none.
 impl<F: Fn() -> Totals> Drop for Stage<F> {
     fn drop(&mut self) {
-        if enabled() {
-            self.report_as("done");
-        }
+        self.report("done");
     }
 }
 
