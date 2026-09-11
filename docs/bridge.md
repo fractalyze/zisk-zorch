@@ -624,7 +624,7 @@ to establish the expensive way.
 | | the figure | where it comes from |
 |---|---|---|
 | inner-proof leg | bridge **5.327 s**, native **3.455 s** (1.54x) | #214, both arms in one session, one binary, interleaved pass by pass and rotated within a pass, eight passes each; medians over passes 2–8, bridge sd 0.136 [5.195–5.608], native sd 0.124 [3.319–3.668] |
-| proofman init, bridge minus native | 0.10–0.23 s behind | #178, read pass by pass across four interleaved passes; 0.28–0.41 s counting each run's own client creation. A difference, not two levels: neither stack's init has a spread this page will quote (see "Bridge start-up"), and none of it is re-measured since the bump |
+| proofman init, bridge minus native | **0.17–0.22 s** behind | #214, on the bumped wheel, read within predecessor-arm groups because init tracks the previous run's arm by ~0.95 s ("The gap is the basic phase's wall"): after a native run bridge 3.320 s [3.307–3.326] against native 3.101 s [3.074–3.109], after a bridged one 4.254 s [4.246–4.269] against 4.081 s [4.042–4.133], ranges disjoint in both. Counting each run's own client creation (0.183–0.309 s, `ZZ_LOG`'s `bridge up`) it is 0.36–0.41 s. A difference, not two levels: neither stack's init has a level this page will quote (see "Bridge start-up"). Agrees with #178's pre-bump 0.10–0.23 s |
 | basic proofs byte-identical to native's | 11 of 11 | #214, two independent pass pairs out of the interleaved sweep, each a native and a bridged run in the shipped configuration, compared by `bench/compare_dumps.py` |
 | `MemAlign_n21` first prove, bridge | 0 of 60 wrong | #204, 60 fresh processes doing one first prove each under `CUDA_LAUNCH_BLOCKING=1` |
 
@@ -661,7 +661,7 @@ so interleave the arms pass by pass and rotate them within a pass.
 | criterion | verdict |
 |---|---|
 | inner-proof leg within 1.2x of native's (≤ 4.15 s against 3.455 s) | **not met** — 5.327 s is 1.54x, over by 1.181 s |
-| proofman init within 0.5 s of native's | met on the pre-bump measurement, at 0.10–0.23 s behind (0.28–0.41 s counting client creation); unmeasured on the bumped wheel |
+| proofman init within 0.5 s of native's | **met** — 0.17–0.22 s behind on the bumped wheel by proofman's own timer, 0.36–0.41 s counting the bridge's client creation, #214 |
 | all 11 basic proofs byte-identical to native's dumps | met — 11 of 11 |
 | this section traces every number to a run recipe and a commit | met by the table above |
 
@@ -675,7 +675,7 @@ section below now says: it is the basic phase's wall, and one client is why.
 
 ### The gap is the basic phase's wall
 
-#214 spent the run the table above had been waiting for: both arms in one
+#214 spent the run the Status table had been waiting for: both arms in one
 session, one binary, one plugin, interleaved pass by pass and rotated within a
 pass, eight passes each. Medians over passes 2–8, the first pass of each arm
 dropped as the sweep's own first run:
@@ -684,7 +684,7 @@ dropped as the sweep's own first run:
 |---|---|---|---|
 | inner-proof leg | 3.455 s | 5.327 s | **+1.872 s** |
 | the basic phase's wall | 2.343 s | 4.279 s | **+1.936 s** |
-| the rest of the leg | 1.112 s | 1.048 s | −0.064 s |
+| `leg − basic phase` | 1.112 s | 1.048 s | −0.064 s |
 
 The basic phase is the wall in which that arm's eleven basic proofs were
 running — the union of their intervals, not their sum. On native they are
@@ -694,14 +694,35 @@ against proves that take seconds, and the phase is the union of the `ZZ_LOG`
 per-instance intervals from where an instance takes the client to where it
 gives it back.
 
-**The whole gap is that one row.** The rest of the leg — proofman's recursion
-tail and its scheduling, which both arms run on pil2 — is the same on both to
-within the scatter this guest can resolve. Two readings of it disagree: the
-difference of the two columns' medians is −0.064 s, the median of the per-pass
-differences is −0.219 s (native 1.230 s, bridge 1.011 s, sd ~0.2 on each), and
-both sit inside the ~0.2 s floor. The rows above are differences of each
-column's median, which is what makes them sum to the leg's gap exactly; read
-the rest row as "small, sign not established", not as −0.064 s.
+Every difference in this section is between the two columns' medians, which is
+what makes the rows sum to the gap exactly. Where the median of the per-pass
+differences disagrees it is given too: here it is −0.219 s (native 1.230 s,
+bridge 1.011 s, sd ~0.2 on each) against the −0.064 s above, and both sit
+inside the ~0.2 s floor, so read `leg − basic phase` as "small, sign not
+established".
+
+**The gap is the basic-phase row — and `leg − basic phase` is a residual, not
+the recursion's cost.** Both arms run the same seventeen recursive proofs on
+pil2, and the residual holds only the part of them the basic phase did not
+already cover. How much that is moves with how long the basic phase is:
+
+| | native | bridge | native, one basic stream |
+|---|---|---|---|
+| the recursion's wall | 2.640 s | 3.006 s | 2.695 s |
+| of which inside the basic phase, at least | 1.419 s | 1.914 s | 1.965 s |
+| `leg − basic phase` | 1.112 s | 1.048 s | 0.718 s |
+
+The overlap row is `basic + recursion − leg`: both phases sit inside the leg,
+so whatever they cover past its length they cover at once. It is a lower bound
+and it needs no common clock, which matters because the bridge's basic phase is
+read off the bridge's clock and its recursion off proofman's.
+
+So the two arms' residuals coming out close is **not** evidence that the
+recursion costs the same on both. The one-stream column shows the mechanism
+inside one stack: its recursion is unchanged while its residual falls to
+0.718 s, purely because a longer basic phase hides more of it. What the leg
+table establishes is the identity — leg is the basic phase's wall plus whatever
+is left — and that the whole of the gap sits in the wall.
 
 Within the basic phase the bridge achieves 1.00x concurrency — 4.283 s of
 proving in 4.279 s of wall, which is one client doing eleven proves back to
@@ -722,10 +743,13 @@ So the phase's +1.936 s splits into **+0.821 s** that pil2's three streams buy
 it (3.164 → 2.343 s, a 1.35x speedup rather than 3x, because the streams
 contend for one card) and **+1.115 s** by which the bridge's serial prove is
 dearer than pil2's serial prove (4.279 against 3.164 s). With the rest row those
-three sum to the 1.872 s gap. One caveat on the split and not on the sum: the
-headroom knob shrinks pil2's own buffers as well as its stream count, so the
-3.164 s pivot carries that and the two shares either side of it do too. The
-phase share itself does not depend on the pivot at all.
+three sum to the 1.872 s gap. Two caveats on the split and neither on the sum.
+The headroom knob shrinks pil2's own buffers as well as its stream count, so
+the 3.164 s pivot carries that and the shares either side of it do too. And the
+pivot run's leg is not the baseline's with one term swapped: its remainder is
+0.718 s against the baseline arm's 1.112 s, which is the residual above moving
+with the basic phase rather than the recursion changing. The +1.936 s phase
+share depends on neither — it is two walls, each measured on its own arm.
 
 **Of the bridge's serial phase, its own kernels cover 2.58 s.** Three captures
 of the bridge arm put it at 2.58 / 2.59 / 2.58 s — the steadiest figure in this
@@ -752,8 +776,8 @@ which for the same eleven proofs exceed proofman's span for them by 0.19, 0.41
 and 0.51 s over the three one-stream runs — so it is a direction, not a
 subtraction.
 
-What this sizes for a second client (#215), as arithmetic on the rows above
-rather than a measurement: at pil2's own 1.35x the bridge's basic phase would
+What this sizes for a second client (#215), as arithmetic on this section's
+shares rather than a measurement: at pil2's own 1.35x the bridge's basic phase would
 be 3.17 s and its leg about 4.2 s, still over the 4.15 s that 1.2x of native
 allows; at perfect packing the phase cannot go below the 2.58 s of kernel time
 it carries, which puts the leg at about 3.6 s. So a second client is the only
@@ -762,23 +786,49 @@ not on its own close the criterion.
 
 Reproduce: `ZISK_PROVE_FLAGS= bench/run.sh <tag> native|bridge`, the bridge arm
 with `ZZ_EAGER_MODULES=1 ZZ_STAGING_THRESHOLD=0` and run.sh's own `ZZ_CLIENTS=1
-ZZ_MEMORY_FRACTION=0.45`, alternating the arm order pass by pass; then the capture
-recipe in "Profiling" for the phase cut, `bench/pil2_timers.py` on a run at
-`ZZ_GPU_HEADROOM_GB=15` for the one-stream pivot, and `bench/compare_dumps.py`
-between a native and a bridged run's dumps for the byte-gate. Probe warmth
-first: `zz_prove --warm <artifacts> <one AIR>` per plugin the sweep will use.
+ZZ_MEMORY_FRACTION=0.45`, alternating the arm order pass by pass. Probe warmth
+before the first timed run: `zz_prove --warm <artifacts> <one AIR>`, per plugin
+the sweep will use.
 
-**One thing the rotation caught, about init rather than the leg.** A run's
-`INITIALIZING_PROOFMAN` tracks the *previous run's arm*, in both stacks. Of the
-sixteen runs, fifteen have a predecessor, and they split 3.07–3.85 s (n=7)
-after a native run against 4.04–7.74 s (n=8) after a bridged one; dropping the
-two that immediately follow the sweep's start — the runs still filling a cold
-page cache, at 3.851 and 7.737 s — leaves 3.07–3.33 s and 4.04–4.27 s, which
-are disjoint. It is not the arm being timed: native and bridge each appear in
-both groups. The alternation rules out drift. That is a
-candidate for the regime #178 found and could not select ("Bridge start-up"),
-and it means an init figure has to name what ran before it, not only what ran
-beside it.
+Every wall in this section — 2.343, 4.279, 3.164 s and the recursion and
+overlap figures beside them — comes out of **`bench/leg_phases.py <run.log>...`**,
+which is where the union-of-spans arithmetic and the rule for finding a
+bridged run's basic proofs live; hand it a whole arm's logs and it prints the
+median and range per quantity. The one-stream pivot is the same script on a run
+made at `ZZ_GPU_HEADROOM_GB=15`, and `bench/pil2_timers.py` on that run is what
+gives its per-instance timers. For the device idle inside the phase, the
+capture recipe in "Profiling" and `bench/host_idle.py`;
+`bench/compare_dumps.py` between a native and a bridged run's dumps is the
+byte-gate.
+
+**What the rotation caught about init.** A run's `INITIALIZING_PROOFMAN`
+tracks the *previous run's arm*, in both stacks. Of the sixteen runs, fifteen
+have a predecessor, and they split 3.07–3.85 s (n=7) after a native run against
+4.04–7.74 s (n=8) after a bridged one; dropping the two that immediately follow
+the sweep's start — the runs still filling a cold page cache, at 3.851 and
+7.737 s — leaves 3.07–3.33 s and 4.04–4.27 s, which are disjoint. It is not the
+arm being timed: native and bridge each appear in both groups, and the
+alternation rules out drift. That is a candidate for the regime #178 found and
+could not select ("Bridge start-up"), and it is worth about 0.95 s — four to
+five times the arm difference underneath it.
+
+Which is why the arm difference has to be read *within* a predecessor group,
+and can be: the rotation puts both arms in both groups.
+
+| init | after a native run | after a bridged run |
+|---|---|---|
+| native | 3.101 s [3.074–3.109], n=3 | 4.081 s [4.042–4.133], n=4 |
+| bridge | 3.320 s [3.307–3.326], n=3 | 4.254 s [4.246–4.269], n=3 |
+| bridge − native | +0.219 s | +0.173 s |
+
+Ranges are disjoint in both groups, and the two groups agree on the difference
+to 0.046 s while disagreeing on the level by 0.95 s. Add each bridged run's own
+client creation, which proofman's timer starts after — median 0.186 s,
+[0.183–0.309], from `ZZ_LOG`'s `bridge up` line — and the bridge is 0.36–0.41 s
+behind. Both readings are what the Status table's init row carries, and both
+agree with #178's pre-bump pair (0.10–0.23 s by the timer, 0.28–0.41 s with
+client creation). The two runs dropped above are dropped for the level, not the
+difference: they are one arm each and sit either side of it.
 
 ### The levers, each closed with a measurement
 
