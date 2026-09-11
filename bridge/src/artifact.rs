@@ -594,14 +594,23 @@ impl Artifact {
         // Zipped with the manifest, so each output carries the program that
         // made it and the name it is bound under -- the two things a live-set
         // row has to say to be attributable to a stage of the schedule.
-        Ok(outs
+        let outs: Vec<Buf> = outs
             .into_iter()
             .zip(&info.outputs)
             .map(|(b, spec)| {
                 let _tag = crate::memlog::record(&format!("{name}/{}", spec.name), spec.elems() * spec.elem_bytes());
                 Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(b), _tag })
             })
-            .collect())
+            .collect();
+        // After the outputs are registered, not before: the whole value of
+        // the line is that what the allocator holds beyond the registry is
+        // XLA's own, and a reading taken while this program's outputs are
+        // still unregistered reports them as XLA's -- on a wide AIR that is
+        // over a gigabyte of the section the program was run to produce.
+        if crate::memlog::per_program() {
+            crate::memlog::report_program(name, self.device_totals());
+        }
+        Ok(outs)
     }
 
     /// `run`, with the outputs stored into `env` under their manifest names.

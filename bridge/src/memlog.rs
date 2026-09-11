@@ -30,17 +30,48 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-/// Whether a prove reports its live device buffers stage by stage
-/// (`ZZ_MEM_STAGES`).
-pub fn enabled() -> bool {
-    static E: OnceLock<bool> = OnceLock::new();
-    *E.get_or_init(|| enabled_from(std::env::var("ZZ_MEM_STAGES").ok().as_deref()))
+/// `ZZ_MEM_STAGES` as a level: `1` reports the live set at each stage
+/// boundary, `2` adds a line after every program.
+fn level() -> u32 {
+    static L: OnceLock<u32> = OnceLock::new();
+    *L.get_or_init(|| level_from(std::env::var("ZZ_MEM_STAGES").ok().as_deref()))
 }
 
-/// The decision on its own, so the table in the tests can state it. Same
-/// spelling as `ZZ_MEM_STATS`: set to anything but `0` or empty.
-fn enabled_from(value: Option<&str>) -> bool {
-    !matches!(value.filter(|s| !s.is_empty()), None | Some("0"))
+/// The levels on their own, so the table in the tests can state them. Read
+/// like `ZZ_LOG`: a number, or `1` for any other non-empty value.
+fn level_from(value: Option<&str>) -> u32 {
+    match value.map(str::trim) {
+        None | Some("") | Some("0") => 0,
+        Some(s) => s.parse().unwrap_or(1),
+    }
+}
+
+/// Whether a prove reports its live device buffers stage by stage.
+pub fn enabled() -> bool {
+    level() >= 1
+}
+
+/// Whether every program is followed by a line of the allocator's totals
+/// (`ZZ_MEM_STAGES=2`).
+///
+/// A stage boundary cannot see the high-water inside a stage, and on a wide
+/// AIR most of the peak is inside one: the extend's output exists beside its
+/// input, and a section stays bound until the stage that removes it ends. The
+/// program lines bracket each execution, so the program the allocator's peak
+/// rose across is named rather than inferred.
+pub fn per_program() -> bool {
+    level() >= 2
+}
+
+/// The allocator's totals after one program, for the per-program level.
+pub fn report_program(name: &str, t: Totals) {
+    let rows = snapshot();
+    let live: usize = rows.iter().map(|r| r.2).sum();
+    zzlog!(
+        "mem prog {name}: in_use {}, peak {}, live {live}",
+        opt(t.in_use),
+        opt(t.peak_in_use),
+    );
 }
 
 /// One live device buffer: where it came from and how large it is.
@@ -233,11 +264,20 @@ mod tests {
     fn the_reporting_is_off_unless_asked_for() {
         // Off by default: the registry costs a lock per buffer and the lines
         // land in a log the readers in bench/ parse.
-        assert!(!enabled_from(None));
-        assert!(!enabled_from(Some("")));
-        assert!(!enabled_from(Some("0")));
-        assert!(enabled_from(Some("1")));
-        assert!(enabled_from(Some("yes")));
+        assert_eq!(level_from(None), 0);
+        assert_eq!(level_from(Some("")), 0);
+        assert_eq!(level_from(Some("0")), 0);
+        assert_eq!(level_from(Some("1")), 1);
+        assert_eq!(level_from(Some("yes")), 1);
+    }
+
+    #[test]
+    fn the_per_program_lines_need_asking_for_separately() {
+        // One line per program is ~34 more per prove than the boundaries, and
+        // a run only wants them when the question is which program the peak
+        // is inside. `1` must not turn them on by accident.
+        assert_eq!(level_from(Some("2")), 2);
+        assert!(level_from(Some("1")) >= 1 && level_from(Some("1")) < 2);
     }
 
     #[test]

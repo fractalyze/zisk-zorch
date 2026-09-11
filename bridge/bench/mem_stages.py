@@ -59,12 +59,20 @@ from bridge.bench import run_log  # noqa: E402
 
 MIB = 1 << 20
 
+# A prove whose boundaries all report the same high-water did not set it: the
+# allocator's peak is the client's, over its whole life, so only the prove that
+# raised it can have a stage named from it.
+NO_PEAK = "not reached in this prove -- the client high-water was set earlier"
+
 HEAD = re.compile(
     r"\[zz \+\s*[\d.]+\] mem stage (\S+): in_use (-|\d+), peak (-|\d+),"
     r" pool (-|\d+), live (\d+) in (\d+) buffers(, INVENTORY INCOMPLETE)?"
 )
 BUF = re.compile(r"\[zz \+\s*[\d.]+\] mem stage (\S+) buf (\S+) (\d+) (\d+)")
 RUN = re.compile(r"\[zz \+\s*[\d.]+\]\s+run (\S+): enqueue")
+PROG = re.compile(
+    r"\[zz \+\s*[\d.]+\] mem prog (\S+): in_use (-|\d+), peak (-|\d+), live (\d+)"
+)
 
 
 def _opt(text: str) -> int | None:
@@ -85,6 +93,9 @@ class Stage:
         self.incomplete = incomplete
         # (origin, count, bytes), largest first as the bridge wrote them.
         self.rows: list[tuple[str, int, int]] = []
+        # The programs that ran while this stage was open, in order. Only at
+        # `ZZ_MEM_STAGES=2`, which is what puts a mark after each program.
+        self.programs: list[str] = []
 
     @property
     def unnamed(self) -> int | None:
@@ -93,14 +104,49 @@ class Stage:
         return None if self.in_use is None else self.in_use - self.live
 
 
-class Prove:
-    """One instance's prove: its stages in order, and the programs it ran."""
+class Mark:
+    """One reading of the allocator, and what ran just before it: a program at
+    `ZZ_MEM_STAGES=2`, or the tail of the stage that just closed."""
 
-    def __init__(self, stages: list[Stage], programs: list[str]):
+    def __init__(self, ran: str, in_use, peak, live):
+        self.ran = ran
+        self.in_use = in_use
+        self.peak = peak
+        self.live = live
+
+
+class Prove:
+    """One instance's prove: its stages in order, the programs it ran, and --
+    at `ZZ_MEM_STAGES=2` -- a reading of the allocator after each of them."""
+
+    def __init__(self, stages: list[Stage], programs: list[str], marks: list[Mark]):
         self.stages = stages
-        self.programs = programs
+        self.marks = marks
+        # At `ZZ_MEM_STAGES=2` the marks carry the program order themselves,
+        # and they are the list to read: a mark is written where the reading
+        # was taken, so the order here and the order the stages were credited
+        # from cannot disagree. The `run` lines are the fallback for level 1,
+        # where there are no marks -- and they only exist at `ZZ_LOG=2`.
+        from_marks = [m.ran for m in marks if not m.ran.startswith("(")]
+        self.programs = from_marks or programs
         self.air = "?"
         self.index = -1
+
+    @property
+    def peak_program(self) -> tuple[str, int] | None:
+        """The program the allocator's peak last rose across, and by how many
+        bytes, or `None` without the per-program level.
+
+        This is the one the stage table cannot give: most of a wide AIR's
+        high-water is inside a stage rather than at either end of it, so the
+        stage that holds the peak names a span of a dozen programs while the
+        rise itself belongs to one of them."""
+        rose = None
+        marks = [m for m in self.marks if m.peak is not None]
+        for before, after in zip(marks, marks[1:]):
+            if after.peak > before.peak:
+                rose = (after.ran, after.peak - before.peak)
+        return rose
 
     @property
     def peak_stage(self) -> str | None:
@@ -132,6 +178,7 @@ def proves(log: str) -> list[Prove]:
     out: list[Prove] = []
     stages: list[Stage] = []
     programs: list[str] = []
+    marks: list[Mark] = []
     by_name: dict[str, Stage] = {}
     instances = iter(run_log.instances(log))
     for line in log.splitlines():
@@ -155,11 +202,22 @@ def proves(log: str) -> list[Prove]:
             )
             stages.append(stage)
             by_name[name] = stage
+            # A boundary is a reading too, and what ran before it is whatever
+            # the closing stage did after its last program.
+            ran = f"(end of {stages[-2].name})" if len(stages) > 1 else "(prove start)"
+            marks.append(Mark(ran, stage.in_use, stage.peak, stage.live))
             continue
         buf = BUF.search(line)
         if buf:
             name, origin, count, size = buf.groups()
             by_name[name].rows.append((origin, int(count), int(size)))
+            continue
+        prog = PROG.search(line)
+        if prog:
+            name, in_use, peak, live = prog.groups()
+            marks.append(Mark(name, _opt(in_use), _opt(peak), int(live)))
+            if stages:
+                stages[-1].programs.append(name)
             continue
         run = RUN.search(line)
         if run:
@@ -173,15 +231,15 @@ def proves(log: str) -> list[Prove]:
             instance = next(instances, None)
             if not stages:
                 continue
-            prove = Prove(stages, programs)
+            prove = Prove(stages, programs, marks)
             if instance is not None:
                 prove.air, prove.index = instance.air, instance.index
             out.append(prove)
-            stages, programs, by_name = [], [], {}
+            stages, programs, marks, by_name = [], [], [], {}
     return out
 
 
-def readers(manifest: dict, origin: str, programs: list[str]) -> list[str]:
+def readers_of(manifest: dict, origin: str, programs: list[str]) -> list[str]:
     """The programs this run ran that bind `origin`'s buffer as an input, in
     the order they ran. The last of them is the buffer's last reader.
 
@@ -205,6 +263,39 @@ def readers(manifest: dict, origin: str, programs: list[str]) -> list[str]:
             seen.add(program)
             order.append(program)
     return order
+
+
+def held_past_last_reader(
+    prove: Prove, stage: Stage, manifest: dict
+) -> list[tuple[str, int, str]]:
+    """The rows alive at `stage` whose last reader already ran, as
+    `(origin, bytes, last reader)`.
+
+    This is attribution category (a) computed rather than argued: a section
+    still bound after the last program that reads it is holding device memory
+    for nothing this prove will do. It needs `ZZ_MEM_STAGES=2`, because
+    without a mark per program there is nothing to say which stage a reader
+    ran in; at level 1 it returns nothing rather than guessing.
+
+    A row whose last reader cannot be resolved is left out, not assumed dead:
+    the setup trees' layers are bound under names the driver renames, and
+    calling them unread would invent the largest finding on the page."""
+    order = [s.name for s in prove.stages]
+    if not any(s.programs for s in prove.stages):
+        return []
+    ran_in = {
+        program: order.index(s.name) for s in prove.stages for program in s.programs
+    }
+    here = order.index(stage.name)
+    out = []
+    for origin, _, size in stage.rows:
+        readers = readers_of(manifest, origin, prove.programs)
+        if not readers:
+            continue
+        last = readers[-1]
+        if last in ran_in and ran_in[last] < here:
+            out.append((origin, size, last))
+    return out
 
 
 def report(prove: Prove, manifest: dict | None, finished: bool) -> str:
@@ -231,17 +322,32 @@ def report(prove: Prove, manifest: dict | None, finished: bool) -> str:
     peak = prove.peak_stage
     lines += [
         "",
-        f"peak stage: {peak or 'not derivable -- no allocator peak in this log'}",
+        f"peak stage: {peak or NO_PEAK}",
     ]
+    rose = prove.peak_program
+    if rose:
+        lines.append(f"peak rose across: {rose[0]}, by {rose[1] / MIB:,.0f} MiB")
     if peak:
         stage = prove.stage(peak)
         lines += ["", f"live set entering {peak} (MiB):", ""]
         for origin, count, size in stage.rows:
-            last = readers(manifest, origin, prove.programs) if manifest else []
+            last = readers_of(manifest, origin, prove.programs) if manifest else []
             lines.append(
                 f"  {origin:<34} {count:>3}  {size / MIB:>9,.0f}"
                 f"  last reader: {last[-1] if last else '?'}"
             )
+        if manifest:
+            past = held_past_last_reader(prove, stage, manifest)
+            total = sum(size for _, size, _ in past)
+            lines += [
+                "",
+                f"of which held past their last reader: {total / MIB:,.0f} MiB",
+                "",
+            ]
+            for origin, size, last in past:
+                lines.append(
+                    f"  {origin:<34}      {size / MIB:>9,.0f}  last read by {last}"
+                )
     return "\n".join(lines)
 
 
