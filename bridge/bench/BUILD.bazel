@@ -46,6 +46,22 @@ py_test(
 )
 
 py_library(
+    name = "mem_stages",
+    srcs = ["mem_stages.py"],
+    deps = [":run_log"],
+)
+
+py_test(
+    name = "mem_stages_test",
+    size = "small",
+    srcs = ["mem_stages_test.py"],
+    deps = [
+        ":mem_stages",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
     name = "mem_budget",
     srcs = ["mem_budget.py"],
     deps = [":run_log"],
