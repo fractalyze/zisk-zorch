@@ -167,7 +167,9 @@ fn main() {
     let airvalues = words(&case.join("airvalues.bin"));
     let proofvalues = words(&case.join("proofvalues.bin"));
     let global_challenge = words(&case.join("global_challenge.bin"));
-    let inputs = InstanceInputs {
+    // Built per prove: `prove` takes the inputs, uploads included, so each
+    // repeat uploads its own and releases them at their last reader.
+    let inputs = || InstanceInputs {
         trace: &trace,
         publics: &publics,
         airvalues: &airvalues,
@@ -185,7 +187,7 @@ fn main() {
     for i in 0..=repeat {
         let t = Instant::now();
         let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-        let out = driver.prove(&inputs, &mut transcript, &mut proof).unwrap();
+        let out = driver.prove(inputs(), &mut transcript, &mut proof).unwrap();
         let label = if i == 0 { "proved" } else { "warm prove" };
         eprintln!("{label} {:.3} s (nonce {})", t.elapsed().as_secs_f64(), out.nonce);
         let Some(expected) = expected.as_ref() else { continue };

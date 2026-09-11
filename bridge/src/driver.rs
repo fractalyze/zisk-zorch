@@ -79,7 +79,10 @@ pub struct Uploaded {
 /// behind another on the same client can have its uploads (a gigabyte for
 /// Main, DMA'd straight out of pageable host memory: the plugin stages a
 /// transfer through pinned memory only below `staging_threshold_bytes`,
-/// which defaults to 1 GiB) done before its turn.
+/// which defaults to 1 GiB) done before its turn. The caller hands the
+/// result back on `InstanceInputs::uploaded`, which `prove` takes: the
+/// buffers belong to that prove, and a second handle kept anywhere else
+/// would outlive the releases below and hold the trace to the last opening.
 pub fn upload_inputs(art: &Artifact, inp: &InstanceInputs) -> Result<Uploaded, Error> {
     let m = &art.manifest;
     let spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
@@ -264,7 +267,7 @@ impl AirDriver {
 
     /// Prove one instance through the artifacts, writing `proof_words()`
     /// words into `proof_out`.
-    pub fn prove(&self, inp: &InstanceInputs, transcript: &mut HostTranscript, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+    pub fn prove(&self, mut inp: InstanceInputs, transcript: &mut HostTranscript, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
         let fixed = self.fixed.as_ref().ok_or("prove: set_fixed first")?;
         let art = &self.artifact;
         let m = &art.manifest;
@@ -290,9 +293,11 @@ impl AirDriver {
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
         let mut env = fixed.clone();
-        let up = match &inp.uploaded {
-            Some(u) => Uploaded { trace: u.trace.clone(), publics: u.publics.clone(), airvalues: u.airvalues.clone(), proofvalues: u.proofvalues.clone() },
-            None => upload_inputs(art, inp)?,
+        // Taken rather than cloned: from here the env holds the only handle
+        // to each uploaded section, so removing one below actually frees it.
+        let up = match inp.uploaded.take() {
+            Some(u) => u,
+            None => upload_inputs(art, &inp)?,
         };
         env.insert("publics".into(), up.publics);
         env.insert("airvalues".into(), up.airvalues);
@@ -317,7 +322,10 @@ impl AirDriver {
         // Nothing after logup reads the base trace, and nothing after
         // commit2 the base cm2: a gigabyte or more each on a wide AIR,
         // released before the quotient's peak (the plugin defers the free
-        // until the enqueued work is done).
+        // until the enqueued work is done). `Artifact::run` binds every
+        // input by name, so an export that gained a later reader fails on
+        // the missing bind rather than proving against a buffer that is
+        // gone.
         env.remove("trace");
         art.run_into("commit2", &mut env, None)?;
         env.remove("cm2");
