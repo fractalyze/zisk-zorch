@@ -54,7 +54,14 @@ import statistics
 import sys
 import typing
 
-from bridge.bench.nsys_trace import (
+# Under the `bench/h2d_overlap.py ...` recipe in docs/bridge.md "Profiling"
+# Python puts this file's own directory on sys.path rather than the repo root,
+# so the package import below cannot resolve on its own. Under bazel the module
+# is imported as `bridge.bench.h2d_overlap` and __package__ is already set.
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+
+from bridge.bench.nsys_trace import (  # noqa: E402
     BRIDGE,
     PIL2,
     UNITS_BYTES,
