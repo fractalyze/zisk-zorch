@@ -3,11 +3,11 @@
 //! keeping the key's fixed sections resident so a prove uploads only the
 //! instance.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::artifact::{Artifact, Buf, Env};
-use crate::manifest::{readers_of, Manifest, ProgramInfo, StageOnly};
+use crate::manifest::{Manifest, StageOnly};
 use crate::transcript::{HostTranscript, DIGEST};
 use crate::Error;
 
@@ -137,36 +137,6 @@ fn push_values3(out: &mut Vec<u64>, words: &[u64], stages: &[StageOnly]) {
 fn release_tree(env: &mut Env, section: &str, layers_prefix: &str) {
     env.remove(section);
     env.retain(|name, _| !name.starts_with(layers_prefix));
-}
-
-/// The sections `prove` drops before it ends, each with the programs that
-/// may still read it. On a wide AIR these are the two largest buffers the
-/// prove owns outright, and both are read for the last time in stage 1,
-/// stages before the quotient's peak — so the schedule below drops them as
-/// their last reader finishes rather than at the end. A release ahead of a
-/// reader would leave a program with no buffer to bind, so the export's
-/// signatures are checked against this table on every prove instead of
-/// being trusted to match it.
-const RELEASED_EARLY: &[(&str, &[&str])] =
-    &[("trace", &["witness_calc", "commit1", "logup"]), ("cm2", &["commit2"])];
-
-/// Fail if a program outside `RELEASED_EARLY`'s reader list reads a section
-/// the prove releases. Cheap enough to run per prove: a few string compares
-/// over the manifest's programs.
-fn check_release_points(air: &str, programs: &BTreeMap<String, ProgramInfo>) -> Result<(), Error> {
-    for (section, readers) in RELEASED_EARLY {
-        let late: Vec<&str> =
-            readers_of(programs, section).into_iter().filter(|p| !readers.contains(p)).collect();
-        if !late.is_empty() {
-            return Err(format!(
-                "{air}: prove releases {section} after {}, but {} reads it",
-                readers.last().unwrap(),
-                late.join(", ")
-            )
-            .into());
-        }
-    }
-    Ok(())
 }
 
 impl AirDriver {
@@ -301,7 +271,6 @@ impl AirDriver {
         let fixed = self.fixed.as_ref().ok_or("prove: set_fixed first")?;
         let art = &self.artifact;
         let m = &art.manifest;
-        check_release_points(&m.air, &m.programs)?;
         let nbe = m.n_bits_ext;
         let in_spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
             m.program(prog)?.input(input).cloned().ok_or_else(|| format!("{prog}: no input {input}").into())
@@ -353,7 +322,10 @@ impl AirDriver {
         // Nothing after logup reads the base trace, and nothing after
         // commit2 the base cm2: a gigabyte or more each on a wide AIR,
         // released before the quotient's peak (the plugin defers the free
-        // until the enqueued work is done).
+        // until the enqueued work is done). `Artifact::run` binds every
+        // input by name, so an export that gained a later reader fails on
+        // the missing bind rather than proving against a buffer that is
+        // gone.
         env.remove("trace");
         art.run_into("commit2", &mut env, None)?;
         env.remove("cm2");
@@ -511,56 +483,5 @@ impl AirDriver {
         }
         proof_out[..proof.len()].copy_from_slice(&proof);
         Ok(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::manifest::Spec;
-
-    fn spec(name: &str) -> Spec {
-        Spec { name: name.into(), dtype: "goldilocks".into(), dims: vec![1, 1] }
-    }
-
-    fn program(inputs: &[&str]) -> ProgramInfo {
-        ProgramInfo {
-            file: "x.mlirbc".into(),
-            inputs: inputs.iter().map(|n| spec(n)).collect(),
-            outputs: Vec::new(),
-        }
-    }
-
-    /// The signatures every export carries: `trace` read by the stage-1
-    /// programs, `cm2` only by the commit that extends it, and `const_ext`
-    /// read right through the back half, which is why it is not released.
-    fn programs() -> BTreeMap<String, ProgramInfo> {
-        [
-            ("witness_calc", program(&["trace", "const_base"])),
-            ("commit1", program(&["trace"])),
-            ("logup", program(&["trace", "const_base", "challenges"])),
-            ("commit2", program(&["cm2"])),
-            ("quotient", program(&["cm1_ext", "cm2_ext", "const_ext"])),
-            ("deep", program(&["cm1_ext", "cm2_ext", "const_ext", "evals"])),
-            ("open_const", program(&["const_ext", "positions"])),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
-    }
-
-    #[test]
-    fn an_export_that_reads_no_released_section_late_passes() {
-        check_release_points("Main_n22", &programs()).unwrap();
-    }
-
-    /// The check earns its place only if it fires: an export that read the
-    /// trace in a later stage would bind a buffer `prove` has dropped.
-    #[test]
-    fn a_reader_past_the_release_point_is_named() {
-        let mut programs = programs();
-        programs.insert("evals".into(), program(&["trace", "lev"]));
-        let err = check_release_points("Main_n22", &programs).unwrap_err().to_string();
-        assert_eq!(err, "Main_n22: prove releases trace after logup, but evals reads it");
     }
 }

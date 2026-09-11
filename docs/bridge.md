@@ -1418,16 +1418,25 @@ is unmeasured here for that reason, not overlooked.
 
   Where a client's 3.2 GiB could come from, sized above and **in this
   order**: the 1.19–1.22 GiB base trace the prove was holding past its last
-  reader (#219, done — worth 0.63 GiB of arena), then the 2.75 GiB
-  `const_ext` it holds resident, which only becomes the binding shape once
-  the trace is gone (#219 measured that hand-over), then the 2.38–2.44 GiB
-  `cm1_ext` the running prove computes, with at most 1.2 GiB of placement
-  above the live set throughout (#220). Not from the fixed-section
-  read-ahead, which the table above measures as not binding, and not from
-  pil2, which the two bullets above close off. An earlier version of this
-  paragraph led with `const_ext` on the strength of its being the largest
-  single allocation; the bullets below are why that is an argument about
-  ordering rather than about size.
+  reader (#219, done — worth 0.31–0.95 GiB of arena, a bracket rather than a
+  figure for the reason the walk below gives), then the 2.75 GiB `const_ext`
+  it holds resident, which only becomes the binding shape once the trace is
+  gone (#219 measured that hand-over), then the 2.38–2.44 GiB `cm1_ext` the
+  running prove computes, with at most 1.2 GiB of placement above the live
+  set throughout (#220). Not from the fixed-section read-ahead, which the
+  table above measures as not binding, and not from pil2, which the two
+  bullets above close off. An earlier version of this paragraph led with
+  `const_ext` on the strength of its being the largest single allocation;
+  the bullets below are why that is an argument about ordering rather than
+  about size.
+
+  **The `const_ext` step is not filed and nobody is working it.** #219
+  closed on the trace release alone: releasing `const_ext` from stage 1 is
+  worth 0.6–1.2 GiB, needs a new export program and a re-export of the 11
+  AIRs, and leaves `Main_n22`'s `cm1_ext` + `cm2_ext` at 8.80–8.87 GiB — so
+  a client would still be above the 8.47 GiB two of them can each have. The
+  order above is what a future attempt at a second client has to work
+  through, not a queue with owners.
 
   Reproduce a cell, then read the table back out of the runs it made:
 
