@@ -20,10 +20,10 @@ from bridge.bench import mem_budget
 GIB = 1 << 30
 
 
-def arena(gib: float) -> str:
+def arena(gib: float, allocator: str = "BFC") -> str:
     return (
         f"I0911 16:51:42.318202 4001412 gpu_helpers.cc:141] XLA backend"
-        f" allocating {int(gib * GIB)} bytes on device 0 for BFCAllocator.\n"
+        f" allocating {int(gib * GIB)} bytes on device 0 for {allocator}Allocator.\n"
     )
 
 
@@ -87,11 +87,26 @@ class ArenaTest(absltest.TestCase):
         with self.assertRaises(ValueError):
             _ = run.share
 
+    def test_the_allocator_is_read_from_the_line_that_carries_the_arena(self):
+        """The arm in a table comes from what the plugin says it built, not
+        from the kind the sweep meant to set: `ZZ_ALLOCATOR` misspelled falls
+        back to the default allocator and the run is otherwise identical."""
+        bfc = mem_budget.Run(arena(11.60) + VERIFIED + exited(0))
+        asyn = mem_budget.Run(arena(11.60, "CudaAsync") + VERIFIED + exited(0))
+        self.assertEqual(bfc.allocator, "BFC")
+        self.assertEqual(asyn.allocator, "CudaAsync")
+
+    def test_clients_on_different_allocators_are_an_error(self):
+        run = mem_budget.Run(arena(8.47) + arena(8.47, "CudaAsync"))
+        with self.assertRaises(ValueError):
+            _ = run.allocator
+
     def test_a_native_run_has_no_arena(self):
         run = mem_budget.Run(
             pil2_sees(30.9, basic=3, recursive=1) + VERIFIED + exited(0)
         )
         self.assertIsNone(run.share)
+        self.assertIsNone(run.allocator)
         self.assertEqual(run.outcome, "verified")
 
 
@@ -176,6 +191,23 @@ class WalkTest(absltest.TestCase):
         self.assertIn("2/2", [ln.split()[-1] for ln in lines if "11.60" in ln][0])
         self.assertIn("1/2", [ln.split()[-1] for ln in lines if "10.66" in ln][0])
         self.assertIn("0/1", [ln.split()[-1] for ln in lines if "8.47" in ln][0])
+
+    def test_the_table_keeps_allocators_apart(self):
+        """The same arena under two kinds is two different statements -- one is
+        a ceiling every allocation is placed inside, the other a claim the
+        pool grows past -- so a merged cell would read as a floor nobody
+        measured."""
+        runs = [
+            mem_budget.Run(arena(10.66) + CLIENT_OOM + exited(134)),
+            mem_budget.Run(arena(10.66, "CudaAsync") + VERIFIED + exited(0)),
+        ]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mem_budget.walk(runs)
+        cells = [ln for ln in out.getvalue().splitlines() if "10.66" in ln]
+        self.assertLen(cells, 2)
+        self.assertIn("0/1", [c for c in cells if "BFC" in c][0])
+        self.assertIn("1/1", [c for c in cells if "CudaAsync" in c][0])
 
     def test_the_table_keeps_client_counts_apart(self):
         """One client at 8.47 GiB and two at 8.47 GiB are different runs; a

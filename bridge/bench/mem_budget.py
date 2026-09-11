@@ -38,6 +38,18 @@ survives a rescue, so a cell scored on either alone is wrong in a direction
 that raises the floor. Both live in `run_log` because `summarize.py` scores on
 them too.
 
+**The allocator is not the arm that was set.** `ZZ_ALLOCATOR` asks for a kind;
+the plugin names the one it built on the same line it prints the arena on, so
+the arm in the table below is read from the run rather than from what the
+sweep meant to set -- a spelling the plugin does not know falls back to its
+default without the sweep noticing. The kind also changes what the arena
+*means*: under BFC it is a ceiling as well as a claim, and every allocation is
+placed inside it, while under `cuda_async` it is the release threshold of the
+device's memory pool, which is claimed up front but grows past it while the
+card has room. A pass at a smaller arena is therefore not the same statement
+in the two columns, and the table keeps them apart for that reason rather than
+for tidiness.
+
 **A failing run's `MaxInUse` is truncated at the abort**, so it is a lower
 bound on what that arena had to hold, never the working set; and
 `MaxAllocSize` is the largest single allocation, which is not the floor
@@ -64,7 +76,9 @@ from bridge.bench import run_log  # noqa: E402
 
 GIB = 1 << 30
 
-ARENA = re.compile(r"XLA backend allocating (\d+) bytes on device \d+ for BFCAllocator")
+ARENA = re.compile(
+    r"XLA backend allocating (\d+) bytes on device \d+ for (\w+)Allocator"
+)
 PIL2_SEES = re.compile(r"Using minimum memory across \d+ GPUs: ([\d.]+) GB")
 PIL2_NEEDS = re.compile(
     r"Insufficient memory\. Need ([\d.]+) GB but only ([\d.]+) GB available"
@@ -86,7 +100,9 @@ class Run:
     """One prove's memory story, read out of its log."""
 
     def __init__(self, log: str):
-        self.arenas = [int(b) / GIB for b in ARENA.findall(log)]
+        claimed = ARENA.findall(log)
+        self.arenas = [int(b) / GIB for b, _ in claimed]
+        self.allocators = [kind for _, kind in claimed]
         sees = PIL2_SEES.search(log)
         self.pil2_sees = float(sees.group(1)) if sees else None
         needs = PIL2_NEEDS.search(log)
@@ -123,6 +139,17 @@ class Run:
         return self.arenas[0]
 
     @property
+    def allocator(self) -> str | None:
+        """Which allocator the plugin built, in its own words. A run whose
+        clients differ is a reading error rather than a configuration, as with
+        the arena."""
+        if not self.allocators:
+            return None
+        if len(set(self.allocators)) > 1:
+            raise ValueError(f"clients built different allocators: {self.allocators}")
+        return self.allocators[0]
+
+    @property
     def outcome(self) -> str:
         if self.completed:
             # An out-of-memory in a run that finished is one the bridge caught
@@ -144,7 +171,9 @@ def report(path: pathlib.Path, run: Run) -> None:
     if share is None:
         print("   no client arena in this log (native run, or the fraction was unset)")
     else:
-        print(f"   {clients} client(s) x {share:.2f} GiB arena")
+        print(
+            f"   {clients} client(s) x {share:.2f} GiB arena, {run.allocator} allocator"
+        )
     if run.pil2_sees is not None:
         line = f"   pil2 sees {run.pil2_sees:.3f} GB"
         if run.streams:
@@ -162,18 +191,22 @@ def walk(runs: list[Run]) -> None:
     """The walk table: how many runs at each arena size finished. A cell at
     the boundary is a race rather than a threshold (#188), so the count is
     what is quoted and a cell with one run is not a floor."""
-    cells: dict[tuple[int, float], list[bool]] = collections.defaultdict(list)
+    cells: dict[tuple[int, str, float], list[bool]] = collections.defaultdict(list)
     for run in runs:
         if run.share is not None:
-            cells[(len(run.arenas), round(run.share, 2))].append(run.completed)
+            key = (len(run.arenas), run.allocator, round(run.share, 2))
+            cells[key].append(run.completed)
     if not cells:
         return
     print(f"== {len(runs)} logs")
-    print(f"   {'clients':>7}  {'arena':>10}  passes")
-    for (clients, share), outcomes in sorted(
-        cells.items(), key=lambda kv: (kv[0][0], -kv[0][1])
+    print(f"   {'clients':>7}  {'allocator':>12}  {'arena':>10}  passes")
+    for (clients, allocator, share), outcomes in sorted(
+        cells.items(), key=lambda kv: (kv[0][0], kv[0][1], -kv[0][2])
     ):
-        print(f"   {clients:>7}  {share:7.2f} GiB  {sum(outcomes)}/{len(outcomes)}")
+        print(
+            f"   {clients:>7}  {allocator:>12}  {share:7.2f} GiB "
+            f" {sum(outcomes)}/{len(outcomes)}"
+        )
 
 
 def main(argv: list[str]) -> int:
