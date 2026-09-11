@@ -10,7 +10,10 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 # than one reader live in a module of their own so they cannot drift:
 # :nsys_trace owns the span algebra and which prover a kernel belongs to,
 # :run_log owns the bridge's per-instance line and whether a run finished.
-# run.sh drives one prove; see the page's "Running".
+# run.sh drives one prove; see the page's "Running". :pagecache is the odd one
+# out -- it reads the host rather than a run, because proofman's init reads
+# gigabytes of the proving key before it sizes anything and pays disk for what
+# the page cache does not hold, so run.sh warms that set before every run.
 
 py_library(
     name = "nsys_trace",
@@ -89,6 +92,21 @@ py_test(
     srcs = ["summarize_test.py"],
     deps = [
         ":summarize",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
+    name = "pagecache",
+    srcs = ["pagecache.py"],
+)
+
+py_test(
+    name = "pagecache_test",
+    size = "small",
+    srcs = ["pagecache_test.py"],
+    deps = [
+        ":pagecache",
         requirement("absl_py"),
     ],
 )
