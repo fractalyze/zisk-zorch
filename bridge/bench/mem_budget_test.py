@@ -86,6 +86,13 @@ class ArenaTest(absltest.TestCase):
 
 
 class OutcomeTest(absltest.TestCase):
+    def test_the_shortfall_comes_from_the_refusal_itself(self):
+        """Not from `Using minimum memory`, which pil2 prints on another line
+        and a log carrying the refusal need not have at all."""
+        run = mem_budget.Run(arena(8.47) * 2 + REFUSED_WITH_FIGURES)
+        self.assertIsNone(run.pil2_sees)
+        self.assertAlmostEqual(run.pil2_needs - run.pil2_available, 0.076287, places=5)
+
     def test_both_of_pil2s_sentences_are_a_refusal(self):
         with_figures = mem_budget.Run(
             arena(8.47) * 2 + pil2_sees(12.828) + REFUSED_WITH_FIGURES

@@ -5,7 +5,7 @@ client claimed, what pil2 was left and what it needs, and -- when the run died
 docs/bridge.md "Memory budget" comes from, so a floor can be re-derived from
 logs already on disk instead of from a scratch script.
 
-Three things this reads that are easy to get wrong by hand, and are why the
+Four things this reads that are easy to get wrong by hand, and are why the
 numbers here are read out of the run rather than computed beside it.
 
 **The fraction is not the card.** `ZZ_MEMORY_FRACTION` is divided by the
@@ -77,12 +77,17 @@ class Run:
         sees = PIL2_SEES.search(log)
         self.pil2_sees = float(sees.group(1)) if sees else None
         needs = PIL2_NEEDS.search(log)
+        # Both figures come from the refusal itself, so the shortfall below
+        # reconciles within one sentence rather than against `pil2_sees`,
+        # which pil2 prints on a different line and need not be there at all.
         self.pil2_needs = float(needs.group(1)) if needs else None
+        self.pil2_available = float(needs.group(2)) if needs else None
         self.pil2_refused = bool(needs) or bool(PIL2_CONFIG.search(log))
         streams = PIL2_STREAMS.search(log)
-        self.streams = (
-            (int(streams.group(1)), int(streams.group(2))) if streams else None
-        )
+        if streams:
+            self.streams = (int(streams.group(1)), int(streams.group(2)))
+        else:
+            self.streams = None
         self.verified = bool(VERIFIED.search(log))
         oom = CLIENT_OOM.search(log)
         self.oom_instance = int(oom.group(1)) if oom else None
@@ -120,14 +125,12 @@ def report(path: pathlib.Path, run: Run) -> None:
     else:
         print(f"   {clients} client(s) x {share:.2f} GiB arena")
     if run.pil2_sees is not None:
-        streams = (
-            f", {run.streams[0]} basic / {run.streams[1]} recursive streams"
-            if run.streams
-            else ""
-        )
-        print(f"   pil2 sees {run.pil2_sees:.3f} GB{streams}")
+        line = f"   pil2 sees {run.pil2_sees:.3f} GB"
+        if run.streams:
+            line += f", {run.streams[0]} basic / {run.streams[1]} recursive streams"
+        print(line)
     if run.pil2_needs is not None:
-        short = run.pil2_needs - run.pil2_sees
+        short = run.pil2_needs - run.pil2_available
         print(f"   pil2 needs {run.pil2_needs:.3f} GB -- short by {short:.3f} GB")
     print(f"   {run.outcome}")
     if run.stats:
