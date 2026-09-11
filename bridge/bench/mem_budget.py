@@ -38,6 +38,12 @@ survives a rescue, so a cell scored on either alone is wrong in a direction
 that raises the floor. Both live in `run_log` because `summarize.py` scores on
 them too.
 
+**Which air bound is not fixed.** The instance an out-of-memory names is
+turned back into its air through the bridge's own `took instance` line, so a
+cell says which shape it died on. Two cells at the same arena can be set by
+different shapes, and a ladder whose arms bind on different ones is not one
+number.
+
 **The allocator is not the arm that was set.** `ZZ_ALLOCATOR` asks for a kind;
 the plugin names the one it built on the same line it prints the arena on, so
 the arm in the table below is read from the run rather than from what the
@@ -65,6 +71,7 @@ import collections
 import pathlib
 import re
 import sys
+import typing
 
 # Python puts this file's own directory on sys.path rather than the repo root,
 # so the package import below cannot resolve on its own. Under bazel the module
@@ -92,8 +99,31 @@ CLIENT_OOM = re.compile(
     r" while trying to allocate ([\d.]+)([KMG]iB)"
 )
 STAT = re.compile(r"^(MaxAllocSize|MaxInUse|Limit): +(.+)$", re.MULTILINE)
+# The bridge names the air as it takes each instance's trace, which is what
+# turns the instance id in an out-of-memory into the shape that bound.
+TOOK = re.compile(r"\[zz \+\s*[\d.]+\] took instance (\d+) (\S+):")
+# `ZZ_MEM_STATS=1` adds one of these after each instance's prove. The peaks in
+# it are the allocator's own, so they are the same quantity whichever kind
+# built it -- unlike a card-level sample, which counts what an allocator has
+# not yet given back.
+MEM_STATS = re.compile(
+    r"client (\d+) memory: in_use (\d+|-) MiB, peak_in_use (\d+|-) MiB,"
+    r" pool (\d+|-) MiB, peak_pool (\d+|-) MiB, largest_alloc (\d+|-) MiB,"
+    r" limit (\d+|-) MiB"
+)
 
 UNIT = {"KiB": 1 / (1 << 20), "MiB": 1 / (1 << 10), "GiB": 1.0}
+
+
+class Peak(typing.NamedTuple):
+    """A client's allocator at its high-water mark, in GiB. `held` is what it
+    took from the driver to place `in_use` -- their difference is the room an
+    arena needs above its data. A statistic the allocator does not keep is
+    `None` rather than zero."""
+
+    in_use: float | None
+    held: float | None
+    largest_alloc: float | None
 
 
 class Run:
@@ -122,6 +152,13 @@ class Run:
         # out-of-memory for that fallback to catch -- so it would read as a run
         # that finished. The refusal is decisive on its own: nothing proved.
         self.completed = run_log.completed(log) and not self.pil2_refused
+        self.airs = {int(i): air for i, air in TOOK.findall(log)}
+        # The peaks only grow, so the last line of a client is its run's.
+        self.peaks: dict[int, Peak] = {}
+        for client, _, in_use, _, held, alloc, _ in MEM_STATS.findall(log):
+            self.peaks[int(client)] = Peak(
+                *(None if v == "-" else int(v) / 1024 for v in (in_use, held, alloc))
+            )
         oom = CLIENT_OOM.search(log)
         self.oom_instance = int(oom.group(1)) if oom else None
         self.oom_gib = float(oom.group(2)) * UNIT[oom.group(3)] if oom else None
@@ -160,8 +197,20 @@ class Run:
         if self.pil2_refused:
             return "pil2 refused"
         if self.oom_instance is not None:
-            return f"client OOM (instance {self.oom_instance}, {self.oom_gib:.2f} GiB)"
+            # Which air bound is not fixed -- a floor read off a ladder is a
+            # floor over whichever shape happened to bind in that cell, so the
+            # cell says which. A run logging below ZZ_LOG=1 names no air.
+            air = self.airs.get(self.oom_instance)
+            instance = f"instance {self.oom_instance}"
+            if air:
+                instance += f" {air}"
+            return f"client OOM ({instance}, {self.oom_gib:.2f} GiB)"
         return "failed"
+
+
+def gib(value: float | None) -> str:
+    """A GiB figure, or `-` for a statistic the allocator does not keep."""
+    return "-" if value is None else f"{value:.2f} GiB"
 
 
 def report(path: pathlib.Path, run: Run) -> None:
@@ -174,6 +223,13 @@ def report(path: pathlib.Path, run: Run) -> None:
         print(
             f"   {clients} client(s) x {share:.2f} GiB arena, {run.allocator} allocator"
         )
+    for client, peak in sorted(run.peaks.items()):
+        line = f"   client {client} peak in use {gib(peak.in_use)}"
+        if peak.held is not None and peak.in_use is not None:
+            line += f", held {gib(peak.held)} -- {gib(peak.held - peak.in_use)} of room"
+        elif peak.held is not None:
+            line += f", held {gib(peak.held)}"
+        print(f"{line}, largest alloc {gib(peak.largest_alloc)}")
     if run.pil2_sees is not None:
         line = f"   pil2 sees {run.pil2_sees:.3f} GB"
         if run.streams:

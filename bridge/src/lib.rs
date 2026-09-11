@@ -1105,8 +1105,45 @@ impl Bridge {
                 waited
             );
         }
+        if mem_stats_enabled() {
+            // SAFETY: the session outlives this call -- the client is held by
+            // the bridge for the process's life.
+            if let Some(m) = unsafe { self.clients[slot_idx].session.memory_stats() } {
+                zzlog!(
+                    "client {slot_idx} memory: in_use {} MiB, peak_in_use {} MiB, pool {} MiB, peak_pool {} MiB, largest_alloc {} MiB, limit {} MiB",
+                    mib(Some(m.bytes_in_use)),
+                    mib(m.peak_bytes_in_use),
+                    mib(m.pool_bytes),
+                    mib(m.peak_pool_bytes),
+                    mib(m.largest_alloc_size),
+                    mib(m.bytes_limit),
+                );
+            }
+        }
         Ok(out)
     }
+}
+
+/// Whether each instance's prove is followed by a line of what the client's
+/// allocator is holding (`ZZ_MEM_STATS`).
+///
+/// Off by default, and not folded into `ZZ_LOG`: the numbers answer one
+/// question -- how much of an arena is the data and how much is the room to
+/// place it -- and the line would otherwise land in every log the other
+/// readers here parse.
+fn mem_stats_enabled() -> bool {
+    mem_stats_enabled_from(std::env::var("ZZ_MEM_STATS").ok().as_deref())
+}
+
+/// The decision on its own, so the table in the tests can state it.
+fn mem_stats_enabled_from(value: Option<&str>) -> bool {
+    !matches!(value.filter(|s| !s.is_empty()), None | Some("0"))
+}
+
+/// A byte count as whole MiB, or `-` for a statistic this allocator does not
+/// keep. A zero would read as "it held nothing", which is a different claim.
+fn mib(bytes: Option<i64>) -> String {
+    bytes.map_or_else(|| "-".to_string(), |b| (b >> 20).to_string())
 }
 
 const GOLDILOCKS_P: u64 = 0xFFFF_FFFF_0000_0001;
@@ -1297,6 +1334,26 @@ mod tests {
             }
             assert_eq!(tiled_to_row_major(&tiled, n_rows, n_cols), row_major, "{n_rows}x{n_cols}");
         }
+    }
+
+    #[test]
+    fn the_memory_stats_line_is_off_unless_asked_for() {
+        // Off by default: it lands once per instance in a log the readers in
+        // bench/ parse, and it answers a question only a memory run asks.
+        assert!(!mem_stats_enabled_from(None));
+        assert!(!mem_stats_enabled_from(Some("")));
+        assert!(!mem_stats_enabled_from(Some("0")));
+        assert!(mem_stats_enabled_from(Some("1")));
+        assert!(mem_stats_enabled_from(Some("yes")));
+    }
+
+    #[test]
+    fn a_statistic_the_allocator_does_not_keep_is_not_zero() {
+        // `-` rather than 0: an allocator that keeps no pool has held
+        // nothing to report, which is a different claim from holding none.
+        assert_eq!(mib(None), "-");
+        assert_eq!(mib(Some(0)), "0");
+        assert_eq!(mib(Some(2_952_790_016)), "2816");
     }
 
     #[test]

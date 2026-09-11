@@ -10,6 +10,7 @@ arenas, and pil2 refusing in the sentence that carries no figures."""
 
 import contextlib
 import io
+import pathlib
 import subprocess
 import sys
 
@@ -59,6 +60,27 @@ CLIENT_OOM = (
     " instance 1: PJRT error in Event_Await: Out of memory while trying to"
     " allocate 1.88GiB.\n"
 )
+
+
+def mem_stats(
+    client=0,
+    in_use=1024,
+    peak=10445,
+    pool="-",
+    peak_pool=11878,
+    alloc=2816,
+    limit=11878,
+) -> str:
+    return (
+        f"[zz + 12.345] client {client} memory: in_use {in_use} MiB,"
+        f" peak_in_use {peak} MiB, pool {pool} MiB, peak_pool {peak_pool} MiB,"
+        f" largest_alloc {alloc} MiB, limit {limit} MiB\n"
+    )
+
+
+def took(instance: int, air: str) -> str:
+    return f"[zz +  6.705] took instance {instance} {air}: 368 MB in 0.026 s\n"
+
 
 STATS = (
     "Limit:                        10.97GiB\n"
@@ -110,6 +132,33 @@ class ArenaTest(absltest.TestCase):
         self.assertEqual(run.outcome, "verified")
 
 
+class PeakTest(absltest.TestCase):
+    """`ZZ_MEM_STATS=1` lines: what the allocator held against what was live in
+    it, which a run that finished can state and a run that died cannot."""
+
+    def test_the_last_line_of_a_client_carries_the_runs_peaks(self):
+        log = arena(11.60) + mem_stats(peak=8000) + mem_stats(peak=10445) + exited(0)
+        peak = mem_budget.Run(log).peaks[0]
+        self.assertAlmostEqual(peak.in_use, 10445 / 1024, places=2)
+        self.assertAlmostEqual(peak.held, 11878 / 1024, places=2)
+        self.assertAlmostEqual(peak.largest_alloc, 2.75, places=2)
+
+    def test_a_statistic_the_allocator_does_not_keep_is_not_zero(self):
+        """An allocator with no pool of its own leaves `peak_pool` unset, and
+        a reader that called that zero would report it holding less than was
+        live in it."""
+        run = mem_budget.Run(arena(7.53, "CudaAsync") + mem_stats(peak_pool="-"))
+        self.assertIsNone(run.peaks[0].held)
+        self.assertIsNotNone(run.peaks[0].in_use)
+
+    def test_the_room_above_the_data_is_reported(self):
+        log = arena(11.60) + mem_stats(peak=10445, peak_pool=11878) + exited(0)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mem_budget.report(pathlib.Path("run.log"), mem_budget.Run(log))
+        self.assertIn("held 11.60 GiB -- 1.40 GiB of room", out.getvalue())
+
+
 class OutcomeTest(absltest.TestCase):
     def test_an_older_rescued_run_without_an_exit_line_is_a_pass(self):
         """The compound case, and the only one where the verify wording decides
@@ -141,6 +190,17 @@ class OutcomeTest(absltest.TestCase):
         run = mem_budget.Run(arena(11.60) + CLIENT_OOM + exited(134))
         self.assertFalse(run.completed)
         self.assertEqual(run.outcome, "client OOM (instance 1, 1.88 GiB)")
+
+    def test_an_abort_names_the_air_that_bound(self):
+        """Which shape binds is not fixed across a ladder, so a cell that named
+        only the instance id could not be compared with the cell above it."""
+        log = arena(10.98) + took(1, "Main_n22") + took(9, "VirtualTableZisk0_n21")
+        run = mem_budget.Run(
+            log + CLIENT_OOM.replace("instance 1:", "instance 9:") + exited(134)
+        )
+        self.assertEqual(
+            run.outcome, "client OOM (instance 9 VirtualTableZisk0_n21, 1.88 GiB)"
+        )
 
     def test_the_shortfall_comes_from_the_refusal_itself(self):
         """Not from `Using minimum memory`, which pil2 prints on another line
