@@ -1975,6 +1975,17 @@ VirtualTableZisk0. The second row is the comparison that matters, since pil2
 holds the whole buffer for the stream's life whether a section is in it or
 not.
 
+**Before believing that parity, check the instrument could have seen a
+difference** — this page's own rule, from "So run a positive control before
+believing a null on this leg". Two things say it can. The table itself
+resolves a per-section difference where one is known to exist and reports zero
+where it is not: the constant-tree row is +533 MiB on Main and exactly 0 on
+VirtualTableZisk0, which is pil2's own per-AIR branch (shared per GPU against
+carried per stream) recovered independently from the live set. And turning a
+knob moves it — `ZZ_PENDING=1` takes co-residency from 1,504–2,704 MiB to 0 and
+the client high-water from 10,263 to 8,933 MiB. An inventory blind to a
+gigabyte would have done neither.
+
 The bridge's own live set is within 0.26 GiB of pil2's on Main and 0.32 GiB
 *below* it on VirtualTableZisk0. The three rows that differ:
 
