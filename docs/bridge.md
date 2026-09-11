@@ -1416,11 +1416,18 @@ is unmeasured here for that reason, not overlooked.
   gets any; the bench pins `ZZ_CLIENTS=1`, and every number here is from
   one client.
 
-  Where a client's 3.2 GiB could come from, sized above: the 2.75 GiB
-  `const_ext` it holds resident, the 2.38–2.44 GiB `cm1_ext` the running
-  prove computes, and at most 1.2 GiB of placement above the live set. Not
-  from the fixed-section read-ahead, which the table above measures as not
-  binding, and not from pil2, which the two bullets above close off.
+  Where a client's 3.2 GiB could come from, sized above and **in this
+  order**: the 1.19–1.22 GiB base trace the prove was holding past its last
+  reader (#219, done — worth 0.63 GiB of arena), then the 2.75 GiB
+  `const_ext` it holds resident, which only becomes the binding shape once
+  the trace is gone (#219 measured that hand-over), then the 2.38–2.44 GiB
+  `cm1_ext` the running prove computes, with at most 1.2 GiB of placement
+  above the live set throughout (#220). Not from the fixed-section
+  read-ahead, which the table above measures as not binding, and not from
+  pil2, which the two bullets above close off. An earlier version of this
+  paragraph led with `const_ext` on the strength of its being the largest
+  single allocation; the bullets below are why that is an argument about
+  ordering rather than about size.
 
   Reproduce a cell, then read the table back out of the runs it made:
 
@@ -1435,6 +1442,144 @@ is unmeasured here for that reason, not overlooked.
   done
   bench/mem_budget.py "$ZZ_RUNS"/walk-f0.37-r*/run.log
   ```
+
+- **A lever is sized against the prove that actually fails, and the shape
+  that fails moves when you fix one** (#219). Two levers were in play here
+  and the order between them was the whole result: `const_ext` is the
+  largest block a client holds, and it was not in the binding live set
+  until the smaller lever landed.
+
+  `const_ext`'s readers are in every AIR's manifest — `quotient`, `evals`,
+  `deep` and `open_const` take it as an input, and nothing in stage 1 does.
+  A prove holds it from `set_fixed`, which builds it, to the first opening,
+  so the window it is resident without a reader is the whole of stage 1:
+  `commit1`, `logup`, `commit2`. On `VirtualTableZisk0_n21` that is 2.75 GiB
+  (88 constants × 2²² × 8 B) held across three programs that cannot read it,
+  and it is the largest single allocation BFC reports on a failing run.
+
+  It was still the wrong lever to reach for first. Each failing run prints
+  BFC's in-use chunk list, and the chunk sizes name the sections against the
+  manifests. Grouping #215's 21 one-client aborts (its `w1`/`w2`
+  shipped-walk repeats and the `fa0` arm, which is `ZZ_FIXED_AHEAD=0`; all
+  at one client and headroom 3):
+
+  | the prove that aborted | aborts | at fractions | `MaxInUse` | that AIR's `const_ext` |
+  |---|---|---|---|---|
+  | `Main_n22` | 13 | 0.30–0.35 | 9.11–10.40 GiB | 0.19 GiB |
+  | `VirtualTableZisk0_n21` | 7 | 0.28–0.32 | 7.62–8.83 GiB | 2.75 GiB |
+  | `Binary_n22` | 1 | 0.32 | 9.10 GiB | 0.06 GiB |
+
+  Every abort in the 0.34–0.37 band where a run is a coin flip is a
+  `Main_n22` prove, whose `const_ext` is 0.19 GiB; the shape carrying the
+  2.75 GiB never failed above 0.32, about 1.6 GiB below the shape setting
+  the floor. The bullet below is what the `Main_n22` shape was carrying
+  instead, and what happened to the ordering once it was gone.
+
+  So: read the live set of the prove that fails, not the largest allocation
+  in the run, and read it again after each change — the binding shape is not
+  a property of the workload, it is a property of the current binary.
+
+  ```bash
+  # the last in-use chunk list of a run that died, sections named by size
+  grep -B40 'Sum Total of in-use chunks' "$ZZ_RUNS"/<tag>/run.log | tail -40
+  ```
+
+- **A prove kept the base trace to its last opening, and releasing it makes
+  `const_ext` the binding shape** (#219). `prove` drops the trace from its
+  environment after `logup`, which is its last reader, so that a wide AIR's
+  1.19–1.22 GiB is gone before the quotient's peak. The drop freed nothing:
+  `upload_inputs` runs ahead of the slot and the caller held its result on
+  `InstanceInputs::uploaded` for the whole prove, so the environment's
+  handle was a clone and the device buffer outlived every release.
+
+  It was the one dead buffer in the shape that bound. Of the 14
+  `Main_n22`/`Binary_n22` aborts above, 13 are past `logup` and 10 of those
+  hold a chunk of exactly the proving AIR's base-trace size, at `quotient`,
+  `lev` or `evals` (the other three hold one in a 1.24–1.28 GiB bin, which
+  is a base trace BFC placed in a larger chunk and does not say whose). The
+  clean one is `w1-c1-h3-f0.35-r3`: aborting on `Main_n22` at `lev`, it
+  holds 1.188 and 1.219 GiB at once — Main's own trace, six programs past
+  its last reader, beside the next instance's `Binary_n22` trace, which is
+  uploaded ahead and legitimately live. On an AIR with `witness_calc` two
+  traces were live at once through `commit1` and `logup`, the uploaded one
+  and the one the program computed over it.
+
+  `prove` now takes `InstanceInputs` by value and moves the uploads into its
+  environment, so the environment owns them and a removal frees. What makes
+  that safe is which programs read the section, which the export decides and
+  not the driver, so `RELEASED_EARLY` in `driver.rs` states the release
+  points and every prove checks the manifest against them
+  (`check_release_points`): an export that added a later reader fails the
+  prove instead of binding a buffer that is gone.
+
+  Walked the same fractions as "Memory budget" above, the two binaries
+  interleaved run by run inside one session, three repeats a cell, on the
+  #191 artifacts and wheel `0.10.2.dev20260910150749` (one client, headroom
+  3, hello-world; a pass is all 11 proofs and a verified final proof). Every
+  run here allocates a BFC arena, which is what makes a fraction walk a
+  reading of the working set — each run names it itself, in the `XLA backend
+  allocating N bytes on device 0 for BFCAllocator` line the share is read
+  from:
+
+  | `ZZ_MEMORY_FRACTION` | the client's arena | before | after |
+  |---|---|---|---|
+  | 0.37 | 11.60 GiB | 3/3 | 3/3 |
+  | 0.35 | 10.98 GiB | 3/3 | 3/3 |
+  | 0.34 | 10.66 GiB | 1/3 | 3/3 |
+  | 0.33 | 10.35 GiB | 0/3 | 3/3 |
+  | 0.32 | 10.03 GiB | 0/3 | 1/3 |
+  | 0.30 | 9.41 GiB | 0/3 | 0/3 |
+
+  **The lowest arena every run survives goes from 10.98 to 10.35 GiB**, and
+  that is a bracket rather than a figure: the ladder's rungs are 0.31–0.63
+  GiB apart, so the before arm's floor is somewhere in (10.66, 10.98] and
+  the after arm's in (10.03, 10.35], which puts the shift between 0.31 and
+  0.95 GiB. The before column reproduces #215's walk at three repeats rather
+  than six — that walk put the floor at 0.37 off 6/6 with 0.35 at 5/6, and
+  three repeats here cannot tell 0.35 from 0.37 — so read the arms against
+  each other in this table, not against #215's.
+
+  Wherever it falls in that bracket, the shift is well under the 1.19–1.22
+  GiB of data the release takes out of the shape that was binding, which is
+  the direction #191 found for the same reason: what is freed is data, and
+  what a run needs is placement on top of it. **Do not subtract the two and
+  call the remainder placement.** Two things changed between these arms, not
+  one — the data is gone, *and* the shape that sets the floor is no longer
+  the same shape (below). The release frees 1.19 GiB on `Main_n22` but only
+  0.36 GiB on the `VirtualTableZisk0_n21` shape that now co-binds, so part
+  of what did not convert is the hand-over rather than placement. Placement
+  is a real term and #220 is measuring it; it is not this subtraction.
+  `MaxAllocSize` is unchanged at 2.75 GiB, since `const_setup` still
+  allocates `const_ext` whether or not the prove keeps it.
+
+  **What binds now is `const_ext`.** The arms' aborts, same runs:
+
+  | the prove that aborted | before | after |
+  |---|---|---|
+  | `Main_n22` | 7, `MaxInUse` 9.16–10.35 GiB | 2, 8.80–8.87 GiB |
+  | `VirtualTableZisk0_n21` | 3, 7.91–8.77 GiB | 3, 7.20–8.79 GiB |
+  | `Binary_n22` | 1, 9.10 GiB | — |
+
+  Before, the `Main_n22` shape stood 1.6 GiB above the `const_ext` one and
+  set the floor alone. After, the two are level — 8.80–8.87 against
+  7.20–8.79 — and the `const_ext` shape is the majority of what is left.
+  `after-f0.32-r1` is the mechanism in one dump: aborting on `Main_n22` at
+  `quotient`, it holds the next instance's `Binary_n22` trace at 1.219 GiB
+  and no trace of its own, where the same shape before held both.
+
+  The leg pays nothing for it: 5.235 s [5.234–5.668] before against 5.130 s
+  [5.074–5.337] after, three passes an arm interleaved at the bench's own
+  `ZZ_MEMORY_FRACTION=0.45`, read with `bench/leg_phases.py` — inside the
+  ~0.2 s floor, so the arms are not told apart. Both byte-gates are green on
+  the changed binary: 11 of 11 basic proofs identical to native's dumps
+  (`bench/compare_dumps.py`) and a clean `ZZ_AB=1` run.
+
+  So #219's own lever is now worth what the issue claimed for it, and was
+  not before: taking `const_ext` out of stage 1 would drop the
+  `VirtualTableZisk0_n21` shape by 2.75 GiB of data and leave `Main_n22`'s
+  `cm1_ext` + `cm2_ext` as the next wall. A client still needs 10.35 GiB
+  against the 8.47 GiB two of them can have, so this is one step of three,
+  not the step.
 
 - **The resident-set trim does not reach a second client** (#188). Scoped
   as "re-upload the base constants per prove, drop the digest layers once

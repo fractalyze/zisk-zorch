@@ -70,6 +70,18 @@ impl ProgramInfo {
     }
 }
 
+/// The programs taking `name` as an input, in name order. The driver releases
+/// a section at its last reader, and this is what says which programs those
+/// are — the schedule is the driver's, the signatures are the export's, and
+/// `driver::check_release_points` pins them together.
+pub fn readers_of<'a>(programs: &'a BTreeMap<String, ProgramInfo>, name: &str) -> Vec<&'a str> {
+    programs
+        .iter()
+        .filter(|(_, p)| p.input(name).is_some())
+        .map(|(k, _)| k.as_str())
+        .collect()
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ChallengeInfo {
     pub id: usize,

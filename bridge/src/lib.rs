@@ -1094,7 +1094,7 @@ impl Bridge {
         // here is only the transcript's own setup.
         phase.set("prove");
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
-        let out = driver.prove(&inputs, &mut transcript, proof_out)?;
+        let out = driver.prove(inputs, &mut transcript, proof_out)?;
         if self.log {
             zzlog!(
                 "instance {} {} ({}): {:.3} s, of which {:.3} s waiting for the client ({ahead:.3} s of uploads and reads done ahead)",
