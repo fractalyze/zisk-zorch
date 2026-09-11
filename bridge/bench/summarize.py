@@ -11,15 +11,19 @@ import pathlib
 import re
 import sys
 
+# Python puts this file's own directory on sys.path rather than the repo root,
+# so the package import below cannot resolve on its own. Under bazel the module
+# is imported as `bridge.bench.summarize` and __package__ is already set.
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+
+from bridge.bench.run_log import instances  # noqa: E402
+
 PHASES = (
     "INITIALIZING_PROOFMAN",
     "CALCULATING_CONTRIBUTIONS",
     "GENERATING_INNER_PROOFS",
     "GENERATE_VADCOP_FINAL_PROOF",
-)
-INSTANCE = (
-    r"\[zz \+\s*([\d.]+)\] instance (\d+) (\w+) \(\w+\): ([\d.]+) s,"
-    r" of which ([\d.]+) s waiting"
 )
 STREAMS = (
     r"Using (\d+) streams per GPU for basic proofs"
@@ -64,7 +68,7 @@ def summarize(path: pathlib.Path) -> None:
         line += f"  pil2 streams basic/recursive {streams.group(1)}/{streams.group(2)}"
     print(line)
     print("   " + "  ".join(f"{p.lower()} {v:.2f} s" for p, v in phases.items()))
-    inst = re.findall(INSTANCE, log)
+    inst = instances(log)
     if inst:
         report_bridge(log, inst)
     # Outside the block above: a run can abort before its first instance
@@ -115,10 +119,10 @@ def report_bridge(log: str, inst: list) -> None:
     """The bridge's own per-instance and fixed-section totals."""
     own = collections.defaultdict(list)
     waited = 0.0
-    for _, _, air, total, wait in inst:
-        own[air].append(float(total) - float(wait))
-        waited += float(wait)
-    done = [float(i[0]) for i in inst]
+    for one in inst:
+        own[one.air].append(one.held)
+        waited += one.waiting
+    done = [one.done for one in inst]
     total_own = sum(map(sum, own.values()))
     print(
         f"   bridge: {len(inst)} instances, own {total_own:.2f} s,"
