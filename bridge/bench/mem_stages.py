@@ -305,8 +305,8 @@ def own_bytes(origin: str, count: int, size: int, manifest: dict) -> int:
     The registry is per client, not per prove, so a row can hold the next
     instance's upload as well as this one's: under the default admission
     (`ZZ_PENDING=2`) the next instance's `trace` is on the device while this
-    prove runs, and on this workload that is up to 1,248 MiB. Two rules
-    separate them, both from the manifest:
+    prove runs, and a trace is among the largest buffers either instance has.
+    Two rules separate them, both from the manifest:
 
     - a copy whose size this AIR never declares for that name is another
       instance's outright -- that is how the co-resident `trace` is told from
@@ -396,7 +396,7 @@ def report(prove: Prove, manifest: dict | None, finished: bool) -> str:
     if rose:
         lines.append(f"peak rose across: {rose[0]}, by {rose[1] / MIB:,.0f} MiB")
     # Two different stages answer two different questions, and quoting one
-    # figure from the other is how a lifetime total of 1,488 MiB reads as 0.
+    # figure from the other is how a lifetime total reads as zero.
     # The peak stage is where the high-water is; the largest live set is where
     # the most sections are bound at once, and that is where a section that
     # has outlived its reader shows up.
