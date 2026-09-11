@@ -1416,7 +1416,10 @@ is unmeasured here for that reason, not overlooked.
 
     **The room above the data is a range, and its tight end is a few
     hundred MiB.** A run that *finishes* can be asked what its allocator
-    held, and at the 11.60 GiB arena the client's own peak in use came back
+    held — `PJRT_Device_MemoryStats`, through the readout parked on branch
+    `issue220-parked`, not through anything on `main`, where
+    `bench/mem_budget.py` reads `MaxInUse` off the logs of runs that died.
+    At the 11.60 GiB arena the client's own peak in use came back
     11.27, 10.68 and 10.22 GiB over three runs — 0.33, 0.92 and 1.38 GiB of
     arena above the live high-water. What binds is the tight end: an arena
     barely larger than the data it had to hold. An earlier version of this
@@ -1427,9 +1430,11 @@ is unmeasured here for that reason, not overlooked.
 
     **The aborts are placement, but `LargestFreeBlock` is not the
     evidence.** Neither allocator the bridge can build writes
-    `tsl::AllocatorStats::largest_free_block_bytes`: BFC maintains every
-    other field of that dump and leaves this one at the zero
-    `AllocatorStats` initialises it to. So the `LargestFreeBlock: 0B` an
+    `tsl::AllocatorStats::largest_free_block_bytes`, and it is not the only
+    such field: of that dump BFC maintains `InUse`, `MaxInUse`, `NumAllocs`,
+    `MaxAllocSize` and `Limit`, and assigns none of `Reserved`,
+    `PeakReserved` or `LargestFreeBlock` — all three print the zero
+    `AllocatorStats` initialises them to. So the `LargestFreeBlock: 0B` an
     earlier version of this note cited is printed whatever the heap holds,
     on a full pool and an empty one alike, and it is not a reading. The same
     dump does carry the statement — a #220 run at the 8.78 GiB arena:
@@ -1479,9 +1484,8 @@ is unmeasured here for that reason, not overlooked.
     The third aborted on a 2.50 GiB allocation, so its peak is truncated at
     the abort, in the way "The room above the data is a range" above gives
     as the reason not to quote such a figure; it is a lower bound, and it is
-    over the limit too.
-    What the lower cliff measures is the pool growing into room pil2 did not
-    take. The working set is not what moved: at one claim of 11.60 GiB the
+    over the limit too. What the lower cliff measures is the pool growing
+    into room pil2 did not take. The working set is not what moved: at one claim of 11.60 GiB the
     peaks are 10.22–11.27 GiB under BFC against 9.90–10.83 under
     `cuda_async`, ranges a one-GiB run-to-run swing cannot tell apart. All
     three `cuda_async` runs are byte-identical to a native run from the same
@@ -1638,9 +1642,8 @@ is unmeasured here for that reason, not overlooked.
   read-ahead, which the table above measures as not binding, and not from
   pil2, which the two bullets above close off. An earlier version of this
   paragraph led with `const_ext` on the strength of its being the largest
-  single allocation;
-  the bullets below are why that is an argument about ordering rather than
-  about size.
+  single allocation; the bullets below are why that is an argument about
+  ordering rather than about size.
 
   **The `const_ext` step is not filed and nobody is working it.** #219
   closed on the trace release alone: releasing `const_ext` from stage 1 is
