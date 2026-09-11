@@ -32,6 +32,12 @@ the first is a requirement only while the stream count beside it is the one
 the run would have used: at two clients holding their floor pil2 sized 20
 basic streams and asked for 162 GB, which is that sizing and not a floor.
 
+**Whether a run finished is `run_log`'s rule, not this reader's.** The verify
+line has two wordings across prover builds and an out-of-memory message
+survives a rescue, so a cell scored on either alone is wrong in a direction
+that raises the floor. Both live in `run_log` because `summarize.py` scores on
+them too.
+
 **A failing run's `MaxInUse` is truncated at the abort**, so it is a lower
 bound on what that arena had to hold, never the working set; and
 `MaxAllocSize` is the largest single allocation, which is not the floor
@@ -48,6 +54,14 @@ import pathlib
 import re
 import sys
 
+# Python puts this file's own directory on sys.path rather than the repo root,
+# so the package import below cannot resolve on its own. Under bazel the module
+# is imported as `bridge.bench.mem_budget` and __package__ is already set.
+if not __package__:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+
+from bridge.bench import run_log  # noqa: E402
+
 GIB = 1 << 30
 
 ARENA = re.compile(r"XLA backend allocating (\d+) bytes on device \d+ for BFCAllocator")
@@ -59,7 +73,6 @@ PIL2_STREAMS = re.compile(
     r"Using (\d+) streams per GPU for basic proofs and (\d+) streams"
 )
 PIL2_CONFIG = re.compile(r"Not enough GPU memory to run the proof")
-VERIFIED = re.compile(r"Vadcop Final proof was verified")
 CLIENT_OOM = re.compile(
     r"bridge: instance (\d+): PJRT error in \w+: Out of memory"
     r" while trying to allocate ([\d.]+)([KMG]iB)"
@@ -88,7 +101,11 @@ class Run:
             self.streams = (int(streams.group(1)), int(streams.group(2)))
         else:
             self.streams = None
-        self.verified = bool(VERIFIED.search(log))
+        # `run_log.completed` falls back to the log's text when there is no
+        # `exit=` line, and a pil2 refusal carries neither an exit code nor an
+        # out-of-memory for that fallback to catch -- so it would read as a run
+        # that finished. The refusal is decisive on its own: nothing proved.
+        self.completed = run_log.completed(log) and not self.pil2_refused
         oom = CLIENT_OOM.search(log)
         self.oom_instance = int(oom.group(1)) if oom else None
         self.oom_gib = float(oom.group(2)) * UNIT[oom.group(3)] if oom else None
@@ -107,7 +124,11 @@ class Run:
 
     @property
     def outcome(self) -> str:
-        if self.verified:
+        if self.completed:
+            # An out-of-memory in a run that finished is one the bridge caught
+            # and re-sent under the slot, which is a cost rather than a stop.
+            if self.oom_instance is not None:
+                return f"verified, {self.oom_gib:.2f} GiB rescued to the slot"
             return "verified"
         if self.pil2_refused:
             return "pil2 refused"
@@ -144,7 +165,7 @@ def walk(runs: list[Run]) -> None:
     cells: dict[tuple[int, float], list[bool]] = collections.defaultdict(list)
     for run in runs:
         if run.share is not None:
-            cells[(len(run.arenas), round(run.share, 2))].append(run.verified)
+            cells[(len(run.arenas), round(run.share, 2))].append(run.completed)
     if not cells:
         return
     print(f"== {len(runs)} logs")

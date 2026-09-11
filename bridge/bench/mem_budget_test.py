@@ -37,6 +37,14 @@ def pil2_sees(gb: float, basic=1, recursive=0) -> str:
 
 
 VERIFIED = "··· ✓ Vadcop Final proof was verified\n"
+# What a prover built before 2026-09-08 prints instead -- the wording the
+# #177/#188 walks on disk carry.
+VERIFIED_OLD = "··· ✓ Proof verified successfully\n"
+
+
+def exited(code: int) -> str:
+    return f"exit={code}\n"
+
 
 REFUSED_WITH_FIGURES = (
     "[ERROR]: GPU 0: Insufficient memory."
@@ -63,7 +71,7 @@ class ArenaTest(absltest.TestCase):
     def test_the_arena_is_the_bytes_the_run_allocated(self):
         """Not the fraction times the card: XLA's base is below the card's
         total, so a computed share is high in every cell."""
-        run = mem_budget.Run(arena(11.60) + pil2_sees(18.572) + VERIFIED)
+        run = mem_budget.Run(arena(11.60) + pil2_sees(18.572) + VERIFIED + exited(0))
         self.assertAlmostEqual(run.share, 11.60, places=2)
         self.assertLen(run.arenas, 1)
 
@@ -80,12 +88,45 @@ class ArenaTest(absltest.TestCase):
             _ = run.share
 
     def test_a_native_run_has_no_arena(self):
-        run = mem_budget.Run(pil2_sees(30.9, basic=3, recursive=1) + VERIFIED)
+        run = mem_budget.Run(
+            pil2_sees(30.9, basic=3, recursive=1) + VERIFIED + exited(0)
+        )
         self.assertIsNone(run.share)
         self.assertEqual(run.outcome, "verified")
 
 
 class OutcomeTest(absltest.TestCase):
+    def test_an_older_rescued_run_without_an_exit_line_is_a_pass(self):
+        """The compound case, and the only one where the verify wording decides
+        anything here: a pre-2026-09-08 run (`Proof verified successfully`)
+        that rescued an out-of-memory, in a log with no `exit=` for the
+        fallback to lean on. A reader knowing only the later wording sees the
+        OOM, calls it an abort, and scores the cell a failure."""
+        run = mem_budget.Run(arena(11.60) + CLIENT_OOM + VERIFIED_OLD)
+        self.assertTrue(run.completed)
+        self.assertStartsWith(run.outcome, "verified, 1.88 GiB rescued")
+
+    def test_a_rescued_oom_is_not_an_abort(self):
+        """The bridge catches a read-ahead upload's OOM and sends it under the
+        slot, and Rust's panic hook has already printed the message. Only
+        `exit=` tells that run from one that died."""
+        run = mem_budget.Run(arena(11.60) + CLIENT_OOM + VERIFIED + exited(0))
+        self.assertTrue(run.completed)
+        self.assertStartsWith(run.outcome, "verified, 1.88 GiB rescued")
+
+    def test_a_refusal_without_an_exit_line_is_not_a_pass(self):
+        """A log cut before `run.sh` appended `exit=` has only its text, and a
+        refusal carries no out-of-memory for the text fallback to catch."""
+        run = mem_budget.Run(arena(8.47) * 2 + REFUSED_WITH_FIGURES)
+        self.assertFalse(run.completed)
+        self.assertEqual(run.outcome, "pil2 refused")
+
+    def test_a_fatal_oom_is_an_abort(self):
+        """Same text, no verify line, exit 134."""
+        run = mem_budget.Run(arena(11.60) + CLIENT_OOM + exited(134))
+        self.assertFalse(run.completed)
+        self.assertEqual(run.outcome, "client OOM (instance 1, 1.88 GiB)")
+
     def test_the_shortfall_comes_from_the_refusal_itself(self):
         """Not from `Using minimum memory`, which pil2 prints on another line
         and a log carrying the refusal need not have at all."""
@@ -118,11 +159,11 @@ class OutcomeTest(absltest.TestCase):
 class WalkTest(absltest.TestCase):
     def runs(self):
         return [
-            mem_budget.Run(arena(11.60) + VERIFIED),
-            mem_budget.Run(arena(11.60) + VERIFIED),
-            mem_budget.Run(arena(10.66) + VERIFIED),
-            mem_budget.Run(arena(10.66) + CLIENT_OOM),
-            mem_budget.Run(arena(8.47) * 2 + REFUSED_WITH_FIGURES),
+            mem_budget.Run(arena(11.60) + VERIFIED + exited(0)),
+            mem_budget.Run(arena(11.60) + VERIFIED_OLD + exited(0)),
+            mem_budget.Run(arena(10.66) + VERIFIED + exited(0)),
+            mem_budget.Run(arena(10.66) + CLIENT_OOM + exited(134)),
+            mem_budget.Run(arena(8.47) * 2 + REFUSED_WITH_FIGURES + exited(1)),
         ]
 
     def test_the_table_counts_repeats_per_cell(self):
@@ -140,8 +181,8 @@ class WalkTest(absltest.TestCase):
         """One client at 8.47 GiB and two at 8.47 GiB are different runs; a
         table that merged them would read as a floor nobody measured."""
         runs = [
-            mem_budget.Run(arena(8.47) + VERIFIED),
-            mem_budget.Run(arena(8.47) * 2 + REFUSED_WITH_FIGURES),
+            mem_budget.Run(arena(8.47) + VERIFIED + exited(0)),
+            mem_budget.Run(arena(8.47) * 2 + REFUSED_WITH_FIGURES + exited(1)),
         ]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -156,7 +197,8 @@ class ScriptModeTest(absltest.TestCase):
 
     def test_the_documented_invocation_runs(self):
         log = self.create_tempfile(
-            "run.log", content=arena(11.60) + pil2_sees(18.572) + VERIFIED
+            "run.log",
+            content=arena(11.60) + pil2_sees(18.572) + VERIFIED + exited(0),
         )
         done = subprocess.run(
             [sys.executable, "bridge/bench/mem_budget.py", log.full_path],

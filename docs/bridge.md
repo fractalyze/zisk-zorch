@@ -1087,7 +1087,8 @@ What remains above native is structural, tracked in #170: the bridge
 proves the 11 instances back to back on one client while pil2 overlaps
 three basic streams and its recursion (re-measured on the #171 artifacts,
 a second client is still more than this card has — "Memory budget"
-below, where the shortfall is 6.3 GiB on the shipped wheel); and `const_setup` recomputes each AIR's constant tree per run
+below, where the shortfall is 6.3 GiB on the shipped wheel); and
+`const_setup` recomputes each AIR's constant tree per run
 where pil2 reads it from disk. The bridge's own start is no longer one of
 them: it finishes well inside proofman's init ("Bridge start-up" above).
 Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
@@ -1305,6 +1306,13 @@ is unmeasured here for that reason, not overlooked.
     `Insufficient memory. Need 12.904107 GB but only 12.612976 GB
     available`. The requirement is the same figure at either client count.
 
+    The block-shaped section above says `ZZ_MEMORY_FRACTION=0.55` leaves pil2
+    13.3 GB and calls that below the minimum it will start with. That does not
+    reconcile with either number here — 0.55 leaves 12.93 GB on this key, and
+    12.93 is above the 12.904 pil2 asks for, so it starts. That run's headroom
+    is not recorded and its workload is the block-shaped one, so the two are
+    not the same measurement; #170 carries the discrepancy.
+
     **That figure already contains the module loads**, because it is free
     memory as pil2 finds it — after the clients have claimed their arenas
     and their module loads have begun. An earlier version of this note put
@@ -1419,11 +1427,13 @@ is unmeasured here for that reason, not overlooked.
   ```bash
   # one cell: three runs at one arena size, a pass being 11 proofs and a
   # verified final proof. Distinct tags -- run.sh clears the tag it is given.
+  export ZZ_RUNS=./zz-runs            # run.sh's own default; name it so the
+                                      # read line below can find the logs
   for r in 1 2 3; do
     ZZ_CLIENTS=1 ZZ_GPU_HEADROOM_GB=3 ZZ_MEMORY_FRACTION=0.37 \
       ZISK_PROVE_FLAGS= bench/run.sh walk-f0.37-r$r bridge
   done
-  bench/mem_budget.py $ZZ_RUNS/walk-f0.37-r*/run.log
+  bench/mem_budget.py "$ZZ_RUNS"/walk-f0.37-r*/run.log
   ```
 
 - **The resident-set trim does not reach a second client** (#188). Scoped
@@ -1436,7 +1446,7 @@ is unmeasured here for that reason, not overlooked.
   |---|---|---|---|---|
   | 0.45 | 14.11 GiB | 4/4 | 5/5 | 6/6 |
   | 0.39 | 12.23 GiB | 7/7 | 7/10 | 5/7 |
-  | 0.38 | 11.91 GiB | 0/4 | 4/7 | 2/3 |
+  | 0.38 | 11.92 GiB | 0/4 | 4/7 | 2/3 |
   | 0.37 | 11.60 GiB | 0/4 | 2/4 | — |
   | 0.36 | 11.29 GiB | 0/1 | 0/1 | — |
 
