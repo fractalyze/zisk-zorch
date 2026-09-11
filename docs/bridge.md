@@ -1995,12 +1995,12 @@ The bridge's own live set is within 0.26 GiB of pil2's on Main and 0.32 GiB
 
 Two terms, neither of them a section.
 
-**(b) Co-residency — the next instance's uploads, 32–2,704 MiB by default
-and 0 under `ZZ_PENDING=1`.** The
-per-client admission (`ZZ_PENDING`, default 2) puts the next instance's
-`trace` on the device during the running prove. Which AIR that is moves run
-to run, and the traces span 32 MiB (Rom) to 1,248 MiB (Binary), so this is a
-bimodal jump rather than scatter. At Main's `openings` boundary, per run:
+**(b) Co-residency — the next instance's `trace`, 32–1,248 MiB, and 0 under
+`ZZ_PENDING=1`.** The per-client admission (`ZZ_PENDING`, default 2) puts the
+next instance's `trace` on the device during the running prove. Which AIR that
+is moves run to run, and the eleven traces span 32 MiB (Rom) to 1,248 MiB
+(Binary), so this is a bimodal jump rather than scatter. At Main's `openings`
+boundary, per run:
 
 | arm | r1 | r2 | r3 |
 |---|---|---|---|
@@ -2014,6 +2014,12 @@ admission (`lib.rs:966-971`). This explains the null recorded above under
 "Nor does the read-ahead reach it": the knob was never on the largest
 co-resident buffer. `ZZ_PENDING=1` removes it in all three runs and takes the
 client high-water from 9,007–10,263 MiB to **8,933–8,993 MiB**.
+
+The trace is the largest of the next instance's uploads but not the only one;
+counting its `const_base` and scalars too, everything on the client that is
+not the running prove's comes to 32–1,376 MiB on Main and 1,504–2,704 MiB on
+VirtualTableZisk0 at the boundaries above, and to zero under `ZZ_PENDING=1`.
+One admission slot holds one next instance either way.
 
 **(c) Transients inside one program, +838 to +1,957 MiB.** Under
 `ZZ_PENDING=1` the client high-water is 8,933–8,993 MiB against a largest
@@ -2038,7 +2044,14 @@ plus this term, never against the live set alone.
 
 **(a) Held past their last reader: 256 MiB on Main, 1,488 MiB on
 VirtualTableZisk0**, dominated by `const_base` (96 / 1,408 MiB), whose last
-reader is `logup` in stage 1 and which stays for the life of the prove.
+reader is `logup` in stage 1 and which stays for the life of the prove. Both
+figures are from the `ZZ_PENDING=1` arm and are identical across its three
+runs. That arm is the one to read them from: the registry is per client rather
+than per prove, so on a default-admission log the next instance's `trace` is
+alive with no reader yet run, and counting it here would charge the largest
+buffer in the workload to this category. `mem_stages.py` excludes it by size —
+the eleven AIRs declare eleven different trace widths — but a figure quoted
+from an arm where nothing is co-resident needs no such rule to be believed.
 `ZZ_RESIDENT_AIRS=1` keeps it for the next prove of the same AIR — **which on
 hello-world never comes**, because its 11 AIRs are all distinct. On the
 block-shaped `sha-hasher` workload (38 instances over 16 AIRs) AIRs do

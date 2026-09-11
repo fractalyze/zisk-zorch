@@ -70,6 +70,9 @@ py_test(
     name = "mem_stages_test",
     size = "small",
     srcs = ["mem_stages_test.py"],
+    # The exact lines src/memlog.rs emits, asserted on from both sides so a
+    # change to the wording fails rather than quietly emptying the reader.
+    data = ["testdata/mem_stages_lines.txt"],
     deps = [
         ":mem_stages",
         requirement("absl_py"),

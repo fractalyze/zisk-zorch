@@ -1,0 +1,4 @@
+mem stage quotient: in_use 8990000000, peak 9400000000, pool 15150000000, live 2550136832 in 1 buffers
+mem stage quotient buf commit1/cm1_ext 1 2550136832
+mem prog commit2: in_use 8990000000, peak 9400000000, live 7253000000
+mem stage done: in_use -, peak -, pool -, live 0 in 0 buffers

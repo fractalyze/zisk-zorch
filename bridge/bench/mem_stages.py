@@ -135,17 +135,27 @@ class Prove:
     @property
     def peak_program(self) -> tuple[str, int] | None:
         """The program the allocator's peak last rose across, and by how many
-        bytes, or `None` without the per-program level.
+        bytes, or `None` when no program can be named.
 
         This is the one the stage table cannot give: most of a wide AIR's
         high-water is inside a stage rather than at either end of it, so the
         stage that holds the peak names a span of a dozen programs while the
-        rise itself belongs to one of them."""
+        rise itself belongs to one of them.
+
+        `None` covers two cases, and neither is a program. Without
+        `ZZ_MEM_STAGES=2` there are only boundaries. With it, the last rise
+        can still fall between a stage's last program and the next boundary --
+        a download, the transcript, the query draw -- and reporting the
+        boundary's own label there would print `(end of stage1)` under "peak
+        rose across" as if it were a program. `peak_stage` is what names that
+        case."""
         rose = None
         marks = [m for m in self.marks if m.peak is not None]
         for before, after in zip(marks, marks[1:]):
             if after.peak > before.peak:
                 rose = (after.ran, after.peak - before.peak)
+        if rose is None or rose[0].startswith("("):
+            return None
         return rose
 
     @property
@@ -236,6 +246,13 @@ def proves(log: str) -> list[Prove]:
                 prove.air, prove.index = instance.air, instance.index
             out.append(prove)
             stages, programs, marks, by_name = [], [], [], {}
+    if stages:
+        # Blocks with no instance line after them: the prove died mid-flight,
+        # which is exactly the log this reader exists to print a
+        # DID-NOT-FINISH table for. Dropping them reported "no ZZ_MEM_STAGES
+        # blocks" for the one run whose inventory anyone needed to look at.
+        # The AIR stays `?` -- the line that would have named it never came.
+        out.append(Prove(stages, programs, marks))
     return out
 
 
@@ -265,6 +282,51 @@ def readers_of(manifest: dict, origin: str, programs: list[str]) -> list[str]:
     return order
 
 
+ELEM = {"goldilocks": 8, "uint64": 8, "goldilocksx3": 24, "uint32": 4, "int32": 4}
+
+
+def declared_sizes(manifest: dict) -> dict[str, set[int]]:
+    """name -> the byte sizes this AIR declares for it, over every program's
+    inputs and outputs. Sections are sized dtype x dims, so one AIR's `trace`
+    and another's share a name at different sizes."""
+    out: dict[str, set[int]] = {}
+    for info in manifest["programs"].values():
+        for spec in list(info["inputs"]) + list(info["outputs"]):
+            elems = 1
+            for dim in spec["dims"]:
+                elems *= dim
+            out.setdefault(spec["name"], set()).add(elems * ELEM[spec["dtype"]])
+    return out
+
+
+def own_bytes(origin: str, count: int, size: int, manifest: dict) -> int:
+    """How much of one aggregated row belongs to the prove being reported.
+
+    The registry is per client, not per prove, so a row can hold the next
+    instance's upload as well as this one's: under the default admission
+    (`ZZ_PENDING=2`) the next instance's `trace` is on the device while this
+    prove runs, and on this workload that is up to 1,248 MiB. Two rules
+    separate them, both from the manifest:
+
+    - a copy whose size this AIR never declares for that name is another
+      instance's outright -- that is how the co-resident `trace` is told from
+      ours, since the eleven hello-world AIRs carry eleven different trace
+      sizes;
+    - otherwise the prove binds one buffer per name, except the quotient's row
+      windows, of which the manifest says `quotient_chunks` are uploaded and
+      all are this prove's.
+
+    Charging a co-resident row to this prove is the same invented-finding
+    failure `readers_of` guards the renamed layers against, and it lands on
+    the largest buffer in the run rather than the smallest."""
+    name = origin.split("/", 1)[1]
+    per = size // count
+    if per not in declared_sizes(manifest).get(name, set()):
+        return 0
+    mine = min(count, len(manifest["quotient_chunks"]) if name == "rows" else 1)
+    return per * mine
+
+
 def held_past_last_reader(
     prove: Prove, stage: Stage, manifest: dict
 ) -> list[tuple[str, int, str]]:
@@ -279,7 +341,10 @@ def held_past_last_reader(
 
     A row whose last reader cannot be resolved is left out, not assumed dead:
     the setup trees' layers are bound under names the driver renames, and
-    calling them unread would invent the largest finding on the page."""
+    calling them unread would invent the largest finding on the page. Only the
+    bytes `own_bytes` attributes to this prove are counted, for the same
+    reason: a co-resident upload has not outlived its reader, it is waiting
+    for one."""
     order = [s.name for s in prove.stages]
     if not any(s.programs for s in prove.stages):
         return []
@@ -288,13 +353,16 @@ def held_past_last_reader(
     }
     here = order.index(stage.name)
     out = []
-    for origin, _, size in stage.rows:
+    for origin, count, size in stage.rows:
+        mine = own_bytes(origin, count, size, manifest)
+        if not mine:
+            continue
         readers = readers_of(manifest, origin, prove.programs)
         if not readers:
             continue
         last = readers[-1]
         if last in ran_in and ran_in[last] < here:
-            out.append((origin, size, last))
+            out.append((origin, mine, last))
     return out
 
 
@@ -327,9 +395,19 @@ def report(prove: Prove, manifest: dict | None, finished: bool) -> str:
     rose = prove.peak_program
     if rose:
         lines.append(f"peak rose across: {rose[0]}, by {rose[1] / MIB:,.0f} MiB")
+    # Two different stages answer two different questions, and quoting one
+    # figure from the other is how a lifetime total of 1,488 MiB reads as 0.
+    # The peak stage is where the high-water is; the largest live set is where
+    # the most sections are bound at once, and that is where a section that
+    # has outlived its reader shows up.
+    largest = max(prove.stages, key=lambda s: s.live, default=None)
+    blocks = []
     if peak:
-        stage = prove.stage(peak)
-        lines += ["", f"live set entering {peak} (MiB):", ""]
+        blocks.append(("peak", prove.stage(peak)))
+    if largest is not None and largest not in [s for _, s in blocks]:
+        blocks.append(("largest live set", largest))
+    for label, stage in blocks:
+        lines += ["", f"live set entering {stage.name} ({label}, MiB):", ""]
         for origin, count, size in stage.rows:
             last = readers_of(manifest, origin, prove.programs) if manifest else []
             lines.append(
@@ -341,7 +419,8 @@ def report(prove: Prove, manifest: dict | None, finished: bool) -> str:
             total = sum(size for _, size, _ in past)
             lines += [
                 "",
-                f"of which held past their last reader: {total / MIB:,.0f} MiB",
+                f"of which held past their last reader: {total / MIB:,.0f} MiB"
+                " (this prove's own buffers only)",
                 "",
             ]
             for origin, size, last in past:

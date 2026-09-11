@@ -6,6 +6,8 @@ clients' blocks folded into one prove, a last reader read off the manifest
 instead of off what the run actually ran. None of them would raise on their
 own."""
 
+import pathlib
+
 from absl.testing import absltest
 
 from bridge.bench import mem_stages
@@ -32,6 +34,43 @@ def instance(index, air):
 
 CM1 = ("commit1/cm1_ext", "1", "2550136832")
 TRACE = ("upload/trace", "1", "1275068416")
+
+
+class EmittedLineTest(absltest.TestCase):
+    """The other half of the contract in `src/memlog.rs`.
+
+    Every other test here hand-writes the log format in `stage()` / `prog()`,
+    so all of them would keep passing if the bridge changed what it emits --
+    the reader would simply match nothing and report a run as having no
+    blocks. These parse the exact bytes the Rust tests assert on."""
+
+    LINES = (
+        pathlib.Path(__file__).parent / "testdata" / "mem_stages_lines.txt"
+    ).read_text()
+
+    def test_the_reader_parses_the_lines_the_bridge_emits(self):
+        stamped = "\n".join(f"[zz +  1.000] {line}" for line in self.LINES.splitlines())
+        prove = mem_stages.proves(stamped + "\n" + instance(0, "Main_n22"))[0]
+        quotient = prove.stage("quotient")
+        self.assertEqual(quotient.in_use, 8990000000)
+        self.assertEqual(quotient.peak, 9400000000)
+        self.assertEqual(quotient.pool, 15150000000)
+        self.assertEqual(quotient.rows, [("commit1/cm1_ext", 1, 2550136832)])
+        self.assertEqual(
+            [m.ran for m in prove.marks if m.ran == "commit2"], ["commit2"]
+        )
+
+    def test_a_statistic_the_allocator_does_not_keep_reads_as_none(self):
+        # The `done` line in the fixture carries `-` in every total, which is
+        # what a pin without the readback emits. Parsing it as 0 would report
+        # an allocator holding nothing.
+        stamped = "\n".join(f"[zz +  1.000] {line}" for line in self.LINES.splitlines())
+        done = mem_stages.proves(stamped + "\n" + instance(0, "Main_n22"))[0].stage(
+            "done"
+        )
+        self.assertIsNone(done.in_use)
+        self.assertIsNone(done.peak)
+        self.assertIsNone(done.pool)
 
 
 class ProvesTest(absltest.TestCase):
@@ -164,8 +203,23 @@ class PeakProgramTest(absltest.TestCase):
                 instance(0, "Main_n22"),
             ]
         )
-        rose = mem_stages.proves(log)[0].peak_program
-        self.assertEqual(rose[0], "(end of stage1)")
+        prove = mem_stages.proves(log)[0]
+        self.assertIsNone(prove.peak_program)
+        self.assertEqual(prove.peak_stage, "stage1")
+
+    def test_a_rise_after_a_stages_last_program_names_no_program(self):
+        # The rise falls between `logup` and the boundary -- a download, the
+        # transcript, the query draw. No program ran in it.
+        log = "\n".join(
+            [
+                stage("stage1", in_use="100", peak="100"),
+                prog("logup", in_use="200", peak="200"),
+                stage("quotient", in_use="300", peak="900"),
+                stage("done", in_use="10", peak="900"),
+                instance(0, "Main_n22"),
+            ]
+        )
+        self.assertIsNone(mem_stages.proves(log)[0].peak_program)
 
     def test_a_prove_that_did_not_set_the_high_water_names_no_stage(self):
         # Every prove after the binding one reports a flat peak. Reporting its
@@ -184,14 +238,34 @@ class PeakProgramTest(absltest.TestCase):
         self.assertIn(mem_stages.NO_PEAK, mem_stages.report(prove, None, finished=True))
 
 
+def spec(name, dims, dtype="uint64"):
+    return {"name": name, "dtype": dtype, "dims": dims}
+
+
 class HeldPastLastReaderTest(absltest.TestCase):
+    # Sized like VirtualTableZisk0_n21: 2^21 rows, 88 constants, 23 cm1
+    # columns. `trace` is 2^21 x 23 x 8 here, which is what tells a co-resident
+    # trace of another AIR from this one's.
     MANIFEST = {
+        "quotient_chunks": [524288, 524288],
         "programs": {
-            "commit1": {"inputs": [{"name": "trace"}], "outputs": []},
-            "logup": {"inputs": [{"name": "const_base"}], "outputs": []},
-            "quotient": {"inputs": [{"name": "cm1_ext"}], "outputs": []},
-        }
+            "commit1": {
+                "inputs": [spec("trace", [1 << 21, 23])],
+                "outputs": [spec("cm1_ext", [1 << 22, 23])],
+            },
+            "logup": {"inputs": [spec("const_base", [1 << 21, 88])], "outputs": []},
+            "quotient": {
+                "inputs": [
+                    spec("cm1_ext", [1 << 22, 23]),
+                    spec("rows", [524288], "int32"),
+                ],
+                "outputs": [],
+            },
+        },
     }
+    CONST_BASE = (1 << 21) * 88 * 8
+    CM1_EXT = (1 << 22) * 23 * 8
+    TRACE = (1 << 21) * 23 * 8
 
     def _prove(self):
         log = "\n".join(
@@ -204,9 +278,13 @@ class HeldPastLastReaderTest(absltest.TestCase):
                     in_use="100",
                     peak="100",
                     rows=[
-                        ("upload/const_base", "1", "1350565888"),
-                        ("commit1/cm1_ext", "1", "771751936"),
+                        ("upload/const_base", "1", str(self.CONST_BASE)),
+                        ("commit1/cm1_ext", "1", str(self.CM1_EXT)),
                         ("const_setup/const_setup_layers_0", "1", "134217728"),
+                        # The next instance's trace, on the device under the
+                        # default admission while this prove runs. A different
+                        # AIR, so a size this manifest never declares.
+                        ("upload/trace", "1", str(1248 * (1 << 20))),
                     ],
                 ),
                 prog("quotient", in_use="100", peak="100"),
@@ -225,7 +303,39 @@ class HeldPastLastReaderTest(absltest.TestCase):
         past = mem_stages.held_past_last_reader(
             prove, prove.stage("quotient"), self.MANIFEST
         )
-        self.assertEqual(past, [("upload/const_base", 1350565888, "logup")])
+        self.assertEqual(past, [("upload/const_base", self.CONST_BASE, "logup")])
+
+    def test_a_co_resident_upload_is_not_charged_to_this_prove(self):
+        # The next instance's trace is 1,248 MiB and its last reader,
+        # `commit1`, ran in stage1 -- so by name and order alone it looks like
+        # the largest section held past its reader in the run. It is another
+        # instance's, waiting for a reader rather than outliving one, and
+        # charging it here would put the biggest buffer in the workload into
+        # category (a) and size a fix off it.
+        prove = self._prove()
+        origins = [
+            o
+            for o, _, _ in mem_stages.held_past_last_reader(
+                prove, prove.stage("quotient"), self.MANIFEST
+            )
+        ]
+        self.assertNotIn("upload/trace", origins)
+
+    def test_one_row_holding_this_proves_copy_and_the_next_ones_counts_one(self):
+        # Two buffers under one origin at this AIR's size: the prove binds one.
+        self.assertEqual(
+            mem_stages.own_bytes("upload/trace", 2, 2 * self.TRACE, self.MANIFEST),
+            self.TRACE,
+        )
+
+    def test_every_quotient_row_window_belongs_to_this_prove(self):
+        # The manifest says how many are uploaded; counting the extras as
+        # another instance's understated the prove and invented co-residency.
+        window = 524288 * 4
+        self.assertEqual(
+            mem_stages.own_bytes("upload/rows", 2, 2 * window, self.MANIFEST),
+            2 * window,
+        )
 
     def test_a_section_this_stage_still_reads_is_not_reported(self):
         # cm1_ext is read by the quotient, which runs in this stage. Calling
@@ -261,7 +371,7 @@ class HeldPastLastReaderTest(absltest.TestCase):
                     "stage1",
                     in_use="100",
                     peak="100",
-                    rows=[("upload/const_base", "1", "1350565888")],
+                    rows=[("upload/const_base", "1", str(self.CONST_BASE))],
                 ),
                 stage("done", in_use="0", peak="100"),
                 instance(0, "Main_n22"),
@@ -360,6 +470,28 @@ class TruncationTest(absltest.TestCase):
         # after it are simply absent. Quoting such a table as a prove's live
         # set is the error this flag exists to prevent.
         self.assertEqual(mem_stages.main([self._log(), "--strict"]), 1)
+
+    def test_a_prove_that_died_before_its_instance_line_still_reports(self):
+        # The shape of a real mid-prove abort: blocks, then nothing. The
+        # instance line is written after a prove returns, so the one run whose
+        # inventory anyone needs to look at is the one that never writes it.
+        # Dropping the tail printed "no ZZ_MEM_STAGES blocks" for exactly that
+        # log.
+        log = "\n".join(
+            [
+                stage("stage1", in_use="100", peak="100", rows=[TRACE]),
+                instance(0, "Rom_n22"),
+                stage("stage1", in_use="200", peak="300", rows=[CM1]),
+                stage("quotient", in_use="300", peak="400", rows=[CM1]),
+                "PJRT error in run: Out of memory while trying to allocate 2.50GiB",
+                "exit=1",
+            ]
+        )
+        found = mem_stages.proves(log)
+        self.assertEqual(len(found), 2)
+        # The AIR stays unknown: the line that would have named it never came.
+        self.assertEqual(found[1].air, "?")
+        self.assertEqual([s.name for s in found[1].stages], ["stage1", "quotient"])
 
     def test_without_strict_the_table_says_the_run_did_not_finish(self):
         prove = mem_stages.proves(self.ABORTED)[0]

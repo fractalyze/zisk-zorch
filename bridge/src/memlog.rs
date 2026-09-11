@@ -65,13 +65,8 @@ pub fn per_program() -> bool {
 
 /// The allocator's totals after one program, for the per-program level.
 pub fn report_program(name: &str, t: Totals) {
-    let rows = snapshot();
-    let live: usize = rows.iter().map(|r| r.2).sum();
-    zzlog!(
-        "mem prog {name}: in_use {}, peak {}, live {live}",
-        opt(t.in_use),
-        opt(t.peak_in_use),
-    );
+    let live: usize = snapshot().iter().map(|r| r.2).sum();
+    zzlog!("{}", prog_line(name, t, live));
 }
 
 /// One live device buffer: where it came from and how large it is.
@@ -172,7 +167,6 @@ pub struct Totals {
 /// cannot drift apart — there is one list of them, in `driver::prove`.
 pub struct Stage<F: Fn() -> Totals> {
     phase: crate::nvtx::Phase,
-    name: String,
     totals: F,
 }
 
@@ -181,7 +175,7 @@ impl<F: Fn() -> Totals> Stage<F> {
     /// closure because the driver owns the session and this module does not
     /// depend on PJRT.
     pub fn start(name: &str, totals: F) -> Stage<F> {
-        let stage = Stage { phase: crate::nvtx::Phase::start(name), name: name.to_string(), totals };
+        let stage = Stage { phase: crate::nvtx::Phase::start(name), totals };
         stage.report(name);
         stage
     }
@@ -191,7 +185,6 @@ impl<F: Fn() -> Totals> Stage<F> {
     /// that appears here was made by the stage just closed.
     pub fn set(&mut self, name: &str) {
         self.phase.set(name);
-        self.name = name.to_string();
         self.report(name);
     }
 
@@ -201,22 +194,45 @@ impl<F: Fn() -> Totals> Stage<F> {
         if !enabled() {
             return;
         }
-        let t = (self.totals)();
         let rows = snapshot();
-        let live_bytes: usize = rows.iter().map(|r| r.2).sum();
-        let count: usize = rows.iter().map(|r| r.1).sum();
-        zzlog!(
-            "mem stage {}: in_use {}, peak {}, pool {}, live {live_bytes} in {count} buffers{}",
-            name,
-            opt(t.in_use),
-            opt(t.peak_in_use),
-            opt(t.pool),
-            if leaked() { ", INVENTORY INCOMPLETE" } else { "" },
-        );
+        zzlog!("{}", stage_line(name, (self.totals)(), &rows, leaked()));
         for (origin, n, bytes) in rows {
-            zzlog!("mem stage {name} buf {origin} {n} {bytes}");
+            zzlog!("{}", buf_line(name, &origin, n, bytes));
         }
     }
+}
+
+/// A stage boundary's line, without the log stamp.
+///
+/// A pure function because it is a contract with `bench/mem_stages.py`, which
+/// is the only thing that reads it: the tests below assert on the exact bytes
+/// and the reader's tests parse the same bytes out of
+/// `bench/testdata/mem_stages_lines.txt`, so a change to the wording here
+/// fails on both sides instead of silently emptying the reader.
+fn stage_line(name: &str, t: Totals, rows: &[(String, usize, usize)], leaked: bool) -> String {
+    let live: usize = rows.iter().map(|r| r.2).sum();
+    let count: usize = rows.iter().map(|r| r.1).sum();
+    format!(
+        "mem stage {name}: in_use {}, peak {}, pool {}, live {live} in {count} buffers{}",
+        opt(t.in_use),
+        opt(t.peak_in_use),
+        opt(t.pool),
+        if leaked { ", INVENTORY INCOMPLETE" } else { "" },
+    )
+}
+
+/// One live-set row's line, without the log stamp.
+fn buf_line(stage: &str, origin: &str, count: usize, bytes: usize) -> String {
+    format!("mem stage {stage} buf {origin} {count} {bytes}")
+}
+
+/// A program's line, without the log stamp.
+fn prog_line(name: &str, t: Totals, live: usize) -> String {
+    format!(
+        "mem prog {name}: in_use {}, peak {}, live {live}",
+        opt(t.in_use),
+        opt(t.peak_in_use),
+    )
 }
 
 /// The boundary after the last stage. Without it the last stage has no
@@ -319,13 +335,43 @@ mod tests {
         assert_eq!(opt(Some(2_952_790_016)), "2952790016");
     }
 
+    /// The exact bytes `bench/mem_stages.py` parses, kept in a file both
+    /// sides read. Asserting a literal here and hand-writing the same shape
+    /// in the reader's tests is what let the two drift apart unnoticed.
+    const LINES: &str = include_str!("../bench/testdata/mem_stages_lines.txt");
+
+    fn line(prefix: &str) -> &'static str {
+        LINES
+            .lines()
+            .find(|l| l.starts_with(prefix))
+            .expect("testdata is missing a line the reader parses")
+    }
+
     #[test]
-    fn the_stage_reports_the_name_the_driver_gave_it() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let mut stage = Stage::start("stage1", Totals::default);
-        stage.set("quotient");
-        // The stage name is what indexes an inventory and what cuts a
-        // capture; one list of them, held here.
-        assert_eq!(stage.name, "quotient");
+    fn a_stage_boundary_emits_the_line_the_reader_parses() {
+        let totals = Totals { in_use: Some(8_990_000_000), peak_in_use: Some(9_400_000_000), pool: Some(15_150_000_000) };
+        let rows = vec![("commit1/cm1_ext".to_string(), 1, 2_550_136_832)];
+        assert_eq!(stage_line("quotient", totals, &rows, false), line("mem stage quotient:"));
+        assert_eq!(buf_line("quotient", "commit1/cm1_ext", 1, 2_550_136_832), line("mem stage quotient buf"));
+        assert_eq!(prog_line("commit2", totals, 7_253_000_000), line("mem prog commit2:"));
+    }
+
+    #[test]
+    fn the_boundary_after_the_last_stage_is_named_done() {
+        // The peak attribution rests on this one: without a mark past
+        // `openings` a high-water inside the final stage is charged to the
+        // stage before it, and nothing else in the log carries it.
+        assert_eq!(
+            stage_line("done", Totals::default(), &[], false),
+            line("mem stage done:")
+        );
+    }
+
+    #[test]
+    fn an_incomplete_inventory_says_so_on_the_line() {
+        // A snapshot taken after a buffer was freed twice is an overcount.
+        // The reader keys on this text to refuse the table.
+        let said = stage_line("stage1", Totals::default(), &[], true);
+        assert!(said.ends_with(", INVENTORY INCOMPLETE"), "{said}");
     }
 }
