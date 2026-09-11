@@ -1899,6 +1899,11 @@ the answer is that **it is not in the prove's sections**: section for
 section the bridge holds what pil2 holds, and on one of the two binding
 shapes it holds less.
 
+That is the same conclusion #220 reached from the other side. Its ladder found
+the allocator kind was not a lever — the room above the data is small — and
+this comparison says the data was never the outlier either. Three units of
+this family sized an excess that, per prove, is not there.
+
 Read with `bridge/bench/mem_stages.py` over a `ZZ_MEM_STAGES=2` run and
 `bridge/bench/pil2_layout.py` over the proving key — not with
 `bench/mem_budget.py`, which answers a different question (what a whole run
@@ -2022,6 +2027,14 @@ own allocation
 while a program runs — an extend's output beside its input, fusion scratch —
 and it is on top of our live set, where pil2's equivalent (`mem_exps`,
 `tmp1`/`tmp3`, `buff_helper`) is already inside `mapTotalN`.
+
+**This term is the one an arena figure cannot be decomposed into.** It is
+inside the client-lifetime peak that "Memory budget" above quotes, and it
+belongs to no section — so anyone who reads that arena and tries to account
+for it section by section is left with a gigabyte and a half that has no row,
+whatever inventory they take. It is visible only between two programs, which
+is what `ZZ_MEM_STAGES=2` exists for. Size a memory lever against the live set
+plus this term, never against the live set alone.
 
 **(a) Held past their last reader: 256 MiB on Main, 1,488 MiB on
 VirtualTableZisk0**, dominated by `const_base` (96 / 1,408 MiB), whose last
