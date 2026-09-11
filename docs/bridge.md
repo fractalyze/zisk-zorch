@@ -1445,7 +1445,16 @@ is unmeasured here for that reason, not overlooked.
     and carried by the shipped wheel, whose refusal message names all five —
     so the kind is a create option rather than the plugin change #215 took it
     for. Walked with it (#220: one binary, the kind an env var, the two arms
-    back to back inside each repeat, three repeats a cell):
+    back to back inside each repeat, three repeats a cell). **The floor
+    record is the table further up, not this one**: that walk was taken to
+    site the floor, with six repeats at the boundary cells, while this one
+    exists to compare two columns taken in one session. Its BFC column lands
+    a rung harsher than the floor table's at the same fractions (2/3 against
+    5/6 at 0.35, 0/3 against 3/6 at 0.34) — different session, a different
+    build, a co-tenant on the host throughout and swap full, and boundary
+    cells that are races either way. The floor cells were not re-run under
+    these conditions, so the two tables are not a controlled comparison of
+    each other; what this one measures is the gap between its own columns.
 
     | `ZZ_MEMORY_FRACTION` | the client's arena | BFC | `cuda_async` |
     |---|---|---|---|
@@ -1463,9 +1472,14 @@ is unmeasured here for that reason, not overlooked.
     it allocates from the device's default CUDA memory pool, so the share is
     the pool's release threshold — claimed up front, and not a ceiling. The
     client reports itself past it: at the 8.15 GiB claim its allocator gives
-    `limit 8348 MiB` with a peak in use of 10613, 10544 and 11093 MiB, 2.2 to
-    2.7 GiB above its own limit (a later set of three at that cell, so 2 of 3
-    rather than the table's 3 of 3 — it is near its boundary either way).
+    `limit 8348 MiB` against a peak in use of 10613 and 11093 MiB, 2.2 and
+    2.7 GiB above its own limit. Those are the two runs that *finished* in a
+    later set of three at that cell — a set that passed 2 of 3 where the
+    table's walk passed 3 of 3, the cell being near its boundary either way.
+    The third aborted on a 2.50 GiB allocation, so its peak is truncated at
+    the abort, in the way "The room above the data is a range" above gives
+    as the reason not to quote such a figure; it is a lower bound, and it is
+    over the limit too.
     What the lower cliff measures is the pool growing into room pil2 did not
     take. The working set is not what moved: at one claim of 11.60 GiB the
     peaks are 10.22–11.27 GiB under BFC against 9.90–10.83 under
@@ -1473,7 +1487,13 @@ is unmeasured here for that reason, not overlooked.
     three `cuda_async` runs are byte-identical to a native run from the same
     session, 11 of 11. The table is one build; the peaks beside it are a
     second build of the same tree, which adds the off-by-default readout
-    they are taken from and nothing else.
+    they are taken from and nothing else. Both were read off the run logs by
+    hand — the arena from each run's own `XLA backend allocating N bytes on
+    device 0 for CudaAsyncAllocator`, the peaks from the readout's `client 0
+    memory: ... peak_in_use N MiB`. `bench/mem_budget.py` does **not** produce
+    this table: its arena pattern matches `for BFCAllocator` only, and it
+    knows nothing of the readout's line — the reader that handles both is
+    parked with the option.
 
     So the kind is not the lever the 2.75 GiB `const_ext` made it look like.
     It buys no arena, it gives up the ceiling `ZZ_MEMORY_FRACTION` exists
@@ -1616,8 +1636,9 @@ is unmeasured here for that reason, not overlooked.
   flat 1.2 GiB this paragraph used to carry, re-measured under "The room
   above the data is a range" above (#220). Not from the fixed-section
   read-ahead, which the table above measures as not binding, and not from
-  pil2, which the two bullets above close off. An earlier version of this paragraph led with
-  `const_ext` on the strength of its being the largest single allocation;
+  pil2, which the two bullets above close off. An earlier version of this
+  paragraph led with `const_ext` on the strength of its being the largest
+  single allocation;
   the bullets below are why that is an argument about ordering rather than
   about size.
 
