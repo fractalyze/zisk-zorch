@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use xla_pjrt::{Executable, Session, SessionOptions};
+use xla_pjrt::{AllocatorKind, Executable, Session, SessionOptions};
 
 use crate::manifest::{Manifest, ProgramInfo, Spec};
 use crate::Error;
@@ -275,9 +275,53 @@ fn staging_threshold_from(threshold: Option<&str>) -> Option<i64> {
         .filter(|&bytes| bytes > 0)
 }
 
+/// Which device allocator the plugin builds for each client.
+///
+/// The default (BFC) places every allocation in one arena, so the largest
+/// sections a prove holds -- a wide AIR's extended constants, the running
+/// prove's extended trace -- each need a free block of their own size, and a
+/// client's arena has to carry that placement slack on top of its live set.
+/// `cuda_async` places out of the device's memory pool instead, where the
+/// driver maps pages behind a request rather than finding one free block.
+///
+/// `ZZ_ALLOCATOR` names the kind. Unset sends no option at all, which is both
+/// the plugin's own behaviour and what a plugin that does not know a kind
+/// needs -- PJRT fails client creation on a create option it cannot parse.
+fn allocator_kind() -> Option<AllocatorKind> {
+    allocator_kind_from(std::env::var("ZZ_ALLOCATOR").ok().as_deref())
+}
+
+/// The decision on its own, so the table in the tests can state it.
+///
+/// A spelling the plugin does not know warns rather than aborting the run,
+/// as a malformed `ZZ_MEMORY_FRACTION` does. What keeps a typo from quietly
+/// publishing the default allocator's numbers under another arm's name is the
+/// run's own log: the plugin names the allocator it built on the line it
+/// prints the arena on, and `bench/mem_budget.py` reads the arm from there
+/// rather than from what the sweep meant to set.
+fn allocator_kind_from(kind: Option<&str>) -> Option<AllocatorKind> {
+    let kind = kind.filter(|s| !s.is_empty())?;
+    let known = [
+        AllocatorKind::Default,
+        AllocatorKind::Platform,
+        AllocatorKind::Bfc,
+        AllocatorKind::CudaAsync,
+        AllocatorKind::Vmm,
+    ];
+    known.into_iter().find(|k| k.as_str() == kind).or_else(|| {
+        let names: Vec<&str> = known.iter().map(|k| k.as_str()).collect();
+        eprintln!(
+            "[zz] ZZ_ALLOCATOR={kind:?} is not one of {}; the clients build the plugin's default allocator",
+            names.join(", ")
+        );
+        None
+    })
+}
+
 pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
     let eager = eager_module_loads();
     let staging = staging_threshold();
+    let allocator = allocator_kind();
     if crate::log_level() >= 1 {
         // A run's own log has to say which way these went: two runs that
         // differ only by one of these options are otherwise indistinguishable
@@ -291,6 +335,7 @@ pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
                 Some(bytes) => zzlog!("staging threshold {} MiB", bytes >> 20),
                 None => zzlog!("staging threshold plugin default"),
             }
+            zzlog!("allocator {}", allocator.map_or("plugin default", AllocatorKind::as_str));
         });
     }
     let options = SessionOptions {
@@ -298,6 +343,7 @@ pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
         memory_fraction,
         eager_load_executable_modules: eager,
         staging_threshold_bytes: staging,
+        allocator,
     };
     let session = Arc::new(unsafe { Session::with_options(options) });
     if memory_fraction.is_some() {
@@ -590,7 +636,10 @@ impl Artifact {
 
 #[cfg(test)]
 mod tests {
-    use super::{each_parallel, eager_module_loads_from, staging_threshold_from, CacheEntryLock, Gate};
+    use super::{
+        allocator_kind_from, each_parallel, eager_module_loads_from, staging_threshold_from,
+        AllocatorKind, CacheEntryLock, Gate,
+    };
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -656,6 +705,27 @@ mod tests {
         assert_eq!(eager_module_loads_from(Some(""), Some("0")), None);
         assert_eq!(eager_module_loads_from(Some(""), None), Some(true));
         assert_eq!(eager_module_loads_from(None, Some("")), Some(true));
+    }
+
+    #[test]
+    fn the_allocator_is_the_plugin_default_unless_a_known_kind_asks_for_one() {
+        // Unset is the plugin's own choice: no option sent, so a plugin that
+        // does not know a kind still creates a client.
+        assert_eq!(allocator_kind_from(None), None);
+        assert_eq!(allocator_kind_from(Some("")), None);
+        // Every spelling the plugin parses, because a kind that reads as
+        // unknown here would run the default allocator under another arm's
+        // name.
+        assert_eq!(allocator_kind_from(Some("default")), Some(AllocatorKind::Default));
+        assert_eq!(allocator_kind_from(Some("platform")), Some(AllocatorKind::Platform));
+        assert_eq!(allocator_kind_from(Some("bfc")), Some(AllocatorKind::Bfc));
+        assert_eq!(allocator_kind_from(Some("cuda_async")), Some(AllocatorKind::CudaAsync));
+        assert_eq!(allocator_kind_from(Some("vmm")), Some(AllocatorKind::Vmm));
+        // The plugin's parser is an exact string match, so neither a
+        // near-miss spelling nor another case is a kind. Both warn and fall
+        // back rather than being guessed at.
+        assert_eq!(allocator_kind_from(Some("cuda-async")), None);
+        assert_eq!(allocator_kind_from(Some("CUDA_ASYNC")), None);
     }
 
     #[test]

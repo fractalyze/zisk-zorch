@@ -11,9 +11,10 @@ description = "pil2-proofman's gen_proof over zisk-zorch's exported StableHLO ar
 # client per pil2 stream share the card; eager_load_executable_modules is
 # what moves a loaded executable's module loads off the prove path;
 # staging_threshold_bytes is what keeps the uploads above 1 GiB on the pinned
-# path). The pin tracks that crate's `feat/session-options` line, which is
-# where those options live -- it has never been on its `main`.
-xla-pjrt = { git = "https://github.com/fractalyze/xla-pjrt", rev = "2142504" }
+# path; allocator is which device allocator each client builds). The pin
+# tracks that crate's `feat/session-options` line, which is where those
+# options live -- it has never been on its `main`.
+xla-pjrt = { git = "https://github.com/fractalyze/xla-pjrt", rev = "c07933c" }
 # pil2's own Fiat-Shamir transcript (Poseidon1/2 over Goldilocks). The
 # proofman fork that consumes this crate patches every pil2-proofman crate
 # to one checkout, so `fields` resolves to the same crate proofman uses.

@@ -86,6 +86,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_CLIENTS` | PJRT clients; proofman spawns this many basic-proof workers | 3 — more than this card fits, see "Memory budget" |
 | `ZZ_MEMORY_FRACTION` | share of the card the clients claim up front, split evenly, before pil2 sizes its buffers | unset: allocate on demand |
 | `ZZ_GPU_HEADROOM_GB` | (fork) GPU memory pil2 leaves out of its stream sizing | 0 |
+| `ZZ_ALLOCATOR` | which device allocator each client builds: `default` (the plugin's own pick, which on CUDA is BFC), `platform`, `bfc`, `cuda_async`, `vmm`. The kind changes what the fraction above means — under BFC it is a ceiling as well as a claim and every allocation is placed inside one arena, while under `cuda_async` it is the release threshold of the device's memory pool, claimed up front but not a bound | off: no option sent, so the plugin's own default stands (also what a plugin that does not know a kind needs) |
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
 | `ZZ_PRELOAD_THREADS` | AIRs loading at once | 6 |
 | `ZZ_EAGER_MODULES` | executables load their modules into the CUDA context as they are deserialized, not on first execute: `0` off, anything else on, empty or unset follows `ZZ_PRELOAD` | on unless `ZZ_PRELOAD=0` |
