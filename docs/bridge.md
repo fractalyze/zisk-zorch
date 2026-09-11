@@ -60,6 +60,13 @@ FRX_PLATFORMS=cuda python -m zisk_zorch.export.export_air \
 # Warming a single AIR is what bisecting a plugin build does.
 ZZ_WARM_THREADS=11 zz_prove --warm $ARTIFACTS Main_n22 Rom_n22 ...   # or no list: all
 
+# before any run whose init or wall you intend to quote: the proving-key files
+# proofman reads before it sizes its buffers. Cold, they cost seconds of init
+# on either stack, and any other tenant of the host can empty them out of the
+# page cache between two runs -- see "What sets a run's init is the page
+# cache". bench/run.sh does this for you unless ZZ_WARM_KEY=0.
+bench/pagecache.py --warm --proofman-init $PK
+
 # the bridge's inputs (the full list is the table below)
 export ZZ_ARTIFACTS=$ARTIFACTS
 export XLA_PJRT_PLUGIN=<venv>/site-packages/frx_plugins/xla_cuda12/xla_cuda_plugin.so
@@ -624,7 +631,7 @@ to establish the expensive way.
 | | the figure | where it comes from |
 |---|---|---|
 | inner-proof leg | bridge **5.327 s**, native **3.455 s** (1.54x) | #214, both arms in one session, one binary, interleaved pass by pass and rotated within a pass, eight passes each; medians over passes 2–8, bridge sd 0.136 [5.195–5.608], native sd 0.124 [3.319–3.668] |
-| proofman init, bridge minus native | **0.17–0.22 s** behind | #214, on the bumped wheel, read within predecessor-arm groups because init tracks the previous run's arm by ~0.95 s ("The gap is the basic phase's wall"): after a native run bridge 3.320 s [3.307–3.326] against native 3.101 s [3.074–3.109], after a bridged one 4.254 s [4.246–4.269] against 4.081 s [4.042–4.133], ranges disjoint in both. Counting each run's own client creation (0.183–0.309 s, `ZZ_LOG`'s `bridge up`) it is 0.36–0.41 s. A difference, not two levels: neither stack's init has a level this page will quote (see "Bridge start-up"). Agrees with #178's pre-bump 0.10–0.23 s |
+| proofman init, bridge minus native | **0.248 s** behind, on a page cache warmed to the set init reads | #217, on the bumped wheel, both arms interleaved and rotated in one session, three passes each, that set warmed immediately before every run: bridge 3.107 s [3.046–3.123] against native 2.859 s [2.820–2.881], ranges disjoint. Counting each bridged run's own client creation (0.181–0.192 s, `ZZ_LOG`'s `bridge up`) it is 0.43 s. **The cache state is part of the figure**, which is why this row names it: with that same set evicted and nothing else changed the gap is 3.478 s (bridge 8.434 s against native 4.956 s), and on the uncontrolled cache of #217's own predecessor sweep it is 0.128 s. All three are inside the criterion; none of them is the difference without a state. A difference, not two levels: neither stack's init has a level this page will quote (see "Bridge start-up"). #214's 0.17–0.22 s is the same quantity on an uncontrolled cache and is not contradicted, only unquotable on its own — see "What sets a run's init is the page cache" for which to read and why |
 | basic proofs byte-identical to native's | 11 of 11 | #214, two independent pass pairs out of the interleaved sweep, each a native and a bridged run in the shipped configuration, compared by `bench/compare_dumps.py` |
 | `MemAlign_n21` first prove, bridge | 0 of 60 wrong | #204, 60 fresh processes doing one first prove each under `CUDA_LAUNCH_BLOCKING=1` |
 
@@ -661,7 +668,7 @@ so interleave the arms pass by pass and rotate them within a pass.
 | criterion | verdict |
 |---|---|
 | inner-proof leg within 1.2x of native's (≤ 4.15 s against 3.455 s) | **not met** — 5.327 s is 1.54x, over by 1.181 s |
-| proofman init within 0.5 s of native's | **met** — 0.17–0.22 s behind on the bumped wheel by proofman's own timer, 0.36–0.41 s counting the bridge's client creation, #214 |
+| proofman init within 0.5 s of native's | **met on the baseline the recipe now guarantees** — the set init reads warmed: 0.248 s behind by proofman's own timer, 0.43 s counting the bridge's client creation, #217. Not met on a cold page cache, where the same pair is 3.478 s apart. The criterion is only readable with the cache state named, which is why `bench/run.sh` sets that state and records it per run |
 | all 11 basic proofs byte-identical to native's dumps | met — 11 of 11 |
 | this section traces every number to a run recipe and a commit | met by the table above |
 
@@ -807,7 +814,10 @@ Reproduce: `ZISK_PROVE_FLAGS= bench/run.sh <tag> native|bridge`, the bridge arm
 with `ZZ_EAGER_MODULES=1 ZZ_STAGING_THRESHOLD=0` and run.sh's own `ZZ_CLIENTS=1
 ZZ_MEMORY_FRACTION=0.45`, alternating the arm order pass by pass. Probe warmth
 before the first timed run: `zz_prove --warm <artifacts> <one AIR>`, per plugin
-the sweep will use.
+the sweep will use. run.sh warms the proving-key set init reads before each run
+and records the census beside the log; if you drive the prover directly, warm
+it yourself (`bench/pagecache.py --warm --proofman-init $PK`) or the init
+column is measuring the host's page cache.
 
 Every wall in this section — 2.343, 4.279, 3.164 s and the recursion and
 overlap figures beside them — comes out of **`bench/leg_phases.py <run.log>...`**,
@@ -829,7 +839,9 @@ the sweep's start — the runs still filling a cold page cache, at 3.851 and
 arm being timed: native and bridge each appear in both groups, and the
 alternation rules out drift. That is a candidate for the regime #178 found and
 could not select ("Bridge start-up"), and it is worth about 0.95 s — four to
-five times the arm difference underneath it.
+five times the arm difference underneath it. The predecessor's arm turned out
+to be a proxy rather than a mechanism: #217 isolated it and found what it
+stands for, which is the section after next.
 
 Which is why the arm difference has to be read *within* a predecessor group,
 and can be: the rotation puts both arms in both groups.
@@ -848,6 +860,112 @@ behind. Both readings are what the Status table's init row carries, and both
 agree with #178's pre-bump pair (0.10–0.23 s by the timer, 0.28–0.41 s with
 client creation). The two runs dropped above are dropped for the level, not the
 difference: they are one arm each and sit either side of it.
+
+### What sets a run's init is the page cache (2026-09-11, #217)
+
+The rotation above read init against the arm that ran *before* it. Isolate that
+predecessor and it stops predicting anything. Four cells — native or bridged
+first, native or bridged measured — three repeats each, the pairs run back to
+back and the cell order rotated each repeat so a cell's grand-predecessor is
+not the same arm every time. Only each pair's second run is quoted:
+
+| init | after a native run | after a bridged run |
+|---|---|---|
+| native | 3.286 s [3.255–3.712], n=3 | 3.279 s [3.204–4.850], n=3 |
+| bridge | 3.409 s [3.349–3.412], n=3 | 3.437 s [3.376–3.535], n=3 |
+
+No step. Read down instead of across and the arm difference is still there at
++0.12 to +0.16 s (pooled over the predecessor, which is a null: +0.128 s);
+read across and the 0.95 s #214 measured is gone. **That is not the figure the
+Status table quotes**, and the difference between them is this section's
+subject rather than a discrepancy in it — see "Which of the two to quote"
+below. Both outlying runs — 4.850 s, and 5.094 s on
+the predecessor side of a pair — are in the sweep's first four, and both
+started with part of one file family missing from the page cache. Every other
+run in the sweep started with that family whole.
+
+**Which family, and why init cares.** `INITIALIZING_PROOFMAN` splits at two
+landmarks proofman prints: the buffer sizes it announces, then
+`LOADING_FIXED_POLS`. Across all four cells above and both states below, the
+second and third parts do not move — the GPU allocation stays inside
+0.27–0.34 s and `LOADING_FIXED_POLS` inside 0.67–0.87 s. Everything that moves
+is in the first part, before proofman has sized anything, and that part is a
+file read. A run polled from a fully evicted key fetched 8.57 GiB from storage
+inside it (`/proc/<pid>/io` `read_bytes`, sampled against the log's own
+landmarks) and gained 8.44 GiB of resident proving key over the same window:
+the const pols in GPU layout, the `.exec` and `.dat` files of the recursion
+setups, and the small binaries and JSON beside them. The constant trees are not
+in it — the allocation and `LOADING_FIXED_POLS` pull one air's worth each, and
+the rest of that 34 GiB belongs to the leg.
+
+**So set it directly.** The same runs with only that set's cache state flipped
+immediately before each one — read back in, or dropped with `posix_fadvise` —
+interleaved and rotated, three repeats a cell:
+
+| init | the set warm | the set evicted |
+|---|---|---|
+| native | 2.859 s [2.820–2.881] | 4.956 s [4.918–4.979] |
+| bridge | 3.107 s [3.046–3.123] | 8.434 s [8.361–8.472] |
+
+Ranges are disjoint by seconds, and it lands where the poll said it would: the
+pre-allocation part goes 1.877 → 3.973 s on native and 2.132 → 7.481 s on the
+bridge, while the allocation and `LOADING_FIXED_POLS` sit still in every cell.
+The leg is the control and does not move (native 3.445 s warm against 3.380 s
+cold, bridge 5.182 against 5.382): the arms differ in the files init reads and
+in nothing else, which is why `.const` and the constant trees are left alone by
+both. **That makes it a control for this experiment, not a general one** — the
+leg reads the constant trees, and no arm here evicts them, so nothing above
+says what the leg does when *they* are cold.
+
+**Which of the two to quote.** These are two measurements of one difference on
+two different baselines, and the page's own rule is that a figure names its
+baseline. The four cells ran on whatever cache state the previous run left:
+`.const_gpu` was resident in 11 of the 12, but nothing censused `.exec` and
+`.dat`, and their absolute init sits about 0.4 s above the warmed arms' —
+which is what a partly cold set looks like. The warmed arms are the only ones
+whose state was set. So **criterion 3 reads the warmed figure, +0.248 s**, and
+the sweep's +0.128 s is a consistency check rather than a second quote: it was
+designed to test the predecessor, not to resolve a tenth of a second between
+the arms, and its native arm carries a 4.850 s outlier that its median only
+survives by being a median. Both are far inside the 0.5 s the criterion
+allows. What neither licenses is a bare number: the same difference is
++0.128 s on an uncontrolled cache, +0.248 s warmed and +3.478 s cold, and it is
+not a monotone function of warmth, because the two arms are not hurt equally by
+a partial one.
+
+**The bridge is not the actor here, and neither is either stack.** The cold
+penalty is 2.1 s on native and 5.3 s on the bridge — a bridged run's init also
+holds its own client creation and preload, which queue behind proofman on the
+same disk — but the state that decides it belongs to the host, not to the run
+before. In this session the set survived every bridged run; what emptied it was
+a sibling session's build server starting between two of this unit's own
+sweeps, after which the key held none of the 18 GiB it had held minutes
+earlier — while free memory went *up*. #214's session was one
+where a bridged run did the evicting, and the arm inherited the credit. Any
+process on this machine that reads a few GiB is a large enough actor.
+fractalyze/zisk-zorch#222 would shrink the bridge's own contribution to it; on
+this evidence that makes the bridge a smaller tenant, not the one that matters.
+
+**What this costs a reader of init.** The bridge is 0.248 s behind native with
+the set warm and 3.478 s behind with it cold, same binary, same session. A
+criterion of the form "init within 0.5 s of native's" is therefore a statement
+about the page cache as much as about either stack, and an init figure with no
+cache state beside it says nothing. `bench/run.sh` warms the set before every
+run and leaves the census in `pagecache.txt` beside the log, so the state is
+recorded rather than assumed — on every run, warmed or not, since a cold run is
+exactly the one whose figure depends on the state. The cold arm above is that
+step inverted: `--evict` the set, then `ZZ_WARM_KEY=0` so run.sh censuses it
+and leaves it evicted.
+
+```bash
+# the reset, the check that it took, and the cold arm on purpose
+bench/pagecache.py --warm --proofman-init $PK
+bench/pagecache.py --proofman-init $PK          # census only, faults nothing in
+bench/pagecache.py --evict --proofman-init $PK
+```
+
+Three native/bridge pairs out of these sweeps were compared with
+`bench/compare_dumps.py`: 11 of 11 basic proofs byte-identical in each.
 
 ### The levers, each closed with a measurement
 
@@ -943,6 +1061,19 @@ bridge-after-bridge runs on the same binary averaged 5.13 s against
 larger than the ordering effect and with no account of its own. Those
 runs are not among the 31 above, which is why the range there stops at
 5.00 s.
+
+**#217 names it, and it is neither covariate.** Both of those are the same
+thing seen through different windows. proofman's init reads 8.4 GiB of the
+proving key before it sizes its buffers, and the page cache decides how much
+of that comes off the disk. That is why blocks read tracks init *within* a
+sequence and inverts *between* the arms — the reads that cost a run are not
+its own — and why run order was worth 0.57 s on one day and nothing on the
+next: a bridged run evicts the set on a host under memory pressure and not on
+one that is idle. It is also what the sibling session's slower runs were: a
+sibling session is exactly the kind of tenant that empties it. Set the state
+instead of measuring around it ("What sets a run's init is the page cache")
+and the same pair sits 0.248 s apart warm and 3.478 s apart cold, both with
+ranges that do not overlap.
 
 That instability is why the comparison above is stated as a bound, and
 also why the conclusion survives it: the slower init gets, the more of

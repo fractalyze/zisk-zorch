@@ -12,7 +12,11 @@
 # clients allocate on demand rather than claim a share up front),
 # ZISK_PROVE_FLAGS (default "-a -u": the ASM emulator, mapped memory
 # unlocked; set it to the empty string for a host without the ASM
-# emulator built, which is what the hello-world guest runs on).
+# emulator built, which is what the hello-world guest runs on),
+# ZZ_WARM_KEY (default 1: read the proving-key files proofman's init reads
+# into the page cache before the run — set it to 0 only to measure a cold
+# init on purpose. The census into pagecache.txt happens either way; see
+# docs/bridge.md "What sets a run's init is the page cache").
 set -u
 TAG=$1; MODE=$2; shift 2
 OUT=${ZZ_RUNS:-./zz-runs}/$TAG
@@ -27,6 +31,19 @@ else
   unset ZZ_ARTIFACTS
 fi
 export ZZ_DUMP_PROOFS="$OUT/dumps"
+# proofman's init reads a fixed set of the key before it sizes its buffers, so
+# a run started on a cold page cache times the disk rather than either stack --
+# by seconds. Any other tenant of the host can empty that cache between two
+# runs, so warm it here and keep the census beside the log.
+#
+# The census is taken on EVERY run, warmed or not. A cold run is precisely the
+# one whose figure depends on the cache state, so it is the one that must not
+# be the run with no record of it. And a census that fails takes the run with
+# it: a log whose cache state could not be established is not quotable, and
+# looks identical to one where it could.
+WARM=(--warm); [ "${ZZ_WARM_KEY:-1}" = 0 ] && WARM=()
+python3 "$(dirname "$0")/pagecache.py" "${WARM[@]}" --proofman-init "$ZISK_PK" \
+    > "$OUT/pagecache.txt" || { cat "$OUT/pagecache.txt" >&2; exit 1; }
 { uptime; nvidia-smi --query-gpu=memory.used --format=csv,noheader; } > "$OUT/host.txt"
 # shellcheck disable=SC2086
 env "$@" /usr/bin/time -v "$ZISK_BIN" prove -e "$ZISK_ELF" ${ZISK_IN:+-i $ZISK_IN} ${ZISK_PROVE_FLAGS--a -u} \
