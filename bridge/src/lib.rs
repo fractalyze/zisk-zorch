@@ -1111,9 +1111,11 @@ impl Bridge {
             }
         }
         phase.set("fixed_install");
-        let keep_fixed = self.keeps_fixed(&key);
+        let residency = match self.keeps_fixed(&key) {
+            true => driver::Residency::Keep,
+            false => driver::Residency::Release,
+        };
         let driver = slot.drivers.get_mut(&key).unwrap();
-        driver.set_keep_fixed(keep_fixed);
         if !driver.has_fixed() {
             let t = Instant::now();
             let looked_resident = prefetched.is_none();
@@ -1189,8 +1191,8 @@ impl Bridge {
         // here is only the transcript's own setup.
         phase.set("prove");
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
-        let proved = driver.prove(inputs, &mut transcript, proof_out);
-        if !keep_fixed {
+        let proved = driver.prove(inputs, residency, &mut transcript, proof_out);
+        if residency == driver::Residency::Release {
             // The sections went with the prove, on the error path too —
             // `prove` takes them off the driver before it runs. Re-sync the
             // read-ahead's mirror, so a next prove of this AIR — a plan that

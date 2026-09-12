@@ -2,7 +2,7 @@
 //! `zisk_zorch/export/replay.py`: one `AirDriver` per (session, artifact),
 //! keeping the key's fixed sections resident, so a prove of the same AIR
 //! uploads only the instance, for as long as the plan says another is
-//! coming (`set_keep_fixed`).
+//! coming (`Residency`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -109,9 +109,25 @@ pub struct ProveOutputs {
 pub struct AirDriver {
     artifact: Arc<Artifact>,
     fixed: Option<Env>,
-    /// Whether the key's fixed sections stay on this driver for the next
-    /// prove of the AIR or go with the prove that uses them (`set_keep_fixed`).
-    keep_fixed: bool,
+}
+
+/// What becomes of the key's fixed sections when the prove that uploaded them
+/// ends. Decided per prove by the caller, which is the only place that knows
+/// proofman's plan, and passed to `prove` rather than held on the driver: a
+/// policy that outlived the prove it was set for would be a wrong answer this
+/// type cannot represent.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Residency {
+    /// Stay on the driver for the next prove of this AIR. What residency is
+    /// for, and what every prove did before the bridge read a plan.
+    Keep,
+    /// Go with this prove, each section at its last reader. On a plan that
+    /// proves the AIR once there is no next prove to keep them for, and
+    /// `const_base` alone is 1.2-1.4 GiB of a table AIR held from `logup` to
+    /// an eviction that happens after the *next* AIR's sections have gone up.
+    /// A later prove of the AIR finds no fixed set and runs the setup
+    /// programs again.
+    Release,
 }
 
 struct TreeOpening {
@@ -169,7 +185,7 @@ fn base_dead_after_logup(programs: &BTreeMap<String, ProgramInfo>, customs: &[Cu
 
 impl AirDriver {
     pub fn new(artifact: Arc<Artifact>) -> AirDriver {
-        AirDriver { artifact, fixed: None, keep_fixed: true }
+        AirDriver { artifact, fixed: None }
     }
 
     pub fn manifest(&self) -> &Manifest {
@@ -190,16 +206,6 @@ impl AirDriver {
         self.fixed = None;
     }
 
-    /// Keep the key's fixed sections for the next prove of this AIR, or let
-    /// each go at its last reader inside the prove that uses them. Residency
-    /// pays only when that next prove comes: on a plan that proves the AIR
-    /// once, `const_base` alone is 1.2-1.4 GiB held from `logup` to an
-    /// eviction that happens after the *next* AIR's sections have gone up.
-    /// The bridge sets this from proofman's instance list; a driver nobody
-    /// tells keeps them, which is what every prove did before.
-    pub fn set_keep_fixed(&mut self, keep: bool) {
-        self.keep_fixed = keep;
-    }
 
     /// Run the setup programs over the key's fixed sections, uploading them
     /// first unless the caller already did (`upload_fixed`).
@@ -306,11 +312,17 @@ impl AirDriver {
 
     /// Prove one instance through the artifacts, writing `proof_words()`
     /// words into `proof_out`.
-    pub fn prove(&mut self, mut inp: InstanceInputs, transcript: &mut HostTranscript, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+    pub fn prove(
+        &mut self,
+        mut inp: InstanceInputs,
+        residency: Residency,
+        transcript: &mut HostTranscript,
+        proof_out: &mut [u64],
+    ) -> Result<ProveOutputs, Error> {
         let artifact = self.artifact.clone();
         let art = &*artifact;
         let m = &art.manifest;
-        let keep_fixed = self.keep_fixed;
+        let keep_fixed = residency == Residency::Keep;
         // A plan that proves this AIR once hands its fixed sections to this
         // prove rather than lending them: with no handle left on the driver,
         // the removes below are what actually frees each section, and a

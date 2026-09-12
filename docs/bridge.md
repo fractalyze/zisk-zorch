@@ -2203,9 +2203,18 @@ rebuilding at ~4.7 s per run — and on hello-world it never does: its eleven
 instances are eleven distinct AIRs, so every section held is held for nobody.
 
 proofman knows which it is before the first prove. Its instance list reaches
-the bridge already — it is what the preload works from — so the only change is
-to send it with its duplicates intact (`Bridge::set_plan`) instead of one entry
-per AIR. An AIR the list names once then hands its sections to the prove that
+the bridge already — it is what the preload works from — so the change is to
+send it with its duplicates intact (`Bridge::set_plan`) instead of one entry
+per AIR. **That half lives in the proofman fork, and until the fork's
+`zisk-zorch-bridge` rev is bumped to one carrying `set_plan`, the call site
+still calls `preload_with` and no plan reaches the bridge at all.** With an
+empty plan every AIR keeps its sections, so on the tree as it stands this
+section describes a mechanism that is present and dormant: the numbers below
+were taken with the fork change applied locally, and they are what the bridge
+does once the rev is bumped, not what it does today. (`ZZ_FIXED_RESIDENT=0`
+reaches the same releases with no plan at all, which is how a build without
+the fork change can exercise this path — but the `plan` arms below were taken
+through a real plan, not through that variable.) An AIR the list names once then hands its sections to the prove that
 uploads them rather than lending them: `driver::prove` **takes** the fixed env
 off the driver instead of cloning it, which is what makes the removes inside
 the prove actually free, and each section goes at its own last reader —
@@ -2217,8 +2226,10 @@ Three properties of the decision are worth stating because each is a way it
 could have been got wrong:
 
 - **An AIR the plan does not name keeps its sections.** The plan comes from the
-  proofman fork; a caller that sends none (an older fork, `zz_prove`) leaves
-  every AIR behaving as it did before there was a plan.
+  proofman fork; a caller that sends none — today's fork, and `zz_prove` in
+  every build — leaves every AIR behaving as it did before there was a plan.
+  This is what makes the unit safe to land ahead of the fork rather than a
+  change that has to arrive with it.
 - **The count is a run's, not a client's.** Two instances of one AIR can land
   on two clients and each prove it once, but a count taken before the slots are
   assigned cannot know that. It keeps on both — the conservative way round.
@@ -2253,30 +2264,56 @@ carries one key, its own.
 The `keep` arm reproduces the 8,933–8,993 MiB this page already records for
 that configuration, which is the check that the instrument is the same one.
 
-**Default admission, nine runs per arm.** The boundary carries two keys (see
-below), and the co-resident one swings run to run.
+**Default admission, eleven runs per arm.** The boundary carries two keys and
+the co-resident one is whichever AIR was admitted beside VT0, so its size
+changes run to run.
 
-| | `keep` | `plan` | diff |
-|---|---|---|---|
-| VT0 live entering `stage1` | 6,138 | 6,138 | 0 |
-| VT0 live entering `stage2` | 8,000 | 6,592 | **−1,408** |
-| that prove's allocator peak | 10,176 | 8,768 | **−1,408** |
-| the run's client high-water | 9,087–10,208 | 8,932–10,273 | — |
-| the AIR that set it | VT0 7 of 9 | **Main 9 of 9** | — |
+| | `keep` | `plan` |
+|---|---|---|
+| `const_base` live entering `stage2` | **2 buffers, always** | **1 buffer, always** |
+| — VT0's own, 1,408 MiB | present 11 of 11 | **absent 11 of 11** |
+| — the neighbour's | 1,168 (9 runs), 32, 16 | 1,168 (11 runs) |
+| VT0 live entering `stage1` | 6,138 | 6,138 |
+| VT0 live entering `stage2` | 8,000 (9 runs), 7,152, 6,800 | **6,592 in 11 of 11** |
+| that prove's allocator peak | 10,176 (9 runs), 9,328, 9,024 | **8,768 in 11 of 11** |
+| the run's client high-water | 9,087–10,208 | 8,876–10,273 |
+| the AIR that set it | VT0 8 of 11, Main 3 | **Main 11 of 11** |
 
-`stage1` is identical because the release is *after* `logup`, and 1,408 MiB is
-`const_base` on that AIR to the byte. The `plan` figures are the same in every
-run of both tables: 15 runs, one number.
+**Read the first three rows, not the subtraction.** What this unit does is
+exact and run-invariant: VT0's own `const_base` is live at that boundary in
+every `keep` run and in none of the `plan` runs, and it is 1,408 MiB. What the
+*live set* does is that minus whatever the neighbour contributed, and the
+neighbour is not the same AIR every run — which is why `keep`'s boundary is
+8,000 in nine runs and 7,152 or 6,800 in the other two, while `plan`'s is 6,592
+in all eleven. Subtracting one arm's live set from the other's is only worth
+1,408 when both runs happened to draw the same neighbour; the composition rows
+hold whatever it drew.
+
+**`ZZ_PENDING=1`, three runs per arm — the lever with no neighbour at all.**
+
+| | `keep` | `plan` |
+|---|---|---|
+| `const_base` live entering `stage2` | 1 x 1,408 (its own) | **none** |
+| VT0 live entering `stage2` | 6,704 | 5,296 |
+| that prove's allocator peak | 8,960–8,981 | 8,821 |
+| the run's client high-water | 8,981 | 8,821 |
+| the AIR that set it | Main 3 of 3 | Main 3 of 3 |
+
+Here the subtraction is safe, because neither arm has a neighbour to vary:
+6,704 − 5,296 = 1,408, and the `keep` arm reproduces the 8,933–8,993 MiB this
+page already records for that configuration, which is the check that the
+instrument is the same one. `stage1` is identical in every arm and run, because
+the release is *after* `logup`.
 
 **The run's client high-water is not this lever's to move, and the unit does
 not claim it.** A run's high-water is the largest peak any of its eleven
 proves reached, so it can fall only to the second largest. Under `ZZ_PENDING=1`
 `Main_n22` already sets it in both arms and the run figure moves 160 MiB while
 the boundary moves 1,408. Under the default admission, taking VT0's peak away
-promotes Main in 9 runs of 9, and Main's peak is the `deep`/`evals` transient —
+promotes Main in 11 runs of 11, and Main's peak is the `deep`/`evals` transient —
 #226's category (c), which that inventory already recorded as not reachable
-from the bridge. **1,408 MiB off the binding shape's prove, 15/15; 160 MiB off
-the run.**
+from the bridge. **VT0's own `const_base` gone from that boundary in
+all 14 runs that carry an inventory; 160 MiB off the run.**
 
 **The leg does not notice.** Eight passes per arm in one session, default
 admission, interleaved; medians over passes 2-8 as this page quotes them:
@@ -2289,7 +2326,10 @@ here, and the arms say so rather than the reasoning alone. What would cost a
 leg is an AIR the plan undercounts, which re-runs its setup programs; the
 `sha-hasher` arms below are where that is measured.
 
-All 40 hello-world runs in this section are 11/11 byte-identical to native.
+That accounts for all 44 hello-world runs in this section: 28 carrying a
+`ZZ_MEM_STAGES=2` inventory (11 + 3 per arm, the last two per arm taken on the
+head this PR carries, after the review's refactor) and 16 leg runs (8 per arm)
+that do not. All 44 are 11/11 byte-identical to native.
 
 **Two keys sit at that boundary, and this unit removes one of them.** The
 `keep` arm's 2,576 MiB of `const_base` at VT0's `stage2` is two buffers: VT0's
