@@ -98,6 +98,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_EAGER_MODULES` | executables load their modules into the CUDA context as they are deserialized, not on first execute: `0` off, anything else on, empty or unset follows `ZZ_PRELOAD` | on unless `ZZ_PRELOAD=0` |
 | `ZZ_STAGING_THRESHOLD` | bytes at or above which the plugin DMAs a host-to-device transfer out of pageable memory instead of copying it through its pinned staging pool. Raising it above the bridge's 1.2–1.4 GiB sections grows the pinned pool inside the prove and costs more than the faster copies return on a guest that uploads each section once — measured, see "Staging the big uploads is a faster copy and a slower leg" | off: no option sent, so the plugin's own 1 GiB stands (also what a plugin older than fractalyze/xla#718 needs) |
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
+| `ZZ_PENDING_BYTES` | bytes of `trace` + `publics` + `airvalues` + `proofvalues` an instance may upload while another prove still holds the client. The count above is the ceiling; this is what sizes the term the admission adds to the client's peak, because those uploads stay live for the whole of the running prove. It bounds the uploads it weighs and no more — the next AIR's `const_base` rides `ZZ_FIXED_AHEAD`'s permit, taken inside this admission, so a refusal holds that back too but an admission puts no cap on it. A client with nothing on it admits any size, so the largest AIR is never refused outright. What the budget is compared against is the admitted set's uploads **less its smallest member**, which at the default `ZZ_PENDING=2` is simply the larger of the two — so there, and only there, a budget above the workload's largest upload never refuses and is the count-only admission this replaced. Above that cap it can refuse instances that are each individually under it | 192 MiB |
 | `ZZ_FIXED_AHEAD` | AIRs whose fixed sections may be uploaded ahead of the running prove's, per client; `0` sends every upload under the slot, and the value is capped at `ZZ_PENDING` — the permit is taken and given back inside that admission, so no more proves than it admits can hold one | 1 |
 | `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
 | `ZZ_FIXED_RESIDENT` | whether an AIR's fixed sections stay on the client after the prove that uploaded them: `1` every AIR's, `0` none, unset follows proofman's plan — an AIR the plan proves once lets each section go at its last reader instead (`const_base` after `logup`, the constant tree after its opening). The two forced values are measurement arms; an unreadable one says so and follows the plan | unset: the plan decides |
@@ -2174,6 +2175,10 @@ Not filed here — one change each, for the supervisor.
    run in blocks rather than interleaved, so that figure is provisional and a
    fix unit must re-measure it interleaved (Decision 84 on #170). A byte cap
    would admit Rom's 32 MiB trace and hold back Binary's 1,248 MiB.
+   **Done (#228)** — see "The instance read-ahead, bounded by bytes" below.
+   The interleaved re-measure puts `ZZ_PENDING=1` at 476 ms rather than
+   ~0.32 s, and the cap turns out to buy its peak by holding back the next
+   AIR's *key* rather than its trace.
 2. **Share the constant tree across clients** — (d), 533 MiB per extra client
    on const-light AIRs. Worth nothing at `ZZ_CLIENTS=1`, which is why it has
    to be sized against the two-client configuration it exists for.
@@ -2386,3 +2391,151 @@ denominator rather than as a claim: the arm that holds the most is the arm
 that failed, on the workload and fraction where holding two families' constants
 is known not to fit.
 
+### The instance read-ahead, bounded by bytes (2026-09-12, #228)
+
+#226's fix candidate 1, measured and shipped as `ZZ_PENDING_BYTES` (192 MiB).
+The per-client admission puts the next instance's uploads on the device while
+the current prove runs, and a count says nothing about how large they are: the
+term it adds is whatever instance came next, which on hello-world is 32 MiB
+(`Rom_n22`) to 1,248 MiB (`Binary_n22`). The budget weighs that term instead.
+
+Runs: go hello-world, `ZZ_CLIENTS=1`, fraction 0.45, headroom 3, shipped wheel
+`0.10.2.dev20260910150749`, artifacts `zz-artifacts-191`, page cache warmed by
+`run.sh` before every run (9.081/9.081 GiB, 100%, on every one). Six arms,
+interleaved and rotated one place per pass (Decision 84): 18 runs with
+`ZZ_MEM_STAGES=2` for the memory figures, 48 more without it for the leg. All
+66 byte-identical to **both** same-session native arms, 11/11 dumps each.
+
+Three of the arms were then re-run twice on each later head — once after the
+diff was tidied and again after a review round — because the head that ships is
+not the head a sweep was taken with. Twelve more runs, byte-identical too,
+reproducing the peaks and the co-residency exactly: 10,176 MiB and 1,248 MiB
+co-resident for the count-only arm, 8,960 MiB and 0 for `ZZ_PENDING=1`,
+8,975-9,005 MiB and 32 MiB for the default. Their **legs** are not quotable and
+are not quoted: two passes cannot separate arms whose medians are 200 ms apart,
+and the second round ran beside another session's work. Every leg figure below
+comes from the eight-pass interleaved set.
+
+The arms are budgets read against the workload's eleven uploads — 32, 80, 128,
+144, 368, 416, 464, 704, 928, 1216, 1248 MiB. The `count only` arm is a budget
+of 99,999,999,999 bytes, which is the count-only admission exactly because
+every run here is at `ZZ_PENDING=2`: with two admitted, the set's uploads less
+its smallest is the larger of the two, so a budget over the largest upload
+refuses nothing. That equivalence is a property of this cap, not of the rule —
+see the variable's row in "Running". **`b48` is not an independent
+point:** at that budget only `Rom_n22` can pair, `Rom_n22` appears once, and
+the arm is `ZZ_PENDING=1` by another route. It is carried as a control and it
+lands there, 8,960 MiB and within 3 ms of it.
+
+#### The predicate has to weigh the admitted set, not the joiner
+
+The first rule tried was the literal one — admit a second instance if *its*
+uploads are under the budget — and it does not bound anything. Admission does
+not settle which instance takes the slot: they all upload before they queue for
+it, and a large one loses that race precisely because its upload takes longer.
+So a large instance admitted into an empty client, overtaken by a small one
+admitted beside it, is co-resident for the whole of the small one's prove. At a
+512 MiB budget that arm carried a 704 MiB trace, three runs of three, and its
+client high-water (10,176 MiB) was identical to the unbounded default's.
+
+Two arms at the same number is the shape that reads as "the knob does nothing",
+and the true statement was that the predicate was on the wrong question. The
+shipped rule bounds the whole admitted set: everything but its smallest member
+must fit the budget, which holds whichever member ends up proving. An empty
+client still admits any size — every workload has instances over every budget
+worth setting, and a gate they could never pass would deadlock the run.
+
+The admission is therefore an ordered queue. An instance over the budget waits
+for a client with nothing else on it, and without an order a run of smaller
+ones would keep the client occupied and starve it.
+
+#### What each budget bounds, and what it costs
+
+Co-resident `trace` is the largest upload the client holds that the running
+prove does not own, over every stage boundary of the run. Client high-water is
+the allocator's own monotonic peak, the largest any `mem stage` line printed.
+
+| arm | co-resident trace, 3 runs | client high-water, 3 runs |
+|---|---|---|
+| count only (today) | 1,248 / 1,248 / 1,248 | 9,690 / 10,176 / 10,176 |
+| `ZZ_PENDING_BYTES` 1024 MiB | 928 / 928 / 928 | 9,007 / 10,176 / 10,176 |
+| 512 MiB | 464 / 464 / 416 | 10,176 / 10,176 / 10,176 |
+| **192 MiB (default)** | 32 / 32 / 32 | 8,975 / 8,975 / 8,960 |
+| 48 MiB (control) | 0 / 0 / 0 | 8,960 / 8,960 / 8,960 |
+| `ZZ_PENDING=1` | 0 / 0 / 0 | 8,960 / 8,960 / 8,960 |
+
+Leg, medians over passes 2–8 of eight interleaved passes:
+
+| arm | leg | range | sd | against today's |
+|---|---|---|---|---|
+| count only (today) | 5,126 ms | 5,075–5,221 | 55 | — |
+| 1024 MiB | 5,191 ms | 5,064–5,244 | 69 | +65 ms |
+| **192 MiB (default)** | 5,319 ms | 5,202–5,506 | 113 | +193 ms |
+| 512 MiB | 5,381 ms | 5,191–5,429 | 111 | +255 ms |
+| 48 MiB (control) | 5,599 ms | 5,570–5,640 | 24 | +473 ms |
+| `ZZ_PENDING=1` | 5,602 ms | 5,584–5,623 | 16 | +476 ms |
+
+The interleaved re-measure #226 asked for: **`ZZ_PENDING=1` costs 476 ms**, not
+the ~0.32 s its blocked arms suggested. The default budget gives 283 ms of that
+back and keeps the peak where `ZZ_PENDING=1` puts it. 192 and 512 are not
+resolvable from each other (sd ~110 ms, ranges overlapping); what is resolvable
+is the three groups — today's and 1024, the two middle budgets, and the two
+that admit nothing.
+
+#### The peak is a step, and the step is a key rather than a trace
+
+The budget bounds the co-resident trace exactly — 3/3 in every arm, every time.
+The client high-water does not follow it linearly, and the reason is worth
+carrying: **it is not the trace that moves the peak.**
+
+The high-water is reached at `VirtualTableZisk0_n21`'s `stage2` in 15 of the 18
+runs; in the other three `Main_n22`'s `fri` boundary is higher — 8,975 MiB
+twice under the 192 MiB budget and 9,690 MiB once under the count-only arm.
+That `stage2` boundary is `VirtualTableZisk0_n21`'s own 6,704 MiB plus whatever
+the next instance brought with it, so it takes as many values as the workload
+has possible neighbours; these 18 runs landed on three of them, and the
+section above adds a fourth from its own `keep` arm. Read the composition
+column, not the live figure:
+
+| arm | `stage2` live, 3 runs | what else is on the client |
+|---|---|---|
+| count only (today) | 6,800 / 8,000 / 8,000 | `RomData_n21`'s key once, `VirtualTableZisk1_n21`'s twice |
+| 1024 MiB | 6,800 / 8,000 / 8,000 | the same |
+| 512 MiB | 8,000 / 8,000 / 8,000 | `VirtualTableZisk1_n21`'s key, 3/3 |
+| **192 MiB (default)** | 6,704 / 6,704 / 6,704 | nothing |
+| 48 MiB (control) | 6,704 / 6,704 / 6,704 | nothing |
+| `ZZ_PENDING=1` | 6,704 / 6,704 / 6,704 | nothing |
+
+6,704 MiB is `VirtualTableZisk0_n21` proving alone, holding one key — its own
+1,408 MiB `const_base`. 8,000 MiB is that plus a second `upload/const_base`
+buffer of 1,168 MiB, which is `VirtualTableZisk1_n21`'s to the byte, read ahead
+because that instance was admitted; its trace is 128 MiB and would pass every
+budget here, and what rides in behind it is nine times its size. (6,800 MiB is
+the same shape with `RomData_n21` next instead: a 16 MiB key and an 80 MiB
+trace.) `ZZ_FIXED_AHEAD`'s permit is taken *inside* this admission, so refusing
+an instance holds its key back too — but admitting one puts no cap on it.
+
+**That is the whole of why 192 MiB works and 512 does not.**
+`VirtualTableZisk0_n21`'s own uploads are 368 MiB, so a budget under 368 means
+nothing joins the prove that sets the high-water, whatever that neighbour's own
+size would have been; a budget over 368 lets it acquire one. Which makes the
+default's justification workload-shaped, and it should be re-read rather than
+assumed on a workload whose binding AIR is a different size. The rule is
+general; 192 MiB is not.
+
+Two things this bounds. The key the budget holds back is
+`VirtualTableZisk1_n21`'s; the *other* key at that boundary is
+`VirtualTableZisk0_n21`'s own 1,408 MiB, which is what the conditional
+residency above releases — a different change, on the other half of the same
+2,576 MiB. Neither removes both on its own, and the two stacked are not
+measured: the figures here are against a client that keeps every AIR's
+sections, and that section's are against one that admits by count. And there is a floor close underneath: in the arms where
+that boundary is lightest, `Main_n22`'s `fri` sets the run figure instead. Over
+all 30 runs that carry the inventory, Main binds in 7; in the 6 of those where
+a budget kept its boundary clean the boundary live set is *identical* at 6,357
+MiB while the run figure moves 8,975-9,005 MiB, so what varies there is XLA's
+allocation inside that execution, #226's category (c). (The 7th is the
+count-only arm, where Main's boundary carries a neighbour too: 7,077 MiB live
+and 9,690 MiB of peak. A figure from that run belongs in the co-residency story
+above, not in this one.) 8,960 MiB is therefore not a number further work on
+the keys walks down much further without moving Main.
