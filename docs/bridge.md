@@ -1414,17 +1414,99 @@ is unmeasured here for that reason, not overlooked.
     is the pre-#191 figure on the `-168` artifacts: the blocked extend took
     that scratch out, and what stands now is the section itself.
 
-    **At most 1.2 GiB of the arena is placement rather than data**, and the
-    aborts are placement: the run at 10.98 GiB died holding 8.86 GiB, with
-    2.11 GiB free in the pool, `LargestFreeBlock: 0B`, unable to place 1.88
-    GiB. The bound is 11.60 GiB against the highest `MaxInUse` seen, 10.40
-    — and it is a bound rather than a measurement, since `MaxInUse` on a
-    failing run is truncated at the abort. An allocator that need not find
-    2.75 GiB contiguous (the GPU plugin's `cuda_async` kind) is worth up to
-    that 1.2 GiB and no more; it is not reachable from here — fractalyze/
-    xla-pjrt's `SessionOptions` carries no allocator kind — and it would
-    have to keep claiming the share up front, which is what
-    `ZZ_MEMORY_FRACTION` exists for.
+    **The room above the data is a range, and its tight end is a few
+    hundred MiB.** A run that *finishes* can be asked what its allocator
+    held — `PJRT_Device_MemoryStats`, through the readout parked on branch
+    `issue220-parked`, not through anything on `main`, where
+    `bench/mem_budget.py` reads `MaxInUse` off the logs of runs that died.
+    At the 11.60 GiB arena the client's own peak in use came back
+    11.27, 10.68 and 10.22 GiB over three runs — 0.33, 0.92 and 1.38 GiB of
+    arena above the live high-water. What binds is the tight end: an arena
+    barely larger than the data it had to hold. An earlier version of this
+    note put it at "at most 1.2 GiB", from the highest `MaxInUse` seen
+    (10.40 GiB) on runs that *died*, where the figure is truncated at the
+    abort; measured on runs that finish it is a range, because the live peak
+    itself swings about a GiB between runs of one workload (#220).
+
+    **The aborts are placement, but `LargestFreeBlock` is not the
+    evidence.** Neither allocator the bridge can build writes
+    `tsl::AllocatorStats::largest_free_block_bytes`, and it is not the only
+    such field: of that dump BFC maintains `InUse`, `MaxInUse`, `NumAllocs`,
+    `MaxAllocSize` and `Limit`, and assigns none of `Reserved`,
+    `PeakReserved` or `LargestFreeBlock` — all three print the zero
+    `AllocatorStats` initialises them to. So the `LargestFreeBlock: 0B` an
+    earlier version of this note cited is printed whatever the heap holds,
+    on a full pool and an empty one alike, and it is not a reading. The same
+    dump does carry the statement — a #220 run at the 8.78 GiB arena:
+    `Total size in pool: 8.78GiB ... available size: 40B` beside `Sum Total
+    of in-use chunks: 7.54GiB`, with a 1.12 GiB request refused. 1.24 GiB
+    free inside the pool and no block large enough is the placement finding,
+    and it stands.
+
+    **`cuda_async` is reachable, and it is not an arena.** The GPU client's
+    create options take an `allocator` kind as a string — `default`,
+    `platform`, `bfc`, `cuda_async`, `vmm`, parsed in
+    [`pjrt_c_api_gpu_internal.cc`](https://github.com/fractalyze/xla/blob/64ebf90f17/xla/pjrt/c/pjrt_c_api_gpu_internal.cc#L96)
+    and carried by the shipped wheel, whose refusal message names all five —
+    so the kind is a create option rather than the plugin change #215 took it
+    for. Walked with it (#220: one binary, the kind an env var, the two arms
+    back to back inside each repeat, three repeats a cell). **The floor
+    record is the table further up, not this one**: that walk was taken to
+    site the floor, with six repeats at the boundary cells, while this one
+    exists to compare two columns taken in one session. Its BFC column lands
+    a rung harsher than the floor table's at the same fractions (2/3 against
+    5/6 at 0.35, 0/3 against 3/6 at 0.34) — different session, a different
+    build, a co-tenant on the host throughout and swap full, and boundary
+    cells that are races either way. The floor cells were not re-run under
+    these conditions, so the two tables are not a controlled comparison of
+    each other; what this one measures is the gap between its own columns.
+
+    | `ZZ_MEMORY_FRACTION` | the client's arena | BFC | `cuda_async` |
+    |---|---|---|---|
+    | 0.37 | 11.60 GiB | 3/3 | 3/3 |
+    | 0.35 | 10.98 GiB | 2/3 | 3/3 |
+    | 0.34 | 10.66 GiB | 0/3 | 3/3 |
+    | 0.32 | 10.03 GiB | 0/3 | 3/3 |
+    | 0.30 | 9.41 GiB | 0/3 | 3/3 |
+    | 0.28 | 8.78 GiB | 0/3 | 3/3 |
+    | 0.26 | 8.15 GiB | 0/3 | 3/3 |
+    | 0.24 | 7.53 GiB | 0/3 | 2/3 |
+    | 0.22 | 6.90 GiB | 0/3 | 0/3 |
+
+    **The right column is not a smaller client.** That kind builds no arena:
+    it allocates from the device's default CUDA memory pool, so the share is
+    the pool's release threshold — claimed up front, and not a ceiling. The
+    client reports itself past it: at the 8.15 GiB claim its allocator gives
+    `limit 8348 MiB` against a peak in use of 10613 and 11093 MiB, 2.2 and
+    2.7 GiB above its own limit. Those are the two runs that *finished* in a
+    later set of three at that cell — a set that passed 2 of 3 where the
+    table's walk passed 3 of 3, the cell being near its boundary either way.
+    The third aborted on a 2.50 GiB allocation, so its peak is truncated at
+    the abort, in the way "The room above the data is a range" above gives
+    as the reason not to quote such a figure; it is a lower bound, and it is
+    over the limit too. What the lower cliff measures is the pool growing
+    into room pil2 did not take. The working set is not what moved: at one claim of 11.60 GiB the
+    peaks are 10.22–11.27 GiB under BFC against 9.90–10.83 under
+    `cuda_async`, ranges a one-GiB run-to-run swing cannot tell apart. All
+    three `cuda_async` runs are byte-identical to a native run from the same
+    session, 11 of 11. The table is one build; the peaks beside it are a
+    second build of the same tree, which adds the off-by-default readout
+    they are taken from and nothing else. Both were read off the run logs by
+    hand — the arena from each run's own `XLA backend allocating N bytes on
+    device 0 for CudaAsyncAllocator`, the peaks from the readout's `client 0
+    memory: ... peak_in_use N MiB`. `bench/mem_budget.py` does **not** produce
+    this table: its arena pattern matches `for BFCAllocator` only, and it
+    knows nothing of the readout's line — the reader that handles both is
+    parked with the option.
+
+    So the kind is not the lever the 2.75 GiB `const_ext` made it look like.
+    It buys no arena, it gives up the ceiling `ZZ_MEMORY_FRACTION` exists
+    for — a client that outgrows its claim takes memory pil2 has already
+    sized itself against — and what it could recover is the few hundred MiB
+    above the data. It is measured, and parked rather than shipped: the
+    bridge option and the memory-stats readback it was measured with are on
+    branch `issue220-parked` (with fractalyze/xla-pjrt#6 behind it), not on
+    `main`.
 
     Which AIR aborts is not fixed: 13 of these 21 on `Main_n22`, 7 on
     `VirtualTableZisk0_n21`, one on `Binary_n22`. Read the floor off the
@@ -1553,13 +1635,15 @@ is unmeasured here for that reason, not overlooked.
   figure for the reason the walk below gives), then the 2.75 GiB `const_ext`
   it holds resident, which only becomes the binding shape once the trace is
   gone (#219 measured that hand-over), then the 2.38–2.44 GiB `cm1_ext` the
-  running prove computes, with at most 1.2 GiB of placement above the live
-  set throughout (#220). Not from the fixed-section read-ahead, which the
-  table above measures as not binding, and not from pil2, which the two
-  bullets above close off. An earlier version of this paragraph led with
-  `const_ext` on the strength of its being the largest single allocation;
-  the bullets below are why that is an argument about ordering rather than
-  about size.
+  running prove computes, with the placement room above the live set
+  throughout — a range whose tight end is a few hundred MiB rather than the
+  flat 1.2 GiB this paragraph used to carry, re-measured under "The room
+  above the data is a range" above (#220). Not from the fixed-section
+  read-ahead, which the table above measures as not binding, and not from
+  pil2, which the two bullets above close off. An earlier version of this
+  paragraph led with `const_ext` on the strength of its being the largest
+  single allocation; the bullets below are why that is an argument about
+  ordering rather than about size.
 
   **The `const_ext` step is not filed and nobody is working it.** #219
   closed on the trace release alone: releasing `const_ext` from stage 1 is
