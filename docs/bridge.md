@@ -100,6 +100,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
 | `ZZ_FIXED_AHEAD` | AIRs whose fixed sections may be uploaded ahead of the running prove's, per client; `0` sends every upload under the slot, and the value is capped at `ZZ_PENDING` — the permit is taken and given back inside that admission, so no more proves than it admits can hold one | 1 |
 | `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
+| `ZZ_FIXED_RESIDENT` | whether an AIR's fixed sections stay on the client after the prove that uploaded them: `1` every AIR's, `0` none, unset follows proofman's plan — an AIR the plan proves once lets each section go at its last reader instead (`const_base` after `logup`, the constant tree after its opening). The two forced values are measurement arms; an unreadable one says so and follows the plan | unset: the plan decides |
 | `ZZ_HOST_THREADS` | threads for the host-side copies and key reads | half the cores, at most 8 |
 | `ZZ_COMPILE_CACHE` | directory of serialized executables | `$ZZ_ARTIFACTS/.pjrt-cache` |
 | `ZZ_LOG` | `1` per-instance timing on stderr, `2` per program; lines carry the seconds since bridge-up | off |
@@ -2179,9 +2180,209 @@ Not filed here — one change each, for the supervisor.
 3. **Make the fixed-section residency conditional on the plan** — (a), up to
    1,408 MiB on VirtualTableZisk0. proofman knows the instance list before
    proving, so an AIR that appears once need not keep `const_base` past
-   `logup`. Must be measured on `sha-hasher`, not hello-world.
+   `logup`. Must be measured on `sha-hasher`, not hello-world. *Done, #229:
+   the section below it. 1,408 MiB off that prove, and the run's high-water is
+   not where it lands.*
 4. **The `commit2` / `evals` transient** — (c), the largest single term at
    1.0–1.6 GiB above the live set. Not reachable from the bridge: it is
    XLA's allocation inside one executable, so the lever is export-side
    (chunk the extend the way #191 chunked its predecessor) or plugin-side
    (donate the input buffer).
+
+### The fixed sections stay only while the plan proves the AIR again (2026-09-12, #229)
+
+#226's category (a) — sections held past their last reader, 1,488 MiB on
+`VirtualTableZisk0_n21` and 256 MiB on `Main_n22` — is not a leak. It is what
+residency costs: the key's sections stay on the client so the *next* prove of
+the same AIR skips re-reading and re-uploading them, and the eviction that
+ends that stay happens at the start of the next prove of a different AIR,
+after that prove's own sections have already gone up. The bet pays whenever
+that next prove comes. On the block-shaped `sha-hasher` mix (38 instances over
+16 AIRs) it does — "Family switches" above puts the fixed sections this saves
+rebuilding at ~4.7 s per run — and on hello-world it never does: its eleven
+instances are eleven distinct AIRs, so every section held is held for nobody.
+
+proofman knows which it is before the first prove. Its instance list reaches
+the bridge already — it is what the preload works from — so the change is to
+send it with its duplicates intact (`Bridge::set_plan`) instead of one entry
+per AIR. **That half lives in the proofman fork, and until the fork's
+`zisk-zorch-bridge` rev is bumped to one carrying `set_plan`, the call site
+still calls `preload_with` and no plan reaches the bridge at all.** With an
+empty plan every AIR keeps its sections, so on the tree as it stands this
+section describes a mechanism that is present and dormant: the numbers below
+were taken with the fork change applied locally, and they are what the bridge
+does once the rev is bumped, not what it does today. (`ZZ_FIXED_RESIDENT=0`
+reaches the same releases with no plan at all, which is how a build without
+the fork change can exercise this path — but the `plan` arms below were taken
+through a real plan, not through that variable.) An AIR the list names once then hands its sections to the prove that
+uploads them rather than lending them: `driver::prove` **takes** the fixed env
+off the driver instead of cloning it, which is what makes the removes inside
+the prove actually free, and each section goes at its own last reader —
+`const_base` after `logup` (stage 1), the constant tree and its digest layers
+after `open_const`, the rest when the prove ends. An AIR the list names more
+than once is untouched: it keeps everything, exactly as before.
+
+Three properties of the decision are worth stating because each is a way it
+could have been got wrong:
+
+- **An AIR the plan does not name keeps its sections.** The plan comes from the
+  proofman fork; a caller that sends none — today's fork, and `zz_prove` in
+  every build — leaves every AIR behaving as it did before there was a plan.
+  This is what makes the unit safe to land ahead of the fork rather than a
+  change that has to arrive with it.
+- **The count is a run's, not a client's.** Two instances of one AIR can land
+  on two clients and each prove it once, but a count taken before the slots are
+  assigned cannot know that. It keeps on both — the conservative way round.
+- **The releases are read off the manifest, not off the two names.**
+  `base_dead_after_logup` asks which programs after `logup` list `const_base`
+  or a `custom_base_<id>` as an input and releases only what none of them does.
+  An export that gave one a later reader keeps it, rather than proving against
+  a buffer that is gone.
+
+`ZZ_FIXED_RESIDENT` pins the policy for measurement: `1` keeps every AIR's
+sections (what every prove did before this unit), `0` keeps none whatever the
+plan says, unset lets the plan decide.
+
+#### What it moves, and what it does not
+
+Hello-world, `ZZ_CLIENTS=1` at the bench's 0.45 fraction on the `-191`
+artifacts, arms interleaved. Two admission settings, because they answer
+different questions. MiB.
+
+**Default admission, eleven runs per arm.** The boundary carries two keys and
+the co-resident one is whichever AIR was admitted beside VT0, so its size
+changes run to run.
+
+| | `keep` | `plan` |
+|---|---|---|
+| `const_base` live entering `stage2` | **2 buffers, always** | **1 buffer, always** |
+| — VT0's own, 1,408 MiB | present 11 of 11 | **absent 11 of 11** |
+| — the neighbour's | 1,168 (9 runs), 32, 16 | 1,168 (11 runs) |
+| VT0 live entering `stage1` | 6,138 | 6,138 |
+| VT0 live entering `stage2` | 8,000 (9 runs), 7,152, 6,800 | **6,592 in 11 of 11** |
+| that prove's allocator peak | 10,176 (9 runs), 9,328, 9,024 | **8,768 in 11 of 11** |
+| the run's client high-water | 9,087–10,208 | 8,876–10,273 |
+| the AIR that set it | VT0 8 of 11, Main 3 | **Main 11 of 11** |
+
+**Read the first three rows, not the subtraction.** What this unit does is
+exact and run-invariant: VT0's own `const_base` is live at that boundary in
+every `keep` run and in none of the `plan` runs, and it is 1,408 MiB. What the
+*live set* does is that minus whatever the neighbour contributed, and the
+neighbour is not the same AIR every run — which is why `keep`'s boundary is
+8,000 in nine runs and 7,152 or 6,800 in the other two, while `plan`'s is 6,592
+in all eleven. Subtracting one arm's live set from the other's is only worth
+1,408 when both runs happened to draw the same neighbour; the composition rows
+hold whatever it drew.
+
+**`ZZ_PENDING=1`, three runs per arm — the lever with no neighbour at all.**
+
+| | `keep` | `plan` |
+|---|---|---|
+| `const_base` live entering `stage2` | 1 x 1,408 (its own) | **none** |
+| VT0 live entering `stage2` | 6,704 | 5,296 |
+| that prove's allocator peak | 8,960–8,981 | 8,821 |
+| the run's client high-water | 8,981 | 8,821 |
+| the AIR that set it | Main 3 of 3 | Main 3 of 3 |
+
+Here the subtraction is safe, because neither arm has a neighbour to vary:
+6,704 − 5,296 = 1,408, and the `keep` arm reproduces the 8,933–8,993 MiB this
+page already records for that configuration, which is the check that the
+instrument is the same one. `stage1` is identical in every arm and run, because
+the release is *after* `logup`.
+
+**The run's client high-water is not this lever's to move, and the unit does
+not claim it.** A run's high-water is the largest peak any of its eleven
+proves reached, so it can fall only to the second largest. Under `ZZ_PENDING=1`
+`Main_n22` already sets it in both arms and the run figure moves 160 MiB while
+the boundary moves 1,408. Under the default admission, taking VT0's peak away
+promotes Main in 11 runs of 11, and Main's peak is the `deep`/`evals` transient —
+#226's category (c), which that inventory already recorded as not reachable
+from the bridge.
+
+So the two figures belong to different arms and different run counts, and this
+is the sentence to quote rather than either alone. **VT0's own `const_base` is
+gone from that boundary in all 14 runs carrying an inventory — 11 at the
+default admission, 3 at `ZZ_PENDING=1`. The run's client high-water falls 160
+MiB in the 3 `ZZ_PENDING=1` runs (8,981 → 8,821). At the default admission it
+does not fall at all: `keep` spans 9,087–10,208 over 11 runs and `plan`
+8,876–10,273 over 11, because both are then reporting `Main_n22`'s transient
+rather than any key.**
+
+**The leg does not notice.** Eight passes per arm in one session, default
+admission, interleaved; medians over passes 2-8 as this page quotes them:
+5,206 ms `keep` against 5,169 ms `plan`, a 37 ms difference the wrong way for
+a regression, with the two arms' ranges (5,142-5,346 and 5,120-5,227)
+overlapping across most of their width. The setup programs run exactly as
+often either way on this workload — eleven distinct AIRs means eleven
+`set_fixed` calls under both policies — so there was no leg effect to find
+here, and the arms say so rather than the reasoning alone. What would cost a
+leg is an AIR the plan undercounts, which re-runs its setup programs; the
+`sha-hasher` arms below are where that is measured.
+
+That accounts for all 44 hello-world runs in this section: 28 carrying a
+`ZZ_MEM_STAGES=2` inventory (11 + 3 per arm, the last two per arm taken on the
+head this PR carries, after the review's refactor) and 16 leg runs (8 per arm)
+that do not. All 44 are 11/11 byte-identical to native.
+
+**Two keys sit at that boundary, and this unit removes one of them.** The
+`keep` arm's 2,576 MiB of `const_base` at VT0's `stage2` is two buffers: VT0's
+own 1,408, and `VirtualTableZisk1_n21`'s 1,168, read ahead because that
+instance was admitted beside it. The release takes the first; the second
+belongs to an instance that has not started, so nothing inside this prove can
+reach it — that half is what a byte-capped admission is for. Neither lever
+removes both, and each is measured against a baseline the other has not
+changed, so their published gains are not additive.
+
+Two AIRs move the other way, and the reason is worth recording because it is
+another lever's: `Main_n22` carries 464 MiB more at `stage1` in the `plan` arm
+and `Mem_n22` 496 MiB more. Releasing the fixed sections inside the prove frees
+room on the card, and the instance read-ahead spends it — the next instance's
+uploads now land where before they gave way. So part of what this unit frees is
+re-spent by the admission policy, and the two units are complements rather than
+alternatives: a byte-capped admission is what would stop the re-spend.
+
+#### The workload residency exists for is untouched
+
+`sha-hasher` at n=14,000 is the check hello-world cannot be: 38 instances over
+16 AIRs, and the bridge's own plan line reports **12 of them proved once**, so
+four AIRs repeat — `Main_n22` 13 times, `Binary_n22` 6, `BinaryExtension_n22`
+5, `BinaryAdd_n22` 2. Six passes per arm, interleaved, on the `-168` artifacts
+(the only export carrying these sixteen AIRs) and the plugin build that
+directory's compile cache is warm for, probed with a one-AIR `--warm` rather
+than assumed.
+
+The quantity to watch is how often the setup programs run, which is one
+`set_fixed` per AIR that is not resident when its turn comes:
+
+| arm | `set_fixed` calls per run | leg median, 6 passes | byte-identity |
+|---|---|---|---|
+| `keep` (`ZZ_FIXED_RESIDENT=1`) | 31–34, median 32 | 19,502 ms | 38/38 |
+| `plan` (shipped) | 31–35, median 32 | 19,678 ms | 38/38 |
+| `release` (`ZZ_FIXED_RESIDENT=0`) | **38 in 6 runs of 6** | 19,918 ms | 38/38 |
+
+`plan` sits on `keep`: the four repeating AIRs keep their sections and the
+twelve proved once release sections that `ZZ_RESIDENT_AIRS=1` would have
+evicted at the next AIR anyway, so no setup program runs that did not run
+before. The `release` arm is why that null is believable rather than merely
+hoped for — it is the positive control this page's own rule asks for. 38 is
+one `set_fixed` per instance, so it really does rebuild the repeating AIRs,
+and its leg is 416 ms above `keep` for the six extra runs of the setup
+programs. That arm is also the only one that exercises a second prove of an
+AIR whose sections are gone — the path a plan that undercounted would take —
+and it is 38/38 byte-identical, which is what says the re-setup is correct and
+not merely survivable.
+
+These medians are over all six passes, none dropped — unlike the hello-world
+leg above, which follows this page's pass-2-onwards convention because its
+first pass carries the run's own warm-up. Six is the minimum that works here:
+at three, `plan` read as a 500 ms leg regression that the next three erased
+(its fastest run, 19,359 ms, is below every `keep` run).
+
+**One `keep` run aborted and no `plan` or `release` run did.** `sha-keep-r6`
+died on the 5.50 GiB `VirtualTableZisk0_n21` allocation this page records
+under "Family switches", with the card clear before it started. One event in
+six is an observation, not a rate, and it is recorded here with its
+denominator rather than as a claim: the arm that holds the most is the arm
+that failed, on the workload and fraction where holding two families' constants
+is known not to fit.
+

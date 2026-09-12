@@ -1,13 +1,14 @@
 //! genProof's schedule over one artifact, step for step the same as
 //! `zisk_zorch/export/replay.py`: one `AirDriver` per (session, artifact),
-//! keeping the key's fixed sections resident so a prove uploads only the
-//! instance.
+//! keeping the key's fixed sections resident, so a prove of the same AIR
+//! uploads only the instance, for as long as the plan says another is
+//! coming (`Residency`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use crate::artifact::{Artifact, Buf, Env};
-use crate::manifest::{Manifest, StageOnly};
+use crate::manifest::{CustomCommitInfo, Manifest, ProgramInfo, StageOnly};
 use crate::transcript::{HostTranscript, DIGEST};
 use crate::Error;
 
@@ -110,6 +111,25 @@ pub struct AirDriver {
     fixed: Option<Env>,
 }
 
+/// What becomes of the key's fixed sections when the prove that uploaded them
+/// ends. Decided per prove by the caller, which is the only place that knows
+/// proofman's plan, and passed to `prove` rather than held on the driver: a
+/// policy that outlived the prove it was set for would be a wrong answer this
+/// type cannot represent.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Residency {
+    /// Stay on the driver for the next prove of this AIR. What residency is
+    /// for, and what every prove did before the bridge read a plan.
+    Keep,
+    /// Go with this prove, each section at its last reader. On a plan that
+    /// proves the AIR once there is no next prove to keep them for, and
+    /// `const_base` alone is 1.2-1.4 GiB of a table AIR held from `logup` to
+    /// an eviction that happens after the *next* AIR's sections have gone up.
+    /// A later prove of the AIR finds no fixed set and runs the setup
+    /// programs again.
+    Release,
+}
+
 struct TreeOpening {
     rows: Vec<u64>,
     paths: Vec<u64>,
@@ -137,6 +157,30 @@ fn push_values3(out: &mut Vec<u64>, words: &[u64], stages: &[StageOnly]) {
 fn release_tree(env: &mut Env, section: &str, layers_prefix: &str) {
     env.remove(section);
     env.retain(|name, _| !name.starts_with(layers_prefix));
+}
+
+/// The programs `prove` runs at or before `logup`. Every other program in
+/// the manifest runs after it, so a section none of those reads is dead the
+/// moment `logup` returns.
+fn runs_by_logup(prog: &str) -> bool {
+    matches!(prog, "constants" | "const_setup" | "witness_calc" | "commit1" | "logup")
+        || prog.starts_with("custom_setup_")
+}
+
+/// The key's base-domain sections — `const_base` and each custom commit's —
+/// that no program after `logup` reads. `const_setup` has expanded them into
+/// the extended sections and trees every later program reads, so on the
+/// exports so far they are dead from stage 1 on; the readers are taken off
+/// the manifest rather than assumed, so an export that gave one a later
+/// reader keeps it instead of proving against a buffer that is gone.
+fn base_dead_after_logup(programs: &BTreeMap<String, ProgramInfo>, customs: &[CustomCommitInfo]) -> Vec<String> {
+    let mut names: Vec<String> = std::iter::once("const_base".to_string())
+        .chain(customs.iter().map(|cc| format!("custom_base_{}", cc.id)))
+        .collect();
+    names.retain(|name| {
+        !programs.iter().any(|(prog, info)| !runs_by_logup(prog) && info.input(name).is_some())
+    });
+    names
 }
 
 impl AirDriver {
@@ -267,10 +311,26 @@ impl AirDriver {
 
     /// Prove one instance through the artifacts, writing `proof_words()`
     /// words into `proof_out`.
-    pub fn prove(&self, mut inp: InstanceInputs, transcript: &mut HostTranscript, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
-        let fixed = self.fixed.as_ref().ok_or("prove: set_fixed first")?;
-        let art = &self.artifact;
+    pub fn prove(
+        &mut self,
+        mut inp: InstanceInputs,
+        residency: Residency,
+        transcript: &mut HostTranscript,
+        proof_out: &mut [u64],
+    ) -> Result<ProveOutputs, Error> {
+        let artifact = self.artifact.clone();
+        let art = &*artifact;
         let m = &art.manifest;
+        let keep_fixed = residency == Residency::Keep;
+        // A plan that proves this AIR once hands its fixed sections to this
+        // prove rather than lending them: with no handle left on the driver,
+        // the removes below are what actually frees each section, and a
+        // second instance of the AIR — a plan that undercounted — finds no
+        // fixed set and runs the setup programs again.
+        let fixed = self.fixed.take().ok_or("prove: set_fixed first")?;
+        if keep_fixed {
+            self.fixed = Some(fixed.clone());
+        }
         let nbe = m.n_bits_ext;
         let in_spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
             m.program(prog)?.input(input).cloned().ok_or_else(|| format!("{prog}: no input {input}").into())
@@ -292,7 +352,7 @@ impl AirDriver {
         let mut phase = crate::memlog::Stage::start("stage1", || art.device_totals());
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
-        let mut env = fixed.clone();
+        let mut env = fixed;
         // Taken rather than cloned: from here the env holds the only handle
         // to each uploaded section, so removing one below actually frees it.
         let up = match inp.uploaded.take() {
@@ -327,6 +387,16 @@ impl AirDriver {
         // the missing bind rather than proving against a buffer that is
         // gone.
         env.remove("trace");
+        // The key's base-domain sections have no reader after logup either.
+        // They stay only so the next prove of this AIR skips re-reading and
+        // re-uploading them; when the plan proves it once that next prove
+        // never comes, and `const_base` is 1.2-1.4 GiB of a table AIR held
+        // across the stage-2 peak for nobody.
+        if !keep_fixed {
+            for name in base_dead_after_logup(&m.programs, &m.custom_commits) {
+                env.remove(&name);
+            }
+        }
         art.run_into("commit2", &mut env, None)?;
         env.remove("cm2");
         phase.set("stage2");
@@ -448,15 +518,22 @@ impl AirDriver {
             proof.extend(t.paths);
             proof.extend(t.last_level);
         };
-        // The key's trees belong to the resident set and stay: the next prove
-        // of this AIR reads them and a setup program is what it costs to
-        // rebuild them. The stage trees are this prove's own, and each goes
-        // as its openings reach the wire — otherwise a wide AIR carries
-        // `cm1_ext` and its digest layers through every later opening,
-        // beside the next prove's uploads.
+        // The key's trees belong to the resident set and stay while a next
+        // prove of this AIR is coming: it reads them, and a setup program is
+        // what it costs to rebuild them. When none is, they go at their own
+        // last reader like the stage trees below — each of those is this
+        // prove's own and goes as its openings reach the wire, otherwise a
+        // wide AIR carries `cm1_ext` and its digest layers through every
+        // later opening, beside the next prove's uploads.
         push_tree(&mut proof, self.open_tree("const", m.n_constants, nbe, &env, &pos_ext)?);
+        if !keep_fixed {
+            release_tree(&mut env, "const_ext", "const_layers_");
+        }
         for cc in &m.custom_commits {
             push_tree(&mut proof, self.open_tree(&format!("custom_{}", cc.id), cc.width, nbe, &env, &pos_ext)?);
+            if !keep_fixed {
+                release_tree(&mut env, &format!("custom_ext_{}", cc.id), &format!("custom_layers_{}_", cc.id));
+            }
         }
         push_tree(&mut proof, self.open_tree("cm1", m.widths.cm1, nbe, &env, &pos_ext)?);
         release_tree(&mut env, "cm1_ext", "cm1_layers_");
@@ -483,5 +560,50 @@ impl AirDriver {
         }
         proof_out[..proof.len()].copy_from_slice(&proof);
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::Spec;
+
+    fn program(inputs: &[&str]) -> ProgramInfo {
+        let spec = |name: &str| Spec { name: name.to_string(), dtype: "goldilocks".into(), dims: vec![1] };
+        ProgramInfo { file: "x.mlirbc".into(), inputs: inputs.iter().map(|n| spec(n)).collect(), outputs: Vec::new() }
+    }
+
+    #[test]
+    fn the_base_sections_are_dead_once_logup_has_read_them() {
+        // Every export so far: `const_setup` expands `const_base` into the
+        // tree, `logup` reads the base rows once more for the stage-2 hints,
+        // and each program after that opens `const_ext` instead.
+        let programs = BTreeMap::from([
+            ("const_setup".to_string(), program(&["const_base"])),
+            ("custom_setup_0".to_string(), program(&["custom_base_0"])),
+            ("commit1".to_string(), program(&["trace"])),
+            ("logup".to_string(), program(&["trace", "const_base", "custom_base_0"])),
+            ("quotient".to_string(), program(&["const_ext", "custom_ext_0"])),
+            ("open_const".to_string(), program(&["const_ext", "const_layers_0"])),
+        ]);
+        let mut dead = base_dead_after_logup(&programs, &[CustomCommitInfo { id: 0, width: 12 }]);
+        dead.sort();
+        assert_eq!(dead, ["const_base".to_string(), "custom_base_0".to_string()], "a base section outlived its last reader");
+    }
+
+    #[test]
+    fn a_base_section_a_later_program_reads_is_not_released() {
+        // The release follows the manifest rather than these two names: an
+        // export that gave `const_base` a reader past stage 1 would otherwise
+        // prove against a buffer that is gone.
+        let programs = BTreeMap::from([
+            ("const_setup".to_string(), program(&["const_base"])),
+            ("logup".to_string(), program(&["const_base"])),
+            ("deep".to_string(), program(&["const_base", "const_ext"])),
+        ]);
+        assert!(
+            base_dead_after_logup(&programs, &[]).is_empty(),
+            "a section the deep program reads was released after logup"
+        );
     }
 }

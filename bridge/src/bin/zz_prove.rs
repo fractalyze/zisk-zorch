@@ -17,7 +17,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use zisk_zorch_bridge::artifact::{new_client, Artifact};
-use zisk_zorch_bridge::driver::{AirDriver, FixedSections, InstanceInputs};
+use zisk_zorch_bridge::driver::{AirDriver, FixedSections, InstanceInputs, Residency};
 use zisk_zorch_bridge::transcript::HostTranscript;
 
 /// Compile threads per AIR worker: one worker per AIR up to `threads`, and the
@@ -187,7 +187,7 @@ fn main() {
     for i in 0..=repeat {
         let t = Instant::now();
         let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-        let out = driver.prove(inputs(), &mut transcript, &mut proof).unwrap();
+        let out = driver.prove(inputs(), Residency::Keep, &mut transcript, &mut proof).unwrap();
         let label = if i == 0 { "proved" } else { "warm prove" };
         eprintln!("{label} {:.3} s (nonce {})", t.elapsed().as_secs_f64(), out.nonce);
         let Some(expected) = expected.as_ref() else { continue };
