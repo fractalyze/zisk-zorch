@@ -206,7 +206,6 @@ impl AirDriver {
         self.fixed = None;
     }
 
-
     /// Run the setup programs over the key's fixed sections, uploading them
     /// first unless the caller already did (`upload_fixed`).
     pub fn set_fixed(&mut self, fixed: &FixedSections) -> Result<(), Error> {
