@@ -2249,21 +2249,6 @@ Hello-world, `ZZ_CLIENTS=1` at the bench's 0.45 fraction on the `-191`
 artifacts, arms interleaved. Two admission settings, because they answer
 different questions. MiB.
 
-**`ZZ_PENDING=1`, three runs per arm — the lever on its own.** Nothing of
-another instance is on the client, so `VirtualTableZisk0_n21`'s boundary
-carries one key, its own.
-
-| | `keep` | `plan` | diff |
-|---|---|---|---|
-| VT0 live entering `stage2` | 6,704 | 5,296 | **−1,408** |
-| `upload/const_base` live there | 1 x 1,408 | none | |
-| that prove's allocator peak | 8,960–8,981 | 8,821 | |
-| the run's client high-water | 8,981 | 8,821 | −160 |
-| the AIR that set it | Main 3/3 | Main 3/3 | |
-
-The `keep` arm reproduces the 8,933–8,993 MiB this page already records for
-that configuration, which is the check that the instrument is the same one.
-
 **Default admission, eleven runs per arm.** The boundary carries two keys and
 the co-resident one is whichever AIR was admitted beside VT0, so its size
 changes run to run.
@@ -2312,8 +2297,16 @@ proves reached, so it can fall only to the second largest. Under `ZZ_PENDING=1`
 the boundary moves 1,408. Under the default admission, taking VT0's peak away
 promotes Main in 11 runs of 11, and Main's peak is the `deep`/`evals` transient —
 #226's category (c), which that inventory already recorded as not reachable
-from the bridge. **VT0's own `const_base` gone from that boundary in
-all 14 runs that carry an inventory; 160 MiB off the run.**
+from the bridge.
+
+So the two figures belong to different arms and different run counts, and this
+is the sentence to quote rather than either alone. **VT0's own `const_base` is
+gone from that boundary in all 14 runs carrying an inventory — 11 at the
+default admission, 3 at `ZZ_PENDING=1`. The run's client high-water falls 160
+MiB in the 3 `ZZ_PENDING=1` runs (8,981 → 8,821). At the default admission it
+does not fall at all: `keep` spans 9,087–10,208 over 11 runs and `plan`
+8,876–10,273 over 11, because both are then reporting `Main_n22`'s transient
+rather than any key.**
 
 **The leg does not notice.** Eight passes per arm in one session, default
 admission, interleaved; medians over passes 2-8 as this page quotes them:
