@@ -2205,31 +2205,32 @@ instances are eleven distinct AIRs, so every section held is held for nobody.
 proofman knows which it is before the first prove. Its instance list reaches
 the bridge already — it is what the preload works from — so the change is to
 send it with its duplicates intact (`Bridge::set_plan`) instead of one entry
-per AIR. **That half lives in the proofman fork, and until the fork's
-`zisk-zorch-bridge` rev is bumped to one carrying `set_plan`, the call site
-still calls `preload_with` and no plan reaches the bridge at all.** With an
-empty plan every AIR keeps its sections, so on the tree as it stands this
-section describes a mechanism that is present and dormant: the numbers below
-were taken with the fork change applied locally, and they are what the bridge
-does once the rev is bumped, not what it does today. (`ZZ_FIXED_RESIDENT=0`
-reaches the same releases with no plan at all, which is how a build without
-the fork change can exercise this path — but the `plan` arms below were taken
-through a real plan, not through that variable.) An AIR the list names once then hands its sections to the prove that
-uploads them rather than lending them: `driver::prove` **takes** the fixed env
-off the driver instead of cloning it, which is what makes the removes inside
-the prove actually free, and each section goes at its own last reader —
-`const_base` after `logup` (stage 1), the constant tree and its digest layers
-after `open_const`, the rest when the prove ends. An AIR the list names more
-than once is untouched: it keeps everything, exactly as before.
+per AIR. **That half lives in the proofman fork**, whose `gen_proof` call site
+pushes every instance's key and pins a `zisk-zorch-bridge` rev carrying
+`set_plan`
+([`proofman.rs:2047-2065`](https://github.com/fractalyze/pil2-proofman/blob/8ca7133a/proofman/src/proofman.rs#L2047-L2065)).
+The set of AIRs it preloads is unchanged, because `set_plan` dedups for the
+preload itself. A build pinned behind that rev sends no plan and so keeps
+every AIR's sections, which is why the two halves did not have to land
+together. (`ZZ_FIXED_RESIDENT=0` reaches the same releases with no plan at
+all, which is how such a build can exercise this path — but the `plan` arms
+below were taken through a real plan, not through that variable.) An AIR the
+list names once then hands its sections to the prove that uploads them rather
+than lending them: `driver::prove` **takes** the fixed env off the driver
+instead of cloning it, which is what makes the removes inside the prove
+actually free, and each section goes at its own last reader — `const_base`
+after `logup` (stage 1), the constant tree and its digest layers after
+`open_const`, the rest when the prove ends. An AIR the list names more than
+once is untouched: it keeps everything, exactly as before.
 
 Three properties of the decision are worth stating because each is a way it
 could have been got wrong:
 
 - **An AIR the plan does not name keeps its sections.** The plan comes from the
-  proofman fork; a caller that sends none — today's fork, and `zz_prove` in
-  every build — leaves every AIR behaving as it did before there was a plan.
-  This is what makes the unit safe to land ahead of the fork rather than a
-  change that has to arrive with it.
+  proofman fork; a caller that sends none — a build pinned behind the rev above,
+  and `zz_prove` in every build — leaves every AIR behaving as it did before
+  there was a plan. This is what let the unit land ahead of the fork rather
+  than having to arrive with it.
 - **The count is a run's, not a client's.** Two instances of one AIR can land
   on two clients and each prove it once, but a count taken before the slots are
   assigned cannot know that. It keeps on both — the conservative way round.
@@ -2289,6 +2290,14 @@ Here the subtraction is safe, because neither arm has a neighbour to vary:
 page already records for that configuration, which is the check that the
 instrument is the same one. `stage1` is identical in every arm and run, because
 the release is *after* `logup`.
+
+Both tables were taken with the fork change applied locally rather than
+pinned. Re-taken through the fork's own call site (#233), the rows that do not
+depend on which neighbour a run drew reproduce 3 of 3: `const_base` absent
+from the `ZZ_PENDING=1` boundary, and VT0 live entering `stage2` 6,704 against
+5,296. The peak rows do not carry over, and are not expected to — a prove's
+peak column is the client's high-water at that instant, so it reads
+differently depending on where `Main_n22` fell in the order.
 
 **The run's client high-water is not this lever's to move, and the unit does
 not claim it.** A run's high-water is the largest peak any of its eleven
@@ -2385,4 +2394,3 @@ six is an observation, not a rate, and it is recorded here with its
 denominator rather than as a claim: the arm that holds the most is the arm
 that failed, on the workload and fraction where holding two families' constants
 is known not to fit.
-
