@@ -37,6 +37,7 @@ pub mod ab;
 pub mod artifact;
 pub mod driver;
 pub mod manifest;
+pub mod memlog;
 pub mod nvtx;
 pub mod transcript;
 

@@ -17,6 +17,11 @@ use crate::Error;
 pub struct DeviceBuf {
     session: Arc<Session>,
     buf: Option<xla_pjrt::Buffer>,
+    /// This buffer's row in the live set, while `ZZ_MEM_STAGES` is asking
+    /// for one (`crate::memlog`). Dropped with the buffer, which is what
+    /// makes a stage boundary's inventory the sections actually alive
+    /// rather than the sections ever made.
+    _tag: Option<crate::memlog::Tag>,
 }
 
 impl DeviceBuf {
@@ -298,6 +303,13 @@ pub fn new_session(memory_fraction: Option<f32>) -> Arc<Session> {
         memory_fraction,
         eager_load_executable_modules: eager,
         staging_threshold_bytes: staging,
+        // `None` leaves the create-option unset rather than sending the
+        // plugin its own default, so this stays the client the numbers before
+        // the pin were taken on. The kind was measured not to be a lever
+        // (#220): `cuda_async` builds no arena, so `memory_fraction` stops
+        // being a ceiling and the client grows past its claim, which is the
+        // opposite of what one client per pil2 stream needs.
+        allocator: None,
     };
     let session = Arc::new(unsafe { Session::with_options(options) });
     if memory_fraction.is_some() {
@@ -526,7 +538,8 @@ impl Artifact {
         if trace_enabled() && bytes.len() >= 1 << 20 {
             zzlog!("  upload {}: {} MB, {:.2} ms", spec.name, bytes.len() >> 20, t.elapsed().as_secs_f64() * 1e3);
         }
-        Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(buf) })
+        let _tag = crate::memlog::record(&format!("upload/{}", spec.name), bytes.len());
+        Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(buf), _tag })
     }
 
     /// A device buffer's words on the host (32-bit outputs widened).
@@ -543,6 +556,22 @@ impl Artifact {
             4 => bytes.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as u64).collect(),
             _ => bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect(),
         })
+    }
+
+    /// What this artifact's client allocator holds, for the live-set lines
+    /// (`crate::memlog`). `None` when the plugin keeps no statistics for the
+    /// allocator kind the client was built with, which the reporting prints
+    /// as `-` rather than as zero.
+    pub fn device_totals(&self) -> crate::memlog::Totals {
+        // SAFETY: the session outlives the call -- the artifact holds it.
+        match unsafe { self.session.memory_stats() } {
+            Some(m) => crate::memlog::Totals {
+                in_use: Some(m.bytes_in_use),
+                peak_in_use: m.peak_bytes_in_use,
+                pool: m.pool_bytes,
+            },
+            None => crate::memlog::Totals::default(),
+        }
     }
 
     /// Execute `name` with its inputs bound from `env`; outputs in manifest order.
@@ -562,10 +591,26 @@ impl Artifact {
         if trace_enabled() {
             zzlog!("  run {name}: enqueue {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
         }
-        Ok(outs
+        // Zipped with the manifest, so each output carries the program that
+        // made it and the name it is bound under -- the two things a live-set
+        // row has to say to be attributable to a stage of the schedule.
+        let outs: Vec<Buf> = outs
             .into_iter()
-            .map(|b| Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(b) }))
-            .collect())
+            .zip(&info.outputs)
+            .map(|(b, spec)| {
+                let _tag = crate::memlog::record(&format!("{name}/{}", spec.name), spec.elems() * spec.elem_bytes());
+                Arc::new(DeviceBuf { session: self.session.clone(), buf: Some(b), _tag })
+            })
+            .collect();
+        // After the outputs are registered, not before: the whole value of
+        // the line is that what the allocator holds beyond the registry is
+        // XLA's own, and a reading taken while this program's outputs are
+        // still unregistered reports them as XLA's -- on a wide AIR that is
+        // over a gigabyte of the section the program was run to produce.
+        if crate::memlog::per_program() {
+            crate::memlog::report_program(name, self.device_totals());
+        }
+        Ok(outs)
     }
 
     /// `run`, with the outputs stored into `env` under their manifest names.

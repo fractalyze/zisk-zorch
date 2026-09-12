@@ -289,7 +289,7 @@ impl AirDriver {
         // them, so what a phase keeps to itself is the host work between two
         // enqueues — the downloads, the transcript, the query draw — which is
         // what `bench/host_idle.py` charges the device's idle time to.
-        let mut phase = crate::nvtx::Phase::start("stage1");
+        let mut phase = crate::memlog::Stage::start("stage1", || art.device_totals());
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
         let mut env = fixed.clone();

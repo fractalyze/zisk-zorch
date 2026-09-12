@@ -1403,6 +1403,14 @@ is unmeasured here for that reason, not overlooked.
     the key read still runs ahead of the slot, which is why the `ahead`
     column of the `fixed sections for X` lines does not go to zero.
 
+    **That null is a knob that was never on the right buffer**, not a
+    read-ahead that costs nothing. `ZZ_FIXED_AHEAD` governs `const_base` and
+    `custom_base`; the next instance's `trace` — 32 MiB to 1,248 MiB across
+    these eleven AIRs, and the largest thing another instance leaves on the
+    client — goes up under the per-client admission `ZZ_PENDING` instead
+    (`lib.rs:966-971`). `ZZ_PENDING=1` does move it, by 1.2 GiB of client
+    high-water; see "Where a prove's device memory goes" below.
+
     **What is in the 11.60 GiB.** A run that dies leaves BFC's own
     accounting in the log, and 20 of these 21 report the same largest
     single allocation: **2.75 GiB, `VirtualTableZisk0_n21`'s `const_ext`**
@@ -1965,3 +1973,215 @@ is unmeasured here for that reason, not overlooked.
   `.const_tree`. Everything through commit2 is then enqueued before the
   first transcript wait (the stage-2 challenges do not depend on root1 in
   this schedule).
+
+### Where a prove's device memory goes, against pil2's own buffer (2026-09-12, #226)
+
+Every memory unit before this one sized allocations. None asked which
+buffers are alive at each stage of one prove and why, so the ~3 GiB a
+second client is short by (#215) had no owner. This is that inventory, and
+the answer is that **it is not in the prove's sections**: section for
+section the bridge holds what pil2 holds, and on one of the two binding
+shapes it holds less.
+
+That is the same conclusion #220 reached from the other side. Its ladder found
+the allocator kind was not a lever — the room above the data is small — and
+this comparison says the data was never the outlier either. Three units of
+this family sized an excess that, per prove, is not there.
+
+Read with `bridge/bench/mem_stages.py` over a `ZZ_MEM_STAGES=2` run and
+`bridge/bench/pil2_layout.py` over the proving key — not with
+`bench/mem_budget.py`, which answers a different question (what a whole run
+asked the card for, and which allocation a dead run died on) and cannot
+produce these tables. Twelve runs, four arms of three, go hello-world,
+`ZZ_CLIENTS=1`, fraction 0.45, headroom 3, shipped wheel
+`0.10.2.dev20260910150749`, artifacts `zz-artifacts-191`, page cache warmed
+by `run.sh`. All 11 basic proofs byte-identical to a same-session native arm
+on every one of the twelve. Host carried a full swap (7/7) throughout, as
+#220's walk did.
+
+**pil2's per-AIR need is printed by pil2 and is far below the 7.85 GiB
+ceiling.** The `-vv` line `TOTAL PROVER MEMORY USAGE` gives it per AIR;
+it is `prover_buffer_size * 8`, and `prover_buffer_size` is
+`get_map_totaln_c`, i.e. `mapTotalN`
+([`utils.rs:127`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/proofman/src/utils.rs#L127),
+[`setup.rs:212`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/setup.rs#L212)).
+For hello-world: Main 6.03, VirtualTableZisk0 7.35, Rom 4.52, Arith 4.40,
+MemAlign 2.74. The 7.85 GiB is `max(basic, recursion)` over the whole
+proving key and is the compressor's, so it bounds nothing about a basic AIR.
+
+**Every "GB" pil2 prints is a GiB**, by two independent routes:
+`format_bytes` divides by 1024 and labels the units KB/MB/GB
+([`utils.rs:184-197`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/utils.rs#L184-L197)),
+and the `Insufficient memory. Need X GB` line does not come from it at all —
+it divides by `1024.0 * 1024.0 * 1024.0` inline
+([`starks_api.cu:344`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/pil2-stark/src/api/starks_api.cu#L344)).
+Both figures are already comparable to ours; "converting" either shrinks the
+bridge's excess by 7 %.
+
+**Where pil2's buffer differs from ours in kind.** pil2 takes one buffer per
+stream and places sections at offsets inside it, so sections dead by the time
+a later one is written share their bytes: `cm1` base sits where `cm2_ext` is
+written, `cm2` base where the quotient section and its tree go. It does not
+release them — it never allocated them apart. The bridge reaches the same
+place by releasing (`driver::prove` drops `trace` after `logup` and `cm2`
+after `commit2`; `release_tree` drops each stage tree as its openings reach
+the wire), and the two come out level. Whether an AIR's constant tree is in
+that per-stream buffer or preloaded once per GPU is decided **per AIR**:
+Main's is shared, VirtualTableZisk0's is not.
+
+#### The live sets, section for section
+
+Bridge rows are the largest boundary of one prove under `ZZ_PENDING=1`
+(nothing of another instance on the client); pil2's are its buffer, which is
+allocated whole for the stream's life. MiB.
+
+| section | Main: bridge | pil2 | diff | VirtualTableZisk0: bridge | pil2 | diff |
+|---|---|---|---|---|---|---|
+| `cm1_ext` | 2,432 | 2,432 | 0 | 736 | 736 | 0 |
+| `cm2_ext` | 1,536 | 1,536 | 0 | 1,152 | 1,152 | 0 |
+| `cm3_ext` (qsec) | 384 | 384 | 0 | 192 | 192 | 0 |
+| `mt1` / `mt2` / `mt3` | 341 each | 341 each | 0 | 171 each | 171 each | 0 |
+| const (base) | 96 | 96 | 0 | 1,408 | 1,408 | 0 |
+| constant tree | 533 | 0 | **+533** | 2,987 | 2,987 | 0 |
+| FRI layers + trees | 268 | 268 | 0 | 134 | 134 | 0 |
+| `q/f` + codeword | 0 | 384 | −384 | 0 | 192 | −192 |
+| `zi` / domain | 128 | 0 | +128 | 64 | 0 | +64 |
+| quotient row windows | 32 | 0 | +32 | 16 | 0 | +16 |
+| itemised above | 6,434 | 6,127 | +307 | 7,201 | 7,316 | −115 |
+| **buffer pil2 allocates** | **6,434** | **6,170** | **+264** | **7,201** | **7,530** | **−329** |
+
+Two totals because they answer different questions. The itemised row is
+section against section. `mapTotalN` is larger than the sections placed in it:
+it is the maximum of the placed layout and the scratch terms pil2 sizes the
+buffer against but does not place in the table (`lev`, `mem_exps`, the
+`tmp1`/`tmp3` expression memory) — 43 MiB of it on Main and 214 MiB on
+VirtualTableZisk0. The second row is the comparison that matters, since pil2
+holds the whole buffer for the stream's life whether a section is in it or
+not.
+
+**Before believing that parity, check the instrument could have seen a
+difference** — this page's own rule, from "So run a positive control before
+believing a null on this leg". Two things say it can. The table itself
+resolves a per-section difference where one is known to exist and reports zero
+where it is not: the constant-tree row is +533 MiB on Main and exactly 0 on
+VirtualTableZisk0, which is pil2's own per-AIR branch (shared per GPU against
+carried per stream) recovered independently from the live set. And turning a
+knob moves it — `ZZ_PENDING=1` takes co-residency from 1,504–2,704 MiB to 0 and
+the client high-water from 10,263 to 8,933 MiB. An inventory blind to a
+gigabyte would have done neither.
+
+The bridge's own live set is within 0.26 GiB of pil2's on Main and 0.32 GiB
+*below* it on VirtualTableZisk0. The three rows that differ:
+
+- **The constant tree, +533 MiB on Main and 0 on VirtualTableZisk0.** pil2
+  preloads Main's once per GPU and shares it across streams; the bridge holds
+  one per client. This is worth `533 MiB x (clients - 1)` and nothing at one
+  client. On VirtualTableZisk0 pil2 did not preload — its 2,987 MiB tree is
+  inside *every* stream's buffer — so the claim "we hold 2.75 GiB pil2 does
+  not" was never true for that shape. That does not make our residency free;
+  it means the comparison cannot size it.
+- **`zi` / domain, +128 MiB.** pil2 places `zi`/`x` at the offset its
+  expression scratch starts from, so they fall inside its maximum instead of
+  adding to it; the bridge materialises them as buffers from `constants`.
+- **`q/f` + codeword, −384 MiB.** pil2 reserves `q/f` and `buff_helper` for
+  the buffer's life; the bridge has released the codeword by `openings`.
+
+#### What the excess actually is
+
+Two terms, neither of them a section.
+
+**(b) Co-residency — the next instance's `trace`, 32–1,248 MiB, and 0 under
+`ZZ_PENDING=1`.** The per-client admission (`ZZ_PENDING`, default 2) puts the
+next instance's `trace` on the device during the running prove. Which AIR that
+is moves run to run, and the eleven traces span 32 MiB (Rom) to 1,248 MiB
+(Binary), so this is a bimodal jump rather than scatter. At Main's `openings`
+boundary, per run:
+
+| arm | r1 | r2 | r3 |
+|---|---|---|---|
+| default | Rom, 32 MiB | Binary, 1,248 MiB | BinaryExtension, 928 MiB |
+| `ZZ_FIXED_AHEAD=0` | Mem, 416 MiB | Mem, 416 MiB | none |
+| `ZZ_PENDING=1` | none | none | none |
+
+`ZZ_FIXED_AHEAD` does not control it — that depth governs `const_base` /
+`custom_base` only, while `trace` / `publics` / `airvalues` ride the
+admission (`lib.rs:966-971`). This explains the null recorded above under
+"Nor does the read-ahead reach it": the knob was never on the largest
+co-resident buffer. `ZZ_PENDING=1` removes it in all three runs and takes the
+client high-water from 9,007–10,263 MiB to **8,933–8,993 MiB**.
+
+The trace is the largest of the next instance's uploads but not the only one;
+counting its `const_base` and scalars too, everything on the client that is
+not the running prove's comes to 32–1,376 MiB on Main and 1,504–2,704 MiB on
+VirtualTableZisk0 at the boundaries above, and to zero under `ZZ_PENDING=1`.
+One admission slot holds one next instance either way.
+
+**(c) Transients inside one program, +838 to +1,957 MiB.** Under
+`ZZ_PENDING=1` the client high-water is 8,933–8,993 MiB against a largest
+boundary live set, over all eleven proves, of 7,201 MiB — 1.7 GiB that no
+boundary ever sees, because it is reached *inside* an execution. The binding
+one is `commit2` on VirtualTableZisk0, which raises the allocator's peak by
+1,957 MiB while it runs; Main's own largest is `evals`, +838 MiB. (Main's
+9,007-MiB-era gap is not Main's transient: the peak is the client's, and by
+the time Main proves, VirtualTableZisk0 has already set it.) This is XLA's
+own allocation
+while a program runs — an extend's output beside its input, fusion scratch —
+and it is on top of our live set, where pil2's equivalent (`mem_exps`,
+`tmp1`/`tmp3`, `buff_helper`) is already inside `mapTotalN`.
+
+**This term is the one an arena figure cannot be decomposed into.** It is
+inside the client-lifetime peak that "Memory budget" above quotes, and it
+belongs to no section — so anyone who reads that arena and tries to account
+for it section by section is left with a gigabyte and a half that has no row,
+whatever inventory they take. It is visible only between two programs, which
+is what `ZZ_MEM_STAGES=2` exists for. Size a memory lever against the live set
+plus this term, never against the live set alone.
+
+**(a) Held past their last reader: 256 MiB on Main, 1,488 MiB on
+VirtualTableZisk0**, dominated by `const_base` (96 / 1,408 MiB), whose last
+reader is `logup` in stage 1 and which stays for the life of the prove. Both
+figures are from the `ZZ_PENDING=1` arm and are identical across its three
+runs. That arm is the one to read them from: the registry is per client rather
+than per prove, so on a default-admission log the next instance's `trace` is
+alive with no reader yet run, and counting it here would charge the largest
+buffer in the workload to this category. `mem_stages.py` excludes it by size —
+the eleven AIRs declare eleven different trace widths — but a figure quoted
+from an arm where nothing is co-resident needs no such rule to be believed.
+`ZZ_RESIDENT_AIRS=1` keeps it for the next prove of the same AIR — **which on
+hello-world never comes**, because its 11 AIRs are all distinct. On the
+block-shaped `sha-hasher` workload (38 instances over 16 AIRs) AIRs do
+repeat, and that is the case the policy exists for. Read as a defect it
+argues for dropping residency, which would regress the workload nobody in
+this family is measuring.
+
+**(d) Per-client copies of what pil2 shares:** the constant tree above, 533
+MiB per extra client on Main-shaped AIRs, 0 on VirtualTableZisk0. **(e)** the
+`zi`/domain and row-window rows, 160 MiB and 80 MiB.
+
+The categories do not sum to a single "~3 GiB excess" because that figure was
+a client-lifetime high-water compared against a per-stream ceiling. Per
+prove, against pil2's own per-AIR need, the bridge is at parity; the client
+peak sits above it by (b) and (c).
+
+#### Fix candidates, sized from the table
+
+Not filed here — one change each, for the supervisor.
+
+1. **Bound the instance read-ahead by bytes, not by count** — (b), 0–1.2 GiB
+   of client peak, and it makes the peak reproducible. `ZZ_PENDING=1` costs
+   ~0.32 s of the 5.6 s leg (medians 5,953 vs 5,635 ms), but these arms were
+   run in blocks rather than interleaved, so that figure is provisional and a
+   fix unit must re-measure it interleaved (Decision 84 on #170). A byte cap
+   would admit Rom's 32 MiB trace and hold back Binary's 1,248 MiB.
+2. **Share the constant tree across clients** — (d), 533 MiB per extra client
+   on const-light AIRs. Worth nothing at `ZZ_CLIENTS=1`, which is why it has
+   to be sized against the two-client configuration it exists for.
+3. **Make the fixed-section residency conditional on the plan** — (a), up to
+   1,408 MiB on VirtualTableZisk0. proofman knows the instance list before
+   proving, so an AIR that appears once need not keep `const_base` past
+   `logup`. Must be measured on `sha-hasher`, not hello-world.
+4. **The `commit2` / `evals` transient** — (c), the largest single term at
+   1.0–1.6 GiB above the live set. Not reachable from the bridge: it is
+   XLA's allocation inside one executable, so the lever is export-side
+   (chunk the extend the way #191 chunked its predecessor) or plugin-side
+   (donate the input buffer).
