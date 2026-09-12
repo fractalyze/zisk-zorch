@@ -60,6 +60,76 @@ class EmittedLineTest(absltest.TestCase):
             [m.ran for m in prove.marks if m.ran == "commit2"], ["commit2"]
         )
 
+    def test_a_line_pil2_spliced_is_still_read(self):
+        # pil2 writes its `[TRACE]` lines to the same fd from C++ while the
+        # bridge writes these from Rust, and the two splice mid-line: seen in
+        # the field as `[zz + [TRACE] PilStark: ...` on one physical line and
+        # `7.005] mem stage grind: ...` on the next. The reader used to
+        # require the `[zz + <t>]` prefix, so it dropped that header and then
+        # raised a bare KeyError on the `buf` lines under it -- one run in
+        # fifteen unreadable, for a timestamp nothing here reads.
+        spliced = "\n".join(
+            [
+                "[zz + [TRACE] PilStark: <-- STARK_COMMIT_STAGE_1 : 0.04 s",
+                " 7.005] mem stage quotient: in_use 8990000000, peak 9400000000,"
+                " pool 15150000000, live 8000000000 in 3 buffers",
+                "[zz +  7.005[TRACE] PilStark: <-- CALCULATE_IM_POLS : 0.00 s",
+                "] mem stage quotient buf commit1/cm1_ext 1 2550136832",
+                instance(0, "Main_n22"),
+            ]
+        )
+        quotient = mem_stages.proves(spliced)[0].stage("quotient")
+        self.assertEqual(quotient.in_use, 8990000000)
+        self.assertEqual(quotient.rows, [("commit1/cm1_ext", 1, 2550136832)])
+
+    def test_a_spliced_run_line_still_counts_its_program(self):
+        # `run` splices like the rest and fails more quietly than they do: a
+        # dropped one leaves its program out of `programs`, and `readers_of`
+        # then names an earlier program as a section's last reader with
+        # nothing raised at all.
+        manifest = {
+            "programs": {
+                "commit1": {"inputs": [{"name": "trace"}], "outputs": []},
+                "commit2": {"inputs": [{"name": "trace"}], "outputs": []},
+            }
+        }
+        spliced = "\n".join(
+            [
+                "[zz +  1.000] mem stage stage1: in_use 1, peak 1, pool 1,"
+                " live 1 in 0 buffers",
+                "[zz +  1.000]   run commit1: enqueue 0.02 ms",
+                "[zz +  1.[TRACE] PilStark: <-- STARK_STEP_Q : 0.11 s",
+                "100]   run commit2: enqueue 0.03 ms",
+                instance(0, "Main_n22"),
+            ]
+        )
+        prove = mem_stages.proves(spliced)[0]
+        self.assertEqual(prove.programs, ["commit1", "commit2"])
+        self.assertEqual(
+            mem_stages.readers_of(manifest, "upload/trace", prove.programs),
+            ["commit1", "commit2"],
+        )
+
+    def test_a_spliced_prog_line_still_counts_and_still_names_the_peak(self):
+        # `mem prog` splices like the rest, and at ZZ_MEM_STAGES=2 it is the
+        # *authoritative* program order -- `Prove.programs` prefers the marks
+        # and falls back to the `run` lines only at level 1. So a dropped one
+        # takes a program out of the order and out of `peak_program`, which is
+        # what names the program the high-water rose across.
+        spliced = "\n".join(
+            [
+                "[zz +  1.000] mem stage stage1: in_use 100, peak 100, pool 1,"
+                " live 100 in 0 buffers",
+                "[zz +  1.000] mem prog commit1: in_use 200, peak 200, live 200",
+                "[zz +  1.[TRACE] PilStark: <-- STARK_STEP_Q : 0.11 s",
+                "100] mem prog commit2: in_use 300, peak 300, live 300",
+                instance(0, "Main_n22"),
+            ]
+        )
+        prove = mem_stages.proves(spliced)[0]
+        self.assertEqual(prove.programs, ["commit1", "commit2"])
+        self.assertEqual(prove.peak_program, ("commit2", 100))
+
     def test_a_statistic_the_allocator_does_not_keep_reads_as_none(self):
         # The `done` line in the fixture carries `-` in every total, which is
         # what a pin without the readback emits. Parsing it as 0 would report
