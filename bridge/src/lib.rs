@@ -319,6 +319,58 @@ fn parse_pending(v: Option<&str>) -> usize {
     v.and_then(|s| s.trim().parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(PENDING)
 }
 
+/// What the bridge does with an AIR's fixed sections once the prove that
+/// uploaded them is done (`ZZ_FIXED_RESIDENT`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum FixedResidency {
+    /// Keep them for an AIR proofman's plan proves again, and no other.
+    Plan,
+    /// Keep every AIR's, as every prove did before the plan was read.
+    Always,
+    /// Keep none, whatever the plan says.
+    Never,
+}
+
+/// `ZZ_FIXED_RESIDENT` as a policy: `1` keeps every AIR's sections, `0` keeps
+/// none, unset follows the plan. The two forced arms are what a measurement
+/// holds the policy still with, so an unreadable value says so rather than
+/// quietly measuring the default twice.
+fn parse_fixed_resident(v: Option<&str>) -> FixedResidency {
+    match v.map(str::trim) {
+        None | Some("") => FixedResidency::Plan,
+        Some("1") => FixedResidency::Always,
+        Some("0") => FixedResidency::Never,
+        Some(other) => {
+            eprintln!("[zz] ZZ_FIXED_RESIDENT={other:?} is not 0 or 1; the plan decides");
+            FixedResidency::Plan
+        }
+    }
+}
+
+/// proofman's instance list as instances per AIR. The list arrives with one
+/// entry per instance; how many each AIR has is the whole of what the
+/// residency decision reads from it.
+fn plan_counts(keys: &[String]) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for k in keys {
+        *counts.entry(k.clone()).or_default() += 1;
+    }
+    counts
+}
+
+/// Whether an AIR's fixed sections stay on the client after the prove that
+/// uploaded them. An AIR the plan proves more than once keeps them: that
+/// next prove is what residency exists for. So does one the plan does not
+/// name — the plan comes from the proofman fork, and a caller that sends
+/// none leaves every AIR behaving as it did before the bridge read one.
+fn keeps_fixed(mode: FixedResidency, plan: &HashMap<String, usize>, key: &str) -> bool {
+    match mode {
+        FixedResidency::Always => true,
+        FixedResidency::Never => false,
+        FixedResidency::Plan => plan.get(key).is_none_or(|n| *n > 1),
+    }
+}
+
 /// The depth a client actually runs at. A prove takes the read-ahead permit
 /// in `plan` and gives it back in `installed`, both inside the admission
 /// `prove_owned` holds for its whole length, so at most `admitted` proves can
@@ -510,6 +562,11 @@ pub struct Bridge {
     artifacts: PathBuf,
     cache: PathBuf,
     resident_airs: usize,
+    fixed_resident: FixedResidency,
+    /// Instances per AIR in this run, from proofman's plan (`set_plan`).
+    /// Empty until it arrives, and empty for good on a caller that sends
+    /// none.
+    plan: Mutex<HashMap<String, usize>>,
     /// One client per slot, reachable without the slot lock so a loader
     /// never waits on a prove's slot while holding the client's gate.
     clients: Vec<Arc<artifact::Client>>,
@@ -680,6 +737,7 @@ impl Bridge {
             std::env::var("ZZ_FIXED_AHEAD").ok().as_deref(),
             parse_pending(std::env::var("ZZ_PENDING").ok().as_deref()),
         );
+        let fixed_resident = parse_fixed_resident(std::env::var("ZZ_FIXED_RESIDENT").ok().as_deref());
         let resident_airs = std::env::var("ZZ_RESIDENT_AIRS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
@@ -697,6 +755,8 @@ impl Bridge {
             artifacts: artifacts.to_path_buf(),
             cache,
             resident_airs,
+            fixed_resident,
+            plan: Mutex::default(),
             clients: client_handles,
             slots,
             loaded,
@@ -810,6 +870,38 @@ impl Bridge {
                 }
             });
         }
+    }
+
+    /// proofman's instance list, one entry per instance and duplicates
+    /// intact. It says how many times each AIR is proved in this run, which
+    /// is what decides whether its fixed sections are worth keeping past the
+    /// prove that uploads them, and it names the AIRs to load ahead of the
+    /// rest of the key. `preload_with` takes each AIR once, so the count
+    /// lives only here.
+    pub fn set_plan(self: &Arc<Self>, keys: Vec<String>) {
+        let counts = plan_counts(&keys);
+        let mut airs: Vec<String> = Vec::with_capacity(counts.len());
+        for k in keys {
+            if !airs.contains(&k) {
+                airs.push(k);
+            }
+        }
+        if self.log {
+            let once = counts.values().filter(|n| **n == 1).count();
+            let total: usize = counts.values().sum();
+            zzlog!("plan: {total} instances over {} AIRs, {once} of them proved once", airs.len());
+        }
+        *self.plan.lock().unwrap_or_else(|p| p.into_inner()) = counts;
+        self.preload_with(airs, true);
+    }
+
+    /// Whether `key`'s fixed sections stay on a client after the prove that
+    /// uploaded them, under this run's policy and plan. The plan counts a
+    /// run's instances, not a client's, so an AIR whose two instances land on
+    /// two clients keeps its sections on both — the conservative way round,
+    /// and the only one a count taken before the slots are assigned can be.
+    fn keeps_fixed(&self, key: &str) -> bool {
+        keeps_fixed(self.fixed_resident, &self.plan.lock().unwrap_or_else(|p| p.into_inner()), key)
     }
 
     /// The `slot` index a request lands on (see `slot`).
@@ -1019,7 +1111,9 @@ impl Bridge {
             }
         }
         phase.set("fixed_install");
+        let keep_fixed = self.keeps_fixed(&key);
         let driver = slot.drivers.get_mut(&key).unwrap();
+        driver.set_keep_fixed(keep_fixed);
         if !driver.has_fixed() {
             let t = Instant::now();
             let looked_resident = prefetched.is_none();
@@ -1095,7 +1189,16 @@ impl Bridge {
         // here is only the transcript's own setup.
         phase.set("prove");
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
-        let out = driver.prove(inputs, &mut transcript, proof_out)?;
+        let proved = driver.prove(inputs, &mut transcript, proof_out);
+        if !keep_fixed {
+            // The sections went with the prove, on the error path too —
+            // `prove` takes them off the driver before it runs. Re-sync the
+            // read-ahead's mirror, so a next prove of this AIR — a plan that
+            // undercounted, or the forced arm — reads its key ahead of the
+            // slot instead of finding under it that nothing is resident.
+            self.fixed_ahead[slot_idx].evicted(&key);
+        }
+        let out = proved?;
         if self.log {
             zzlog!(
                 "instance {} {} ({}): {:.3} s, of which {:.3} s waiting for the client ({ahead:.3} s of uploads and reads done ahead)",
@@ -1417,6 +1520,37 @@ mod tests {
         assert_eq!(parse_pending(None), PENDING, "an unset variable moved the admission");
         assert_eq!(parse_pending(Some("0")), PENDING, "zero admitted nothing instead of leaving the default");
         assert_eq!(parse_pending(Some("1")), 1, "a one-prove admission was not read");
+    }
+
+    #[test]
+    fn only_an_air_the_plan_proves_again_keeps_its_fixed_sections() {
+        // proofman's list carries one entry per instance; the AIRs of the
+        // block-shaped workload repeat, hello-world's eleven do not.
+        let plan = plan_counts(&["Main_n22".into(), "Rom_n22".into(), "Main_n22".into()]);
+        assert_eq!(plan["Main_n22"], 2, "the list's duplicates did not reach the count");
+        assert!(keeps_fixed(FixedResidency::Plan, &plan, "Main_n22"), "an AIR proved twice let its sections go");
+        assert!(!keeps_fixed(FixedResidency::Plan, &plan, "Rom_n22"), "an AIR proved once kept its sections");
+        // No plan at all is the proofman that never sends one: every AIR
+        // keeps its sections, which is what the bridge did before it read a
+        // plan and the only safe reading of "not in the list".
+        assert!(keeps_fixed(FixedResidency::Plan, &plan, "Mem_n22"), "an AIR the plan does not name let its sections go");
+        assert!(keeps_fixed(FixedResidency::Plan, &HashMap::new(), "Rom_n22"), "an empty plan released an AIR's sections");
+    }
+
+    #[test]
+    fn the_forced_arms_decide_against_the_plan() {
+        // Both arms of the measurement: the policy has to be pinned from
+        // outside, or the two arms are the same run twice on a workload
+        // whose plan already decides.
+        let plan = plan_counts(&["Main_n22".into(), "Main_n22".into(), "Rom_n22".into()]);
+        assert!(!keeps_fixed(FixedResidency::Never, &plan, "Main_n22"), "the forced release kept a repeated AIR's sections");
+        assert!(keeps_fixed(FixedResidency::Always, &plan, "Rom_n22"), "the forced keep released a one-instance AIR's sections");
+
+        assert_eq!(parse_fixed_resident(None), FixedResidency::Plan, "an unset variable took the decision off the plan");
+        assert_eq!(parse_fixed_resident(Some("")), FixedResidency::Plan, "an empty variable took the decision off the plan");
+        assert_eq!(parse_fixed_resident(Some(" 1 ")), FixedResidency::Always, "a padded 1 was not read as the keep arm");
+        assert_eq!(parse_fixed_resident(Some("0")), FixedResidency::Never, "0 was not read as the release arm");
+        assert_eq!(parse_fixed_resident(Some("never")), FixedResidency::Plan, "a word was not rejected");
     }
 
     #[test]
