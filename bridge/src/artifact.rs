@@ -505,9 +505,14 @@ impl Artifact {
     /// a single AIR is the case that wants more — nothing is proving, and the
     /// serial loop is otherwise about an hour and a half for ~34 programs.
     pub fn compile_all(&self, threads: usize) -> Result<(), Error> {
-        each_parallel(self.manifest.programs.keys().cloned().collect(), threads, |name| {
-            self.executable(name).map(|_| ())
-        })
+        self.compile_some(self.manifest.programs.keys().cloned().collect(), threads)
+    }
+
+    /// The same, for a named subset. A measurement that wants one program's
+    /// compile -- a buffer-assignment dump, a plugin bisect -- pays for one
+    /// rather than for the AIR's whole set.
+    pub fn compile_some(&self, names: Vec<String>, threads: usize) -> Result<(), Error> {
+        each_parallel(names, threads, |name| self.executable(name).map(|_| ()))
     }
 
     /// Host words -> a device buffer shaped and typed by `spec`. Field words
