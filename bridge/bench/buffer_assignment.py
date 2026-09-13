@@ -565,14 +565,12 @@ def run_readings(log: str, air: str) -> dict[str, list[Reading]]:
     than once in a log, so a single reading per name would keep the last
     execution and drop the rest without saying so.
 
-    Two marks the rise is measured against are not programs. A stage boundary
-    reports the allocator too, and the high-water can rise between a stage's
-    last program and the next boundary -- a download, the transcript, the
-    query draw -- so the boundaries stay in the sequence the rise is computed
-    over even though no reading is emitted for them. Dropping them first would
-    credit such a rise to the program that follows, which is the guard
-    `mem_stages.peak_program` keeps by refusing to name a boundary at all;
-    this reads its marks rather than re-deriving the rule.
+    The pairing the rise comes from is `mem_stages.Prove.rises`, not repeated
+    here: a stage boundary reports the allocator too, and the high-water can
+    rise between a stage's last program and the next boundary -- a download,
+    the transcript, the query draw -- so the boundaries have to stay in the
+    sequence even though no reading is emitted for them. That rule has one
+    owner for the same reason the package's other shared rules do.
 
     Read from a `ZZ_MEM_STAGES=2` log through `mem_stages`, which owns the
     rule that a stage block belongs to the instance line after it."""
@@ -582,8 +580,7 @@ def run_readings(log: str, air: str) -> dict[str, list[Reading]]:
     for prove in mem_stages.proves(log):
         if prove.air != air:
             continue
-        marks = [m for m in prove.marks if m.peak is not None]
-        for before, mark in zip(marks, marks[1:]):
+        for _, mark, rose in prove.rises():
             if mark.ran.startswith("("):
                 continue
             out.setdefault(mark.ran, []).append(
@@ -591,7 +588,7 @@ def run_readings(log: str, air: str) -> dict[str, list[Reading]]:
                     program=mark.ran,
                     in_use=mark.in_use,
                     peak=mark.peak,
-                    rose=mark.peak > before.peak,
+                    rose=rose > 0,
                 )
             )
     return out

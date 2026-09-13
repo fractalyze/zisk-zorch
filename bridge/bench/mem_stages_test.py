@@ -575,3 +575,28 @@ class TruncationTest(absltest.TestCase):
 
 if __name__ == "__main__":
     absltest.main()
+
+
+class RisesTest(absltest.TestCase):
+    """`Prove.rises` is the one place marks are paired, so both readers of the
+    rule get the boundary handling."""
+
+    def test_boundaries_stay_in_the_pairing(self):
+        prove = mem_stages.proves(
+            "[zz +  1.0] mem stage stage1: in_use 100, peak 100, pool 9, "
+            "live 92 in 1 buffers\n"
+            "[zz +  1.0] mem prog commit1: in_use 200, peak 200, live 192\n"
+            "[zz +  1.0] mem stage stage2: in_use 210, peak 900, pool 9, "
+            "live 202 in 1 buffers\n"
+            "[zz +  1.0] mem prog commit2: in_use 220, peak 900, live 212\n"
+            "[zz +  1.0] instance 0 Fake_n10 (worker): 1.0 s, of which "
+            "0.0 s waiting\n"
+        )[0]
+        steps = prove.rises()
+        risen = [(a.ran, b.ran, d) for a, b, d in steps if d > 0]
+        # The rise belongs to the boundary, not to the program after it.
+        self.assertEqual(len(risen), 1)
+        self.assertTrue(risen[0][1].startswith("("))
+        self.assertEqual(risen[0][2], 690)
+        # And that is why no program is named for it.
+        self.assertIsNone(prove.peak_program)

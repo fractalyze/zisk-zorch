@@ -162,14 +162,29 @@ class Prove:
         boundary's own label there would print `(end of stage1)` under "peak
         rose across" as if it were a program. `peak_stage` is what names that
         case."""
-        rose = None
-        marks = [m for m in self.marks if m.peak is not None]
-        for before, after in zip(marks, marks[1:]):
-            if after.peak > before.peak:
-                rose = (after.ran, after.peak - before.peak)
-        if rose is None or rose[0].startswith("("):
+        rose = [step for step in self.rises() if step[2] > 0]
+        # The rise belongs to the later mark of the pair: it is the reading
+        # taken after whatever did the allocating.
+        if not rose or rose[-1][1].ran.startswith("("):
             return None
-        return rose
+        _, after, delta = rose[-1]
+        return (after.ran, delta)
+
+    def rises(self) -> list[tuple[Mark, Mark, int]]:
+        """Every consecutive pair of allocator readings and how far the
+        high-water rose between them, in order.
+
+        The one place that pairs marks up, because the pairing is the part
+        that is easy to get wrong. A stage boundary reports the allocator too,
+        and the high-water can rise between a stage's last program and the
+        next boundary -- a download, the transcript, the query draw -- so the
+        boundaries have to stay in the sequence even when a caller only wants
+        programs. Filtering them out first shifts such a rise onto the program
+        that follows, which is why `peak_program` refuses to name a boundary
+        rather than skipping it, and why a caller wanting per-program rises
+        reads these pairs instead of re-pairing the marks."""
+        marks = [m for m in self.marks if m.peak is not None]
+        return [(a, b, b.peak - a.peak) for a, b in zip(marks, marks[1:])]
 
     @property
     def peak_stage(self) -> str | None:
