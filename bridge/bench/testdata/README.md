@@ -81,7 +81,22 @@ numbers the scripts print from these files are the numbers of that run.
   carries every case the reader has to tell apart -- a parameter, a
   `maybe-live-out` output, nine `thread-local` allocations and a
   `preallocated-temp` arena that seven values share at overlapping offsets.
-  A bridge AIR's own dump is the same three files two orders of magnitude
-  larger. The only edit is the repo's own `trailing-whitespace` /
-  `end-of-file-fixer` hook, which took two blank lines off the end of the
-  usage report; every row is as written.
+  A bridge AIR's own dump is `xla_dump_tree/` below. The only edit is the
+  repo's own `trailing-whitespace` / `end-of-file-fixer` hook, which took two
+  blank lines off the end of the usage report; every row is as written.
+
+- `xla_dump_tree/commit2/` — the same three reports for a **real** bridge
+  executable: `VirtualTableZisk0_n21`'s `commit2`, compiled from
+  `zz-artifacts-191` by the shipped plugin on 2026-09-14 (`zz_prove --warm
+  … --only commit2` into an empty `ZZ_COMPILE_CACHE`). Untrimmed, all
+  45 allocations, so the allocations still sum to the `Total bytes` the usage
+  report states and the reader's check against it stays live here.
+
+  Laid out as `<program>/` under an AIR, which is how the dump is taken --
+  one compile per directory, because XLA numbers modules per process -- so
+  this fixture exercises the tree walk as well as the parse. It carries three
+  cases the small one above cannot: a returned tuple and the 112-byte index
+  table XLA allocates for its 14 elements (not a program output, and not
+  declared in the manifest), 28 `constant` allocations placed at load rather
+  than per execution, and a 1,600 MiB temp arena whose regions are an NTT's
+  stage buffers plus one transpose of the input.

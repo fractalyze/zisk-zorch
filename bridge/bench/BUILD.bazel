@@ -63,6 +63,9 @@ py_test(
 py_library(
     name = "buffer_assignment",
     srcs = ["buffer_assignment.py"],
+    # :mem_stages owns the rule that a stage block belongs to the instance
+    # line after it; the reconciliation reads its marks rather than the log.
+    deps = [":mem_stages"],
 )
 
 py_test(
@@ -71,7 +74,10 @@ py_test(
     srcs = ["buffer_assignment_test.py"],
     # The shipped plugin's own dump of one small program: what is under test
     # is the format, which is the plugin's rather than the program's.
-    data = glob(["testdata/xla_dump/*"]),
+    data = glob([
+        "testdata/xla_dump/*",
+        "testdata/xla_dump_tree/*/*",
+    ]),
     deps = [
         ":buffer_assignment",
         requirement("absl_py"),

@@ -43,8 +43,9 @@ Every allocation of every memory space must sum to the `Total bytes` XLA prints
 in its own report, and `parse_executable` refuses a dump where it does not.
 
 Usage:
-  buffer_assignment.py <dump-dir> --manifest <artifacts>/<AIR>/manifest.json
-  buffer_assignment.py <dump-dir> [--module <substring>] [--top N] [--list]
+  buffer_assignment.py <dump>/<AIR> --tree --manifest <artifacts>/<AIR>/manifest.json \
+      [--log <run.log> --air <AIR>]
+  buffer_assignment.py <dump-dir> [--manifest M] [--module <substring>] [--list]
 
 `reconcile()` is the library half: it takes one program's allocator readings
 from a `ZZ_MEM_STAGES=2` log and says what the executable does not account
@@ -106,6 +107,12 @@ class Value:
     offset: int
     shape: str
 
+    @property
+    def is_tuple(self) -> bool:
+        """A tuple-shaped value: the index table XLA allocates for a program
+        that returns more than one array, holding a pointer per element."""
+        return self.shape.startswith("(")
+
 
 @dataclasses.dataclass(frozen=True)
 class Allocation:
@@ -134,6 +141,18 @@ class Allocation:
         """Scratch, freed when the execution ends: the transient this reader
         exists to name."""
         return "preallocated-temp" in self.kind
+
+    @property
+    def is_tuple_table(self) -> bool:
+        """The output tuple's index table -- one pointer per returned array,
+        so eight bytes times the program's output count.
+
+        XLA allocates it beside the outputs themselves and it is live-out like
+        them, but the manifest does not declare it: it is an artefact of
+        returning a tuple, not a program output. Anything comparing dumped
+        outputs against declared ones has to set it aside, and `verify`
+        checks its size rather than merely tolerating it."""
+        return self.is_output and any(v.is_tuple for v in self.values)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -383,60 +402,157 @@ def identify(
 
 @dataclasses.dataclass(frozen=True)
 class Reconciliation:
-    """What a run's allocator readings around one program leave unexplained
-    once the executable's own allocations are subtracted."""
+    """One program's temp arena as the run saw it, beside what the compile
+    says it is."""
 
     program: str
-    entry_in_use: int
+    in_use_after: int
     peak_during: int
-    freed_before: int
-    added_measured: int
-    added_assigned: int
+    temp_measured: int
+    temp_assigned: int
 
     @property
     def unexplained(self) -> int:
-        """Measured minus assigned.
+        """Measured minus assigned, in bytes.
 
-        Zero is the executable accounting for the whole rise. Positive is
-        something else allocating in the same window -- on a default-admission
-        log, the next instance's uploads, which run concurrently with the
-        prove. Negative means the window is not the one the executable ran in:
-        either its peak was never reached while the reading was taken, or a
-        buffer was released after the reading and `freed_before` does not yet
-        say so."""
-        return self.added_measured - self.added_assigned
+        A few hundred bytes is the allocator's alignment. Positive beyond that
+        is something else allocating inside the same window -- on a
+        default-admission log, the next instance's uploads, which run
+        concurrently with the prove. Negative means the readings are not the
+        ones this executable ran between: most often `peak_during` is an older
+        high-water because this program never raised it, in which case the run
+        cannot measure this program's arena at all."""
+        return self.temp_measured - self.temp_assigned
 
 
 def reconcile(
-    executable: Executable,
-    entry_in_use: int,
-    peak_during: int,
-    freed_before: int = 0,
+    executable: Executable, in_use_after: int, peak_during: int
 ) -> Reconciliation:
-    """Relate one program's compile-time allocations to a run's readings.
+    """Check one program's temp arena against a run's allocator readings.
 
-    `entry_in_use` is the allocator's `in_use` after the program before this
-    one and `peak_during` its high-water while this one ran -- both from a
-    `ZZ_MEM_STAGES=2` log. `freed_before` is what the driver released between
-    that reading and this execution, which is not nothing: a section is
-    dropped at its last reader, so a stage-2 program starts below the reading
-    taken at the end of stage 1. The identity is
+    While a program runs the client holds what it already held, plus the
+    program's outputs, plus its temp arena; when the program ends the arena is
+    freed and the outputs stay. So
 
-        peak_during = (entry_in_use - freed_before) + added_bytes
+        temp = peak_during - in_use_after
 
-    and it holds where nothing else allocates in the window -- `ZZ_PENDING=1`,
-    where no next instance is admitted beside the running prove. Leaving
-    `freed_before` at 0 when a release did happen makes the executable look
-    larger than the run, which is the negative case `unexplained` names rather
-    than a reason to distrust the dump."""
+    with both readings from a `ZZ_MEM_STAGES=2` log -- the allocator's
+    high-water while the program ran, and its `in_use` on the line written
+    after it. Nothing else is needed: no reading from before the program, and
+    no term for what the driver released, which is why this is the form to
+    quote. An earlier one measured from the reading *before* the program and
+    needed a released-buffer term to close; that term is a free parameter an
+    analyst can tune until the residual vanishes, and it hid a real
+    discrepancy once.
+
+    Two conditions. The peak must have risen during this program -- otherwise
+    `peak_during` belongs to an earlier prove and the difference means
+    nothing; `mem_stages.py`'s "peak rose across" names the programs where it
+    did. And nothing else may allocate in the window, which is `ZZ_PENDING=1`,
+    where no next instance is admitted beside a running prove.
+
+    The companion identity, for when a release is suspected rather than
+    measured, is `in_use_after - in_use_before = outputs - freed`: it isolates
+    what the program left behind, and solving it for `freed` is how a section
+    dropped at its last reader gets pinned to a size."""
     return Reconciliation(
         program=executable.module,
-        entry_in_use=entry_in_use,
+        in_use_after=in_use_after,
         peak_during=peak_during,
-        freed_before=freed_before,
-        added_measured=peak_during - (entry_in_use - freed_before),
-        added_assigned=executable.added_bytes,
+        temp_measured=peak_during - in_use_after,
+        temp_assigned=executable.temp_bytes,
     )
+
+
+def per_program(root: pathlib.Path) -> dict[str, Executable]:
+    """A `dump/<AIR>/<program>/` tree, keyed by the program each directory is
+    named for.
+
+    One program per directory is how the dump is taken (XLA numbers modules
+    per process, so a directory per compile keeps the ids from colliding), and
+    it makes the program name a fact about the filesystem rather than
+    something to infer. `verify` is what checks the name is the right one."""
+    out = {}
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        ids = modules(child)
+        if not ids:
+            continue
+        if len(ids) > 1:
+            raise ValueError(
+                f"{child} holds {len(ids)} modules; a per-program directory "
+                "must hold one, or the name it carries is not the program's"
+            )
+        out[child.name] = parse_executable(child, ids[0])
+    return out
+
+
+def verify(executables: dict[str, Executable], manifest: dict) -> list[str]:
+    """Every program whose dumped allocations do not match what the AIR
+    declares for the name its directory carries.
+
+    The failure this catches: a dump taken with the wrong `--only` argument,
+    or a directory renamed by hand, puts one program's arena under another's
+    name -- and since the arena is the quantity under study, nothing later
+    would reveal it. Parameters and outputs are declared in the manifest, so
+    they are checkable; the temp arena is not, which is the point of measuring
+    it."""
+    want = declared(manifest)
+    wrong = []
+    for name, e in executables.items():
+        if name not in want:
+            wrong.append(f"{name}: the AIR declares no such program")
+            continue
+        dec_in, dec_out = want[name]
+        params = tuple(sorted(a.size for a in e.allocations if a.is_parameter))
+        outs = tuple(
+            sorted(
+                a.size for a in e.allocations if a.is_output and not a.is_tuple_table
+            )
+        )
+        tables = [a for a in e.allocations if a.is_tuple_table]
+        if params != dec_in:
+            wrong.append(f"{name}: inputs {params} but the manifest declares {dec_in}")
+        elif outs != dec_out:
+            wrong.append(f"{name}: outputs {outs} but the manifest declares {dec_out}")
+        elif len(tables) > 1:
+            wrong.append(
+                f"{name}: {len(tables)} output tuple tables, expected at most one"
+            )
+        elif tables and tables[0].size != 8 * len(dec_out):
+            wrong.append(
+                f"{name}: the output tuple table is {tables[0].size} B for "
+                f"{len(dec_out)} outputs, expected {8 * len(dec_out)}"
+            )
+    return wrong
+
+
+def run_readings(log: str, air: str) -> dict[str, tuple[int, int, bool]]:
+    """Per program of one AIR's prove: the allocator's `in_use` on the line
+    after it, the high-water then standing, and whether that high-water rose
+    across this program.
+
+    The last flag is what says whether the run can measure this program's
+    arena at all: `peak` is a client-lifetime high-water, so for every prove
+    after the binding one it is an older number and `peak - in_use` is not an
+    arena. Read from a `ZZ_MEM_STAGES=2` log through `mem_stages`, which owns
+    the rule that a stage block belongs to the instance line after it."""
+    from bridge.bench import mem_stages
+
+    out: dict[str, tuple[int, int, bool]] = {}
+    for prove in mem_stages.proves(log):
+        if prove.air != air:
+            continue
+        marks = [
+            m for m in prove.marks if m.peak is not None and not m.ran.startswith("(")
+        ]
+        previous = None
+        for mark in marks:
+            rose = previous is not None and mark.peak > previous
+            out[mark.ran] = (mark.in_use, mark.peak, rose)
+            previous = mark.peak
+    return out
 
 
 def _load(dump: pathlib.Path) -> dict[int, Executable]:
@@ -506,6 +622,77 @@ def _report(
             )
 
 
+def _tree_report(
+    root: pathlib.Path,
+    manifest: dict,
+    log_path: pathlib.Path | None,
+    air: str,
+    top: int,
+) -> int:
+    executables = per_program(root)
+    if not executables:
+        print(f"no per-program dumps under {root}", file=sys.stderr)
+        return 1
+    wrong = verify(executables, manifest)
+    for line in wrong:
+        print(f"  !! {line}", file=sys.stderr)
+    readings = {}
+    if log_path is not None:
+        readings = run_readings(log_path.read_text(errors="replace"), air)
+
+    rows = sorted(executables.items(), key=lambda kv: -kv[1].temp_bytes)
+    head = f"{'program':<16} {'temp':>9} {'outputs':>9} {'inputs':>9} {'values':>7}"
+    if readings:
+        head += f" {'run temp':>9} {'delta':>9}"
+    print(head)
+    for name, e in rows:
+        line = (
+            f"{name:<16} {e.temp_bytes / MIB:9,.0f} {e.output_bytes / MIB:9,.0f} "
+            f"{e.parameter_bytes / MIB:9,.0f} {len(e.temp_values()):7}"
+        )
+        if readings:
+            reading = readings.get(name)
+            if reading is None:
+                line += f" {'no line':>9} {'':>9}"
+            elif not reading[2]:
+                line += f" {'no rise':>9} {'':>9}"
+            else:
+                r = reconcile(e, reading[0], reading[1])
+                line += f" {r.temp_measured / MIB:9,.0f} {r.unexplained:9,}"
+        print(line)
+    print(
+        "\n(MiB. `temp` is the arena from the compile; `run temp` is "
+        "peak - in_use after\nthe program, and `delta` their difference in "
+        "BYTES -- a few hundred is alignment.\n`no rise` is a program the "
+        "run's high-water did not rise across, where the run\ncannot "
+        "measure an arena at all.)"
+    )
+    if wrong:
+        print(f"\n{len(wrong)} program(s) do not match the manifest; see above.")
+
+    for name, e in rows[: max(1, top)]:
+        owners = e.temp_values()
+        if not owners:
+            continue
+        print(f"\n{name}: the arena, {e.temp_bytes / MIB:,.0f} MiB, by region")
+        span = len(e.sequence) or None
+        seen: dict[int, int] = {}
+        for value, _ in owners:
+            seen[value.offset] = max(seen.get(value.offset, 0), value.size)
+        for offset, size in sorted(seen.items(), key=lambda kv: -kv[1])[:top]:
+            here = [v for v, _ in owners if v.offset == offset]
+            biggest = max(here, key=lambda v: v.size)
+            live = e.live_range(biggest)
+            where = f"{live[0]}-{live[1]}" if live else "?"
+            if live and span:
+                where += f"/{span}"
+            print(
+                f"  @{offset:<12,} {size / MIB:7,.0f} MiB  x{len(here):<3} "
+                f"live {where:<10} {biggest.name} {biggest.shape}"
+            )
+    return 1 if wrong else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("dump", type=pathlib.Path, help="--xla_dump_to directory")
@@ -513,8 +700,19 @@ def main(argv: list[str] | None = None) -> int:
         "--manifest",
         type=pathlib.Path,
         help="<artifacts>/<AIR>/manifest.json -- what gives a module its "
-        "program name back; without it modules are listed by id",
+        "program name back, and what a per-program tree is verified against",
     )
+    ap.add_argument(
+        "--tree",
+        action="store_true",
+        help="`dump` is a dump/<AIR>/ holding one directory per program",
+    )
+    ap.add_argument(
+        "--log",
+        type=pathlib.Path,
+        help="a ZZ_MEM_STAGES=2 run log to reconcile against",
+    )
+    ap.add_argument("--air", help="the AIR whose prove to read from --log")
     ap.add_argument("--module", help="only programs whose name contains this")
     ap.add_argument("--top", type=int, default=12, help="rows of owners to show")
     ap.add_argument("--list", action="store_true", help="list module ids and exit")
@@ -526,9 +724,17 @@ def main(argv: list[str] | None = None) -> int:
         for module_id in modules(args.dump):
             print(module_id)
         return 0
-    manifest = None
-    if args.manifest:
-        manifest = json.loads(args.manifest.read_text())
+    manifest = json.loads(args.manifest.read_text()) if args.manifest else None
+    if args.tree:
+        if manifest is None:
+            print(
+                "--tree needs --manifest to verify the directory names", file=sys.stderr
+            )
+            return 2
+        if args.log is not None and not args.air:
+            print("--log needs --air to say whose prove to read", file=sys.stderr)
+            return 2
+        return _tree_report(args.dump, manifest, args.log, args.air or "", args.top)
     _report(args.dump, manifest, args.module, args.top)
     return 0
 

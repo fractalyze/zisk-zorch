@@ -33,6 +33,28 @@ MIB = 1 << 20
 # format, which belongs to the plugin rather than to the program.
 DUMP = pathlib.Path(__file__).parent / "testdata" / "xla_dump"
 MODULE_ID = 5  # module_0005 in the fixture's filenames
+# The authoritative fixture: one real bridge executable, VirtualTableZisk0's
+# `commit2`, laid out as the per-program tree the dump is taken in. It carries
+# what the toy above cannot -- a returned tuple and its index table, 28
+# load-time constants, and an arena whose regions are an NTT's stage buffers.
+TREE = pathlib.Path(__file__).parent / "testdata" / "xla_dump_tree"
+COMMIT2_IN = [603979776]
+COMMIT2_OUT = [
+    32,
+    32,
+    128,
+    512,
+    2048,
+    8192,
+    32768,
+    131072,
+    524288,
+    2097152,
+    8388608,
+    33554432,
+    134217728,
+    1207959552,
+]
 
 
 class ParseTest(absltest.TestCase):
@@ -191,46 +213,98 @@ class IdentifyTest(absltest.TestCase):
         self.assertEqual((matched, ambiguous), ({}, {}))
 
 
+class TreeTest(absltest.TestCase):
+    """A dump/<AIR>/<program>/ tree, and the check that a directory's name is
+    the program it holds."""
+
+    def commit2_manifest(self, **override) -> dict:
+        outs = override.get("outputs", COMMIT2_OUT)
+        ins = override.get("inputs", COMMIT2_IN)
+        return manifest(commit2=([spec(n) for n in ins], [spec(n) for n in outs]))
+
+    def test_the_directory_name_is_the_program(self):
+        found = buffer_assignment.per_program(TREE)
+        self.assertEqual(list(found), ["commit2"])
+
+    def test_a_directory_holding_two_modules_is_refused(self):
+        # Two compiles sharing a dump directory collide on `module_NNNN`, and
+        # the directory's name can then only be right for one of them.
+        d = pathlib.Path(self.create_tempdir().full_path)
+        inner = d / "commit2"
+        inner.mkdir()
+        for path in (TREE / "commit2").iterdir():
+            shutil.copy(path, inner)
+            shutil.copy(path, inner / path.name.replace("module_0001", "module_0002"))
+        with self.assertRaisesRegex(ValueError, "must hold one"):
+            buffer_assignment.per_program(d)
+
+    def test_a_real_executable_matches_what_the_air_declares(self):
+        found = buffer_assignment.per_program(TREE)
+        self.assertEqual(buffer_assignment.verify(found, self.commit2_manifest()), [])
+
+    def test_the_output_tuple_table_is_not_charged_to_the_program(self):
+        # 14 outputs, so XLA allocates 112 B of pointers beside them. The
+        # manifest does not declare it; counting it as an output made every
+        # multi-output program fail verification.
+        e = buffer_assignment.per_program(TREE)["commit2"]
+        tables = [a for a in e.allocations if a.is_tuple_table]
+        self.assertEqual(len(tables), 1)
+        self.assertEqual(tables[0].size, 8 * len(COMMIT2_OUT))
+
+    def test_a_tuple_table_of_the_wrong_width_is_reported(self):
+        # The table's size is a statement about the output count, so it is
+        # checked rather than skipped: a program returning a different number
+        # of arrays than the manifest says would otherwise pass.
+        found = buffer_assignment.per_program(TREE)
+        wrong = buffer_assignment.verify(
+            found, self.commit2_manifest(outputs=COMMIT2_OUT[:-1])
+        )
+        self.assertTrue(any("outputs" in w for w in wrong), wrong)
+
+    def test_a_mislabelled_directory_is_reported(self):
+        found = buffer_assignment.per_program(TREE)
+        renamed = {"deep": found["commit2"]}
+        wrong = buffer_assignment.verify(renamed, self.commit2_manifest())
+        self.assertTrue(any("no such program" in w for w in wrong), wrong)
+
+
 class ReconcileTest(absltest.TestCase):
-    """The identity `peak_during = entry_in_use + added` and what breaks it."""
+    """The identity `temp = peak_during - in_use_after`, and what breaks it."""
 
     def setUp(self):
         super().setUp()
         self.executable = buffer_assignment.parse_executable(DUMP, MODULE_ID)
 
-    def test_nothing_left_over_when_only_the_program_allocates(self):
-        added = self.executable.added_bytes
-        r = buffer_assignment.reconcile(self.executable, 100 * MIB, 100 * MIB + added)
+    def test_the_arena_is_the_peak_above_the_reading_after_the_program(self):
+        temp = self.executable.temp_bytes
+        after = 500 * MIB
+        r = buffer_assignment.reconcile(self.executable, after, after + temp)
+        self.assertEqual(r.temp_measured, temp)
         self.assertEqual(r.unexplained, 0)
 
+    def test_outputs_and_inputs_do_not_enter_the_identity(self):
+        # Both are live on the line after the program -- outputs because the
+        # program produced them, inputs because the caller held them -- so
+        # they cancel. An identity that counted either would move with the
+        # AIR's section sizes rather than with the arena.
+        temp = self.executable.temp_bytes
+        for base in (0, 8 * MIB, 4096 * MIB):
+            r = buffer_assignment.reconcile(self.executable, base, base + temp)
+            self.assertEqual(r.unexplained, 0, f"base {base}")
+
     def test_a_concurrent_upload_shows_as_unexplained_rather_than_absorbed(self):
-        added = self.executable.added_bytes
-        r = buffer_assignment.reconcile(
-            self.executable, 100 * MIB, 100 * MIB + added + 64 * MIB
-        )
+        temp = self.executable.temp_bytes
+        after = 500 * MIB
+        r = buffer_assignment.reconcile(self.executable, after, after + temp + 64 * MIB)
         self.assertEqual(r.unexplained, 64 * MIB)
 
-    def test_a_window_that_never_saw_the_peak_bounds_it_from_below(self):
-        r = buffer_assignment.reconcile(self.executable, 100 * MIB, 100 * MIB)
+    def test_a_peak_this_program_never_raised_reads_negative(self):
+        # `peak` is a monotonic client high-water: for every prove after the
+        # binding one it is an older number, and the difference is not this
+        # program's arena. The negative is the signal to check whether the
+        # peak rose here at all.
+        r = buffer_assignment.reconcile(self.executable, 4096 * MIB, 4096 * MIB)
         self.assertLess(r.unexplained, 0)
-
-    def test_a_release_between_the_reading_and_the_run_closes_the_identity(self):
-        # The case that made `freed_before` necessary: a section dropped at
-        # its last reader means the program starts below the reading taken
-        # after the program before it, so the rise is smaller than what the
-        # executable allocates. Without the term the executable reads as
-        # larger than the run, which looks like a bad dump.
-        added = self.executable.added_bytes
-        entry, freed = 500 * MIB, 32 * MIB
-        peak = entry - freed + added
-        self.assertEqual(
-            buffer_assignment.reconcile(
-                self.executable, entry, peak, freed
-            ).unexplained,
-            0,
-        )
-        blind = buffer_assignment.reconcile(self.executable, entry, peak)
-        self.assertEqual(blind.unexplained, -freed)
 
 
 if __name__ == "__main__":
