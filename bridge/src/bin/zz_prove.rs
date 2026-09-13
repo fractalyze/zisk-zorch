@@ -43,6 +43,23 @@ fn warm_split(threads: usize, dirs: usize) -> Vec<usize> {
 /// make a one-program compile cheap, so a typo would otherwise compile
 /// nothing at all and print the same "0 programs" a correct run of an empty
 /// AIR prints.
+/// The `--only` list, if the flag is there at all.
+///
+/// A `--only` with nothing after it is an error rather than an absent flag.
+/// Read as absent it warms the AIR's whole set -- the silent wrong warm
+/// `select_programs` below exists to turn into an error -- and a shell that
+/// expanded an empty variable into the flag's place is exactly how that
+/// happens.
+fn only_arg(args: &[String]) -> Result<Option<String>, String> {
+    match args.iter().position(|a| a == "--only") {
+        None => Ok(None),
+        Some(i) => match args.get(i + 1) {
+            Some(list) if !list.starts_with("--") => Ok(Some(list.clone())),
+            _ => Err("--only needs a comma-separated list of program names".to_string()),
+        },
+    }
+}
+
 fn select_programs(available: &[String], only: Option<&str>) -> Result<Vec<String>, String> {
     let Some(only) = only else {
         let mut all = available.to_vec();
@@ -83,12 +100,13 @@ fn main() {
             .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| artifacts.join(".pjrt-cache"));
-        // `--only a,b` compiles just those programs of each named AIR.
-        let only = args
-            .iter()
-            .position(|a| a == "--only")
-            .and_then(|i| args.get(i + 1))
-            .cloned();
+        let only = match only_arg(&args) {
+            Ok(only) => only,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        };
         let named: Vec<&String> =
             args[3..].iter().take_while(|a| !a.starts_with("--")).collect();
         let dirs: Vec<std::path::PathBuf> = if !named.is_empty() {
@@ -269,7 +287,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{select_programs, warm_split};
+    use super::{only_arg, select_programs, warm_split};
 
     #[test]
     fn warm_split_uses_the_whole_budget_at_any_ratio() {
@@ -292,6 +310,29 @@ mod tests {
 
     fn available() -> Vec<String> {
         ["commit2", "const_setup", "deep", "evals"].iter().map(|s| s.to_string()).collect()
+    }
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn only_arg_reads_the_list_after_the_flag() {
+        assert_eq!(
+            only_arg(&argv(&["zz_prove", "--warm", "art", "Main_n22", "--only", "deep,evals"])).unwrap(),
+            Some("deep,evals".to_string())
+        );
+        assert_eq!(only_arg(&argv(&["zz_prove", "--warm", "art", "Main_n22"])).unwrap(), None);
+    }
+
+    #[test]
+    fn only_arg_refuses_a_flag_with_no_list() {
+        // Read as an absent flag this warms all ~34 programs of every named
+        // AIR, which is the silent wrong warm select_programs exists to
+        // prevent -- and an empty shell variable in the flag's place is how
+        // it arrives.
+        assert!(only_arg(&argv(&["zz_prove", "--warm", "art", "Main_n22", "--only"])).is_err());
+        assert!(only_arg(&argv(&["zz_prove", "--warm", "art", "--only", "--repeat"])).is_err());
     }
 
     #[test]
