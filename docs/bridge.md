@@ -2613,6 +2613,13 @@ the keys walks down much further without moving Main.
 
 ### What the in-program transient is made of (2026-09-14, #232)
 
+Every figure in this section is from the go hello-world guest on build-server-2
+(RTX 5090), against the artifacts in `zz-artifacts-191` exported from proving
+key `v1.0.0-alpha`, compiled by the wheel pinned in `requirements.in`
+(`0.10.2.dev20260910150749`). The compile-side figures are properties of that
+(artifacts, plugin) pair and of nothing else — no arm, no prove order, no
+machine state. The run-side column names its arm where it appears.
+
 #226's category (c) — the part of a prove's peak that belongs to no buffer the
 bridge registered, because it exists only while a program runs — is XLA's own
 allocation inside one execution, and neither the registry nor the allocator can
@@ -2669,7 +2676,9 @@ gigabytes:
 | `VirtualTableZisk1_n21` | `deep` | 1,632 | 1,632 |
 | `VirtualTableZisk1_n21` | `commit2` | 1,008 | 1,008 |
 
-MiB, `cfm-p1` arm, identical across its two runs. **`Main_n22` has no row in
+MiB. Run side from the `cfm-p1` arm (`ZZ_PENDING=1`) of #228's confirmation
+runs, identical across its two; compile side from the dump described above.
+**`Main_n22` has no row in
 that table and cannot have one**: its prove never raises the client high-water
 in that arm, so no allocator reading anywhere bounds its arenas from above.
 Main's figures below are from the compile alone, which is the case for taking
