@@ -32,10 +32,10 @@ client's peak is not.** The allocation totals here come from the compile and do
 not move with the admission policy, the residency policy or the prove order.
 The *rise* in a run's high-water does move with all three: it is measured
 against whatever the previous high-water was and on top of whatever else is
-live, so one executable's rise differs between two arms by more than a
-gigabyte while its allocations are the same bytes (docs/bridge.md). Quote this
-table for the executable and the run for the peak; `reconcile()` below relates
-them and states what is left over rather than reconciling it away.
+live, so one executable's rise can differ between two arms while its
+allocations are the same bytes (docs/bridge.md carries the figures). Quote
+this table for the executable and the run for the peak; `reconcile()` below
+relates them and states what is left over rather than reconciling it away.
 
 **A re-derived total with no check is a guess with a table's authority** --
 `pil2_layout.py`'s rule, and it applies to a parse as much as to arithmetic.
@@ -190,14 +190,14 @@ class Executable:
         """Constants and thread-local scratch: everything that is neither an
         input, an output nor the temp arena.
 
-        Deliberately not part of `added_bytes`: these are not allocated per
-        execution -- a module's constants are placed when the executable is
-        loaded and stay for its lifetime. Counting them as what a run adds
-        overstates it by their total, which is how this came to be separate:
-        including them left the reconciliation short by exactly this sum.
-        Small per executable, but a client holding an AIR's whole set pays
-        each one, and it is in XLA's printed total, so dropping it would
-        break the check that reproduces that."""
+        Not part of `added_bytes`: these are not allocated per execution --
+        a module's constants are placed when the executable is loaded and
+        stay for its lifetime, so a reading taken while the program runs
+        never sees them above what was already live. Counting them as what a
+        run adds overstates it by their total. Small per executable, but a
+        client holding an AIR's whole set pays each one, and it is in XLA's
+        printed total, so dropping it would break the check that reproduces
+        that."""
         return self._sum(lambda a: not (a.is_parameter or a.is_output or a.is_temp))
 
     @property
@@ -452,10 +452,11 @@ def reconcile(
     high-water while the program ran, and its `in_use` on the line written
     after it. Nothing else is needed: no reading from before the program, and
     no term for what the driver released, which is why this is the form to
-    quote. An earlier one measured from the reading *before* the program and
-    needed a released-buffer term to close; that term is a free parameter an
-    analyst can tune until the residual vanishes, and it hid a real
-    discrepancy once.
+    quote. Measuring from the reading *before* the program instead needs a
+    released-buffer term to close, because a section is dropped at its last
+    reader and a stage-2 program therefore starts below that reading -- and
+    such a term is a free parameter an analyst can tune until any residual
+    vanishes.
 
     Two conditions. The peak must have risen during this program -- otherwise
     `peak_during` belongs to an earlier prove and the difference means
@@ -540,31 +541,74 @@ def verify(executables: dict[str, Executable], manifest: dict) -> list[str]:
     return wrong
 
 
-def run_readings(log: str, air: str) -> dict[str, tuple[int, int, bool]]:
-    """Per program of one AIR's prove: the allocator's `in_use` on the line
-    after it, the high-water then standing, and whether that high-water rose
-    across this program.
+@dataclasses.dataclass(frozen=True)
+class Reading:
+    """The allocator as a run left it after one execution of one program."""
 
-    The last flag is what says whether the run can measure this program's
-    arena at all: `peak` is a client-lifetime high-water, so for every prove
-    after the binding one it is an older number and `peak - in_use` is not an
-    arena. Read from a `ZZ_MEM_STAGES=2` log through `mem_stages`, which owns
-    the rule that a stage block belongs to the instance line after it."""
+    program: str
+    in_use: int
+    peak: int
+    rose: bool
+    """Whether the high-water rose across this execution.
+
+    The gate on whether the run can measure this program's arena at all:
+    `peak` is a client-lifetime high-water, so for every prove after the
+    binding one it is an older number and `peak - in_use` is not an arena.
+    """
+
+
+def run_readings(log: str, air: str) -> dict[str, list[Reading]]:
+    """Every execution of every program of one AIR's prove, in run order.
+
+    A list per program, not one reading: `quotient_<n>` runs once per quotient
+    chunk -- eight times on each hello-world AIR -- and an AIR can prove more
+    than once in a log, so a single reading per name would keep the last
+    execution and drop the rest without saying so.
+
+    Two marks the rise is measured against are not programs. A stage boundary
+    reports the allocator too, and the high-water can rise between a stage's
+    last program and the next boundary -- a download, the transcript, the
+    query draw -- so the boundaries stay in the sequence the rise is computed
+    over even though no reading is emitted for them. Dropping them first would
+    credit such a rise to the program that follows, which is the guard
+    `mem_stages.peak_program` keeps by refusing to name a boundary at all;
+    this reads its marks rather than re-deriving the rule.
+
+    Read from a `ZZ_MEM_STAGES=2` log through `mem_stages`, which owns the
+    rule that a stage block belongs to the instance line after it."""
     from bridge.bench import mem_stages
 
-    out: dict[str, tuple[int, int, bool]] = {}
+    out: dict[str, list[Reading]] = {}
     for prove in mem_stages.proves(log):
         if prove.air != air:
             continue
-        marks = [
-            m for m in prove.marks if m.peak is not None and not m.ran.startswith("(")
-        ]
-        previous = None
-        for mark in marks:
-            rose = previous is not None and mark.peak > previous
-            out[mark.ran] = (mark.in_use, mark.peak, rose)
-            previous = mark.peak
+        marks = [m for m in prove.marks if m.peak is not None]
+        for before, mark in zip(marks, marks[1:]):
+            if mark.ran.startswith("("):
+                continue
+            out.setdefault(mark.ran, []).append(
+                Reading(
+                    program=mark.ran,
+                    in_use=mark.in_use,
+                    peak=mark.peak,
+                    rose=mark.peak > before.peak,
+                )
+            )
     return out
+
+
+def measurable(readings: list[Reading]) -> Reading | None:
+    """The one execution of a program whose arena a run can measure, or
+    `None`.
+
+    `None` covers two cases a caller has to tell apart from a measurement but
+    not from each other: no execution raised the high-water, or more than one
+    did. The second is not resolvable here -- two executions of one program
+    that both raised it have two different arenas above two different live
+    sets, and picking either would put one execution's figure under the
+    program's name."""
+    rose = [r for r in readings if r.rose]
+    return rose[0] if len(rose) == 1 else None
 
 
 def _load(dump: pathlib.Path) -> dict[int, Executable]:
@@ -602,8 +646,10 @@ def _report(
             f"{e.added_bytes / MIB:10,.0f} {e.parameter_bytes / MIB:10,.0f}"
         )
     print(
-        "\n(MiB. `added` is temp + outputs + other: what the execution puts "
-        "on the device\nbeyond the inputs it was handed.)"
+        "\n(MiB. `added` is temp + outputs: what the execution puts on the "
+        "device beyond\nthe inputs it was handed. `other` is the module's "
+        "constants and thread-local\nscratch, placed once when the executable "
+        "is loaded rather than per run, so it\nis not in `added`.)"
     )
     if manifest is not None:
         unnamed = [i for i in executables if i not in names]
@@ -663,21 +709,26 @@ def _tree_report(
             f"{e.parameter_bytes / MIB:9,.0f} {len(e.temp_values()):7}"
         )
         if readings:
-            reading = readings.get(name)
-            if reading is None:
+            runs = readings.get(name, [])
+            reading = measurable(runs)
+            if not runs:
                 line += f" {'no line':>9} {'':>9}"
-            elif not reading[2]:
-                line += f" {'no rise':>9} {'':>9}"
+            elif reading is None:
+                risen = sum(1 for r in runs if r.rose)
+                label = "no rise" if risen == 0 else f"{risen} rises"
+                line += f" {label:>9} {'':>9}"
             else:
-                r = reconcile(e, reading[0], reading[1])
+                r = reconcile(e, reading.in_use, reading.peak)
                 line += f" {r.temp_measured / MIB:9,.0f} {r.unexplained:9,}"
         print(line)
     print(
         "\n(MiB. `temp` is the arena from the compile; `run temp` is "
         "peak - in_use after\nthe program, and `delta` their difference in "
         "BYTES -- a few hundred is alignment.\n`no rise` is a program the "
-        "run's high-water did not rise across, where the run\ncannot "
-        "measure an arena at all.)"
+        "run's high-water did not rise across, where a run\ncannot measure "
+        "an arena at all; `n rises` is a program that ran more than\nonce and "
+        "raised it more than once, where the executions have different\n"
+        "arenas and the run cannot say which is which.)"
     )
     if wrong:
         print(f"\n{len(wrong)} program(s) do not match the manifest; see above.")

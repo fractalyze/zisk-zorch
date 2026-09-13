@@ -106,9 +106,9 @@ class ParseTest(absltest.TestCase):
 
     def test_load_time_allocations_are_not_what_an_execution_adds(self):
         # The fixture's nine thread-local allocations, and a bridge program's
-        # constants, are placed once for the executable rather than per run.
-        # Counting them in `added_bytes` left the reconciliation short by
-        # exactly their total.
+        # constants, are placed once for the executable rather than per run,
+        # so a reading taken while it runs never sees them above what was
+        # already live. In `added_bytes` they overstate it by their total.
         executable = buffer_assignment.parse_executable(DUMP, MODULE_ID)
         self.assertGreater(executable.other_bytes, 0)
         self.assertEqual(
@@ -254,8 +254,8 @@ class TreeTest(absltest.TestCase):
 
     def test_the_output_tuple_table_is_not_charged_to_the_program(self):
         # 14 outputs, so XLA allocates 112 B of pointers beside them. The
-        # manifest does not declare it; counting it as an output made every
-        # multi-output program fail verification.
+        # manifest does not declare it, so counting it as an output fails
+        # verification for every program that returns more than one array.
         e = buffer_assignment.per_program(TREE)["commit2"]
         tables = [a for a in e.allocations if a.is_tuple_table]
         self.assertEqual(len(tables), 1)
@@ -276,6 +276,122 @@ class TreeTest(absltest.TestCase):
         renamed = {"deep": found["commit2"]}
         wrong = buffer_assignment.verify(renamed, self.commit2_manifest())
         self.assertTrue(any("no such program" in w for w in wrong), wrong)
+
+
+def log(*lines: str) -> str:
+    """A `ZZ_MEM_STAGES=2` log fragment in the exact lines `src/memlog.rs`
+    writes, with the `[zz + t]` prefix its writer puts on them."""
+    return "".join(f"[zz +  1.000] {line}\n" for line in lines)
+
+
+def prog(name: str, in_use: int, peak: int) -> str:
+    return f"mem prog {name}: in_use {in_use}, peak {peak}, live {in_use - 8}"
+
+
+def stage(name: str, in_use: int, peak: int) -> str:
+    return (
+        f"mem stage {name}: in_use {in_use}, peak {peak}, pool 99999, "
+        f"live {in_use - 8} in 1 buffers"
+    )
+
+
+def instance(air: str, index: int = 0) -> str:
+    return f"instance {index} {air} (worker): 1.000 s, of which 0.000 s waiting"
+
+
+class RunReadingsTest(absltest.TestCase):
+    """What the run side of the reconciliation must not lose.
+
+    `run_readings` is what produces the `run temp` column, so a reading it
+    silently drops or misattributes becomes a published arena.
+    """
+
+    AIR = "Fake_n10"
+
+    def readings(self, *lines: str):
+        return buffer_assignment.run_readings(log(*lines), self.AIR)
+
+    def test_a_rise_is_measured_against_the_mark_before_it(self):
+        got = self.readings(
+            stage("stage1", 100, 100),
+            prog("commit2", 300, 500),
+            prog("deep", 320, 500),
+            instance(self.AIR),
+        )
+        self.assertTrue(got["commit2"][0].rose)
+        self.assertEqual(got["commit2"][0].peak, 500)
+        self.assertEqual(got["commit2"][0].in_use, 300)
+        self.assertFalse(got["deep"][0].rose)
+
+    def test_the_first_program_can_rise(self):
+        # Its predecessor is the stage boundary, not nothing: treating the
+        # first program of a prove as unmeasurable would drop the rise of
+        # every AIR whose peak is in its first executed program.
+        got = self.readings(
+            stage("stage1", 100, 100),
+            prog("const_setup", 200, 400),
+            instance(self.AIR),
+        )
+        self.assertTrue(got["const_setup"][0].rose)
+
+    def test_a_rise_at_a_boundary_is_not_credited_to_the_next_program(self):
+        # The high-water can rise between a stage's last program and the next
+        # boundary -- a download, the transcript, the query draw. Dropping the
+        # boundary marks first makes the program after it read `rose` and its
+        # `peak - in_use` print as a measured arena.
+        got = self.readings(
+            stage("stage1", 100, 100),
+            prog("commit1", 200, 200),
+            stage("stage2", 210, 900),
+            prog("commit2", 220, 900),
+            instance(self.AIR),
+        )
+        self.assertFalse(got["commit2"][0].rose)
+        self.assertIsNone(buffer_assignment.measurable(got["commit2"]))
+
+    def test_every_execution_is_kept_not_just_the_last(self):
+        # `quotient_<n>` runs once per chunk -- eight times on a hello-world
+        # AIR -- so one reading per name keeps the last and loses the rest.
+        got = self.readings(
+            stage("stage1", 100, 100),
+            prog("quotient_1024", 200, 400),
+            prog("quotient_1024", 210, 400),
+            prog("quotient_1024", 220, 400),
+            instance(self.AIR),
+        )
+        self.assertLen(got["quotient_1024"], 3)
+        self.assertEqual([r.rose for r in got["quotient_1024"]], [True, False, False])
+        self.assertEqual(buffer_assignment.measurable(got["quotient_1024"]).in_use, 200)
+
+    def test_two_executions_that_both_rose_are_not_resolved(self):
+        # Two executions with two different arenas above two different live
+        # sets; naming either one as the program's arena is a guess.
+        got = self.readings(
+            stage("stage1", 100, 100),
+            prog("quotient_1024", 200, 400),
+            prog("quotient_1024", 210, 900),
+            instance(self.AIR),
+        )
+        self.assertIsNone(buffer_assignment.measurable(got["quotient_1024"]))
+
+    def test_another_airs_prove_is_not_read(self):
+        got = self.readings(
+            stage("stage1", 100, 100),
+            prog("commit2", 300, 500),
+            instance("Other_n10"),
+            stage("stage1", 100, 100),
+            prog("commit2", 700, 900),
+            instance(self.AIR),
+        )
+        self.assertLen(got["commit2"], 1)
+        self.assertEqual(got["commit2"][0].in_use, 700)
+
+    def test_a_level_one_log_yields_nothing_rather_than_guessing(self):
+        # Without ZZ_MEM_STAGES=2 there are no per-program marks at all.
+        got = self.readings(
+            stage("stage1", 100, 100), stage("stage2", 200, 400), instance(self.AIR)
+        )
+        self.assertEqual(got, {})
 
 
 class ReconcileTest(absltest.TestCase):
