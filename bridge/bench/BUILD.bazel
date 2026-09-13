@@ -61,6 +61,24 @@ py_test(
 )
 
 py_library(
+    name = "buffer_assignment",
+    srcs = ["buffer_assignment.py"],
+)
+
+py_test(
+    name = "buffer_assignment_test",
+    size = "small",
+    srcs = ["buffer_assignment_test.py"],
+    # The shipped plugin's own dump of one small program: what is under test
+    # is the format, which is the plugin's rather than the program's.
+    data = glob(["testdata/xla_dump/*"]),
+    deps = [
+        ":buffer_assignment",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
     name = "mem_stages",
     srcs = ["mem_stages.py"],
     deps = [":run_log"],
