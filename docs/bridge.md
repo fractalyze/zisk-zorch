@@ -2262,7 +2262,15 @@ different questions. MiB.
 
 **Default admission, eleven runs per arm.** The boundary carries two keys and
 the co-resident one is whichever AIR was admitted beside VT0, so its size
-changes run to run.
+changes run to run. "Default" here is the **count-only** admission these runs
+were taken under — `ZZ_PENDING=2` with no byte budget. `ZZ_PENDING_BYTES` now
+bounds the admitted set at 192 MiB (see "The instance read-ahead, bounded by
+bytes"), so which instance can sit beside VT0 is a different question on the
+current default and these rows do not answer it. What they do answer is
+unaffected by that: the release is VT0's own `const_base`, and the neighbour
+is the reason the *subtraction* is unsafe here rather than part of the lever.
+The `ZZ_PENDING=1` table below is unaffected outright — a count of one admits
+nothing beside the running prove under either rule.
 
 | | `keep` | `plan` |
 |---|---|---|
