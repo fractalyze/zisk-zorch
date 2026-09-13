@@ -77,8 +77,11 @@ ALLOCATION = re.compile(r"^allocation (\d+): size (\d+), (.*):$")
 VALUE = re.compile(
     r"^\s+value: <(\d+) (\S+) @(\d+)> \(size=(\d+),offset=(\d+)\): (.*)$"
 )
-# `    a.1{}:0-12` under `BufferLiveRange:`
-LIVE_RANGE = re.compile(r"^\s+(\S+?)\{(\S*)\}:(\d+)-(\d+)$")
+# `    a.1{}:0-12` and `    loop_slice_fusion.1{3}:3-87` under
+# `BufferLiveRange:`. The brace is part of the key, not decoration: a value
+# that is one element of a returned tuple is written `name{index}` in both
+# files, while a plain value is `name` in the assignment and `name{}` here.
+LIVE_RANGE = re.compile(r"^\s+(\S+\{\S*\}):(\d+)-(\d+)$")
 # `Total bytes: 6291496 (6.00MiB)`
 TOTAL_BYTES = re.compile(r"^Total bytes: (\d+)")
 
@@ -208,7 +211,16 @@ class Executable:
         return self.temp_bytes + self.output_bytes
 
     def live_range(self, value: Value) -> tuple[int, int] | None:
-        return self.live_ranges.get(value.name)
+        """This value's live range, as an interval over `sequence`.
+
+        The two files spell one value two ways: the assignment writes a plain
+        value as `name` and a tuple element as `name{index}`, while the live
+        ranges always carry a brace. Looking up the assignment's spelling
+        unchanged finds nothing for every plain value, and -- worse, because
+        it is silent -- nothing for the tuple elements that make up the
+        largest arenas here."""
+        key = value.name if "{" in value.name else f"{value.name}{{}}"
+        return self.live_ranges.get(key)
 
     def temp_values(self) -> list[tuple[Value, Allocation]]:
         """Every value in a temp allocation, largest first. The owners of the
@@ -259,7 +271,7 @@ def _parse_live_ranges(text: str) -> tuple[dict[str, tuple[int, int]], tuple[str
     for line in text.splitlines():
         entry = LIVE_RANGE.match(line)
         if entry:
-            ranges[entry.group(1)] = (int(entry.group(3)), int(entry.group(4)))
+            ranges[entry.group(1)] = (int(entry.group(2)), int(entry.group(3)))
             continue
         step = re.match(r"^\s+(\d+):(\S+)$", line)
         if step:

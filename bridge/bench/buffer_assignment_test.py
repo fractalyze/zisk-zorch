@@ -238,6 +238,16 @@ class TreeTest(absltest.TestCase):
         with self.assertRaisesRegex(ValueError, "must hold one"):
             buffer_assignment.per_program(d)
 
+    def test_every_value_in_the_arena_has_a_live_range(self):
+        # A tuple element is `name{index}` in both files; a plain value is
+        # `name` in the assignment and `name{}` in the live ranges. Looking up
+        # the assignment's spelling unchanged silently finds nothing, and the
+        # largest arenas here are built from tuple elements.
+        e = buffer_assignment.per_program(TREE)["commit2"]
+        missing = [v.name for v, _ in e.temp_values() if e.live_range(v) is None]
+        self.assertEqual(missing, [])
+        self.assertTrue(any("{" in v.name for v, _ in e.temp_values()))
+
     def test_a_real_executable_matches_what_the_air_declares(self):
         found = buffer_assignment.per_program(TREE)
         self.assertEqual(buffer_assignment.verify(found, self.commit2_manifest()), [])
