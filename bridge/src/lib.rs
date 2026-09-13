@@ -86,6 +86,18 @@ pub struct OwnedRequest {
     pub proof_words: usize,
 }
 
+impl OwnedRequest {
+    /// Device bytes this instance's uploads will take on the client — the
+    /// four sections `driver::upload_inputs` sends, which is every buffer
+    /// the admission below is holding back. One u64 per host word covers
+    /// the cubic sections too: they carry three words an element and upload
+    /// as 24 bytes of it.
+    pub fn upload_bytes(&self) -> u64 {
+        let words = self.trace.len() + self.publics.len() + self.airvalues.len() + self.proofvalues.len();
+        words as u64 * 8
+    }
+}
+
 /// pil2's `StepsParams` host pointers, as canonical u64 words. Their
 /// lengths follow from the artifact's manifest (the trace is
 /// `2^nBits x cm1 width`, the value sections their packed widths), which
@@ -160,46 +172,139 @@ where
 /// trace pool, which the fork's `gen_proof` keeps an instance's buffer in
 /// until the bridge's completion callback (pil2's contract: the worker
 /// returns at once, witness generation blocks on the pool).
+///
+/// The queue is ordered rather than a bare counter because of the byte
+/// budget in `admits`: an instance too large for it waits for a client with
+/// nothing else on it, and without an order a run of small instances would
+/// keep the client occupied and the large one would never get in.
 #[derive(Default)]
 pub struct Pending {
-    count: Mutex<usize>,
+    queue: Mutex<Queue>,
     cv: std::sync::Condvar,
 }
 
-pub struct PendingPass(Arc<Pending>);
+/// An instance that has been counted in: one of them is proving, and the
+/// rest have their uploads on the device ahead of it.
+struct Admitted {
+    ticket: u64,
+    uploads: u64,
+}
+
+#[derive(Default)]
+struct Queue {
+    admitted: Vec<Admitted>,
+    /// Tickets handed out, and the one whose turn it is. They differ only
+    /// while somebody is waiting.
+    next: u64,
+    serving: u64,
+}
+
+impl Queue {
+    /// Whether an instance of `bytes` may join the client: under the count
+    /// ceiling, and leaving at most `budget` bytes of uploads that do not
+    /// belong to whichever admitted instance ends up proving.
+    ///
+    /// Weighing the joining instance alone bounds nothing. Admission does
+    /// not settle which of the admitted instances takes the slot: they all
+    /// upload before they queue for it, and a large one loses that race
+    /// precisely because its upload takes longer. So a large instance
+    /// admitted into an empty client and overtaken by a small one beside it
+    /// is co-resident for the whole of the small one's prove, and a budget
+    /// that asked only about the joiner let through a trace larger than
+    /// itself. The bound has to hold whichever of them proves, so it assumes
+    /// the smallest does.
+    ///
+    /// An empty client admits any size. Every workload has instances over
+    /// every budget worth setting, and a gate they could never pass would
+    /// deadlock the run rather than bound the peak.
+    fn admits(&self, cap: usize, bytes: u64, budget: u64) -> bool {
+        if self.admitted.len() >= cap {
+            return false;
+        }
+        if self.admitted.is_empty() {
+            return true;
+        }
+        // Everything but the smallest, since the smallest is the one assumed
+        // to be proving.
+        let mut total = bytes;
+        let mut smallest = bytes;
+        for a in &self.admitted {
+            total += a.uploads;
+            smallest = smallest.min(a.uploads);
+        }
+        total - smallest <= budget
+    }
+}
+
+pub struct PendingPass {
+    client: Arc<Pending>,
+    ticket: u64,
+}
 
 impl Pending {
-    /// Wait until fewer than `cap` instances are pending, then count one in.
-    pub fn acquire(self: &Arc<Self>, cap: usize) -> PendingPass {
-        let mut n = self.count.lock().unwrap_or_else(|p| p.into_inner());
-        while *n >= cap {
-            n = self.cv.wait(n).unwrap_or_else(|p| p.into_inner());
+    /// Wait until this instance may be admitted, then count it in.
+    ///
+    /// `cap` is the ceiling on instances (`ZZ_PENDING`) and `budget` the
+    /// bytes (`ZZ_PENDING_BYTES`) an instance may put on the device beside a
+    /// prove that is already running. The budget is what sizes the term the
+    /// admission adds to the client's peak: those uploads are live for the
+    /// whole of the running prove, and under the count alone the term is
+    /// whatever the next instance's trace happens to be (32 MiB to 1,248 MiB
+    /// across the eleven hello-world AIRs).
+    pub fn acquire(self: &Arc<Self>, cap: usize, bytes: u64, budget: u64) -> PendingPass {
+        let mut q = self.queue.lock().unwrap_or_else(|p| p.into_inner());
+        let ticket = q.next;
+        q.next += 1;
+        while ticket != q.serving || !q.admits(cap, bytes, budget) {
+            q = self.cv.wait(q).unwrap_or_else(|p| p.into_inner());
         }
-        *n += 1;
-        PendingPass(self.clone())
+        q.serving += 1;
+        q.admitted.push(Admitted { ticket, uploads: bytes });
+        self.cv.notify_all();
+        PendingPass { client: self.clone(), ticket }
     }
 
-    /// Count one in when fewer than `cap` are pending, or `None` at once:
-    /// for a caller that has a slower path of its own rather than a reason
-    /// to wait (the fixed sections' read-ahead below).
+    /// Count one in when there is room, or `None` at once: for a caller that
+    /// has a slower path of its own rather than a reason to wait (the fixed
+    /// sections' read-ahead below).
+    ///
+    /// No byte budget and no turn to take. Its only pool is
+    /// `FixedAhead::permit`, which `acquire` never touches, so nothing ever
+    /// waits here and the ordering `acquire` maintains cannot arise; the
+    /// ticket is taken for the pass's identity alone, and `serving` moves
+    /// with it so the pool's "nobody waiting" state stays true.
     pub fn try_acquire(self: &Arc<Self>, cap: usize) -> Option<PendingPass> {
-        let mut n = self.count.lock().unwrap_or_else(|p| p.into_inner());
-        if *n >= cap {
+        let mut q = self.queue.lock().unwrap_or_else(|p| p.into_inner());
+        if q.admitted.len() >= cap {
             return None;
         }
-        *n += 1;
-        Some(PendingPass(self.clone()))
+        let ticket = q.next;
+        q.next += 1;
+        q.serving += 1;
+        q.admitted.push(Admitted { ticket, uploads: 0 });
+        Some(PendingPass { client: self.clone(), ticket })
     }
 
     pub fn pending(&self) -> usize {
-        *self.count.lock().unwrap_or_else(|p| p.into_inner())
+        self.queue.lock().unwrap_or_else(|p| p.into_inner()).admitted.len()
+    }
+
+    /// Instances that have taken a ticket and not yet been admitted. The
+    /// order is only observable through this: an instance waiting on the
+    /// budget is indistinguishable from one waiting on the count by
+    /// `pending` alone.
+    pub fn queued(&self) -> usize {
+        let q = self.queue.lock().unwrap_or_else(|p| p.into_inner());
+        (q.next - q.serving) as usize
     }
 }
 
 impl Drop for PendingPass {
     fn drop(&mut self) {
-        *self.0.count.lock().unwrap_or_else(|p| p.into_inner()) -= 1;
-        self.0.cv.notify_all();
+        let mut q = self.client.queue.lock().unwrap_or_else(|p| p.into_inner());
+        q.admitted.retain(|a| a.ticket != self.ticket);
+        drop(q);
+        self.client.cv.notify_all();
     }
 }
 
@@ -369,6 +474,30 @@ fn keeps_fixed(mode: FixedResidency, plan: &HashMap<String, usize>, key: &str) -
         FixedResidency::Never => false,
         FixedResidency::Plan => plan.get(key).is_none_or(|n| *n > 1),
     }
+}
+
+/// Bytes an instance may upload while another prove holds the client, over
+/// its `trace`, `publics`, `airvalues` and `proofvalues`. `ZZ_PENDING_BYTES`
+/// overrides it.
+///
+/// This, not `PENDING`, is what sizes the co-resident term: the admitted
+/// instance's uploads stay live for the whole of the running prove, and
+/// under the count alone that term is whatever the next instance happens to
+/// be — on hello-world 32 MiB (`Rom_n22`) to 1,248 MiB (`Binary_n22`), so a
+/// peak that moves run to run with the order proofman hands instances over
+/// in.
+///
+/// It bounds the uploads it weighs and no more. The next AIR's `const_base`
+/// rides `ZZ_FIXED_AHEAD`'s own permit, which is taken inside this
+/// admission: refusing an instance holds its fixed sections back too, but
+/// admitting one puts no cap on them.
+const PENDING_BYTES: u64 = 192 << 20;
+
+/// `ZZ_PENDING_BYTES` as a byte count. Anything unreadable leaves the
+/// built-in budget; `0` is readable and admits nothing beside a running
+/// prove, which is `ZZ_PENDING=1` reached by the other knob.
+fn parse_pending_bytes(v: Option<&str>) -> u64 {
+    v.and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(PENDING_BYTES)
 }
 
 /// The depth a client actually runs at. A prove takes the read-ahead permit
@@ -1055,12 +1184,24 @@ impl Bridge {
         let slot_idx = self.slot_index(req.stream_id, req.instance_id);
         let art = self.artifact(slot_idx, &key)?;
         // Two proves per client on the device at once: one running, one
-        // with its uploads ahead (`ZZ_PENDING` overrides the count). Counted
-        // per client: streamed instances pin their slot, so a bridge-wide
-        // count would let every admission land on one client.
+        // with its uploads ahead (`ZZ_PENDING` overrides the count) and only
+        // while those fit `ZZ_PENDING_BYTES` beside it — the budget is what
+        // bounds the client's peak, see `Pending`. Counted per client:
+        // streamed instances pin their slot, so a bridge-wide count would
+        // let every admission land on one client.
         let per_client = parse_pending(std::env::var("ZZ_PENDING").ok().as_deref());
+        let budget = parse_pending_bytes(std::env::var("ZZ_PENDING_BYTES").ok().as_deref());
         phase.set("admit");
-        let _admitted = self.pending[slot_idx].acquire(per_client);
+        let t_admit = Instant::now();
+        let uploads = req.upload_bytes();
+        let _admitted = self.pending[slot_idx].acquire(per_client, uploads, budget);
+        if artifact::trace_enabled() {
+            // What the budget cost this instance. A prove held here waited
+            // for the client to empty instead of overlapping its uploads
+            // with the prove ahead of it, and that wait is the whole of
+            // what a tighter budget trades for a lower peak.
+            zzlog!("  {key} admitted after {:.2} s with {} MiB of uploads", t_admit.elapsed().as_secs_f64(), uploads >> 20);
+        }
         let mut inputs = InstanceInputs {
             trace: &req.trace,
             publics: &req.publics,
@@ -1424,26 +1565,162 @@ mod tests {
         assert!(text.starts_with("row ") && text.ends_with(" failed"), "got {text:?}");
     }
 
+    /// A budget no instance is over, for the tests that are about the count.
+    const ANY_SIZE: u64 = u64::MAX;
+
     #[test]
     fn admission_is_counted_per_slot() {
         // Streamed instances pin their slot, so the cap has to be per
         // client: filling one slot must not admit anything extra there, and
         // must not hold the other slot back.
         let slots: Vec<Arc<Pending>> = (0..2).map(|_| Arc::new(Pending::default())).collect();
-        let a = slots[0].acquire(2);
-        let _b = slots[0].acquire(2);
+        let a = slots[0].acquire(2, 0, ANY_SIZE);
+        let _b = slots[0].acquire(2, 0, ANY_SIZE);
         let (tx, rx) = std::sync::mpsc::channel();
         let s0 = slots[0].clone();
         let waiter = std::thread::spawn(move || {
-            let _c = s0.acquire(2);
+            let _c = s0.acquire(2, 0, ANY_SIZE);
             tx.send(()).unwrap();
         });
         assert!(rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(), "a third prove got onto slot 0");
-        let _other = slots[1].acquire(2);
+        let _other = slots[1].acquire(2, 0, ANY_SIZE);
         assert_eq!(slots[1].pending(), 1, "slot 1 was held back by slot 0's cap");
         drop(a);
         rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
         waiter.join().unwrap();
+    }
+
+    /// Hello-world's uploads, the sizes every budget in these tests is read
+    /// against: `Rom_n22` is the smallest and `Binary_n22` the largest.
+    const ROM: u64 = 32 << 20;
+    const INPUT_DATA: u64 = 144 << 20;
+    const BINARY: u64 = 1248 << 20;
+    const BUDGET: u64 = 192 << 20;
+
+    #[test]
+    fn the_budget_decides_what_goes_up_beside_a_running_prove() {
+        // What the count admits is whichever instance is next, so the term it
+        // adds to the client's peak is that instance's size -- on hello-world
+        // anything from 32 MiB to 1,248 MiB. Under a budget the term is the
+        // budget, whatever the order.
+        let client = Arc::new(Pending::default());
+        let running = client.acquire(2, INPUT_DATA, BUDGET);
+        assert_eq!(client.pending(), 1, "the first instance was gated on a budget");
+
+        // Rom-sized beside it: 32 MiB co-resident either way round, which is
+        // the overlap the read-ahead exists for.
+        let small = client.acquire(2, ROM, BUDGET);
+        assert_eq!(client.pending(), 2);
+        drop(small);
+
+        // Binary-sized: held back, though the count has room for it.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let c = client.clone();
+        let large = std::thread::spawn(move || {
+            let _pass = c.acquire(2, BINARY, BUDGET);
+            tx.send(()).unwrap();
+        });
+        assert!(rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(), "a 1,248 MiB trace went up under a 192 MiB budget");
+
+        // An empty client admits any size: every workload has instances over
+        // every budget worth setting, and a gate they could never pass would
+        // deadlock the run rather than bound the peak.
+        drop(running);
+        rx.recv_timeout(std::time::Duration::from_secs(5)).expect("the large instance never ran");
+        large.join().unwrap();
+    }
+
+    #[test]
+    fn nothing_joins_an_instance_that_is_itself_over_the_budget() {
+        // Weighing only the joiner does not bound anything, because the
+        // admission does not settle which of the two takes the slot: both
+        // upload first, and the big one loses that race precisely because
+        // its upload takes longer. So the small instance proves while the
+        // big one's trace sits on the client, and the budget is over by the
+        // difference between the two.
+        let client = Arc::new(Pending::default());
+        let running = client.acquire(2, BINARY, BUDGET);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let c = client.clone();
+        let small = std::thread::spawn(move || {
+            let _pass = c.acquire(2, ROM, BUDGET);
+            tx.send(()).unwrap();
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(),
+            "a 32 MiB instance joined a 1,248 MiB one and left that trace co-resident for the whole of its prove"
+        );
+        drop(running);
+        rx.recv_timeout(std::time::Duration::from_secs(5)).expect("the small instance never ran");
+        small.join().unwrap();
+    }
+
+    #[test]
+    fn small_instances_do_not_overtake_a_large_one_waiting() {
+        // The reason the admission is a queue. The large instance waits for a
+        // client with nothing on it; if smaller ones could keep taking the
+        // free slot in front of it, that client would never arrive and the
+        // run would stall on its largest AIR.
+        let client = Arc::new(Pending::default());
+        let running = client.acquire(2, 0, BUDGET);
+
+        let c = client.clone();
+        let large = std::thread::spawn(move || drop(c.acquire(2, BINARY, BUDGET)));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while client.queued() == 0 {
+            assert!(std::time::Instant::now() < deadline, "the large instance was admitted beside the running prove, not queued behind it");
+            std::thread::yield_now();
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let c = client.clone();
+        let small = std::thread::spawn(move || {
+            let _pass = c.acquire(2, ROM, BUDGET);
+            tx.send(()).unwrap();
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(200)).is_err(),
+            "a small instance overtook the large one and left it waiting for a client that never empties"
+        );
+
+        drop(running);
+        rx.recv_timeout(std::time::Duration::from_secs(5)).expect("the queue did not drain");
+        large.join().unwrap();
+        small.join().unwrap();
+    }
+
+    #[test]
+    fn the_budget_reads_bytes_and_falls_back_to_the_built_in_one() {
+        assert_eq!(parse_pending_bytes(None), PENDING_BYTES);
+        assert_eq!(parse_pending_bytes(Some("")), PENDING_BYTES);
+        assert_eq!(parse_pending_bytes(Some("512MiB")), PENDING_BYTES, "a suffix is not a byte count");
+        assert_eq!(parse_pending_bytes(Some(" 201326592 ")), 192 << 20);
+        // Zero is a budget, not a typo: nothing joins a running prove, which
+        // is what `ZZ_PENDING=1` does from the other knob.
+        assert_eq!(parse_pending_bytes(Some("0")), 0);
+    }
+
+    #[test]
+    fn an_instance_is_weighed_by_what_it_uploads() {
+        // The budget is compared against the four sections
+        // `driver::upload_inputs` sends. `global_challenge` is not one of
+        // them -- it reaches the device inside the prove, not ahead of it --
+        // and counting it here would weigh the instance by a buffer the
+        // admission is not holding back.
+        let req = OwnedRequest {
+            key: "Rom_n22".into(),
+            const_pols_path: String::new(),
+            custom_fixed_path: None,
+            stream_id: None,
+            instance_id: 0,
+            trace: vec![0; 1 << 22],
+            publics: vec![0; 8],
+            airvalues: vec![0; 4],
+            proofvalues: vec![0; 2],
+            global_challenge: vec![0; 3],
+            proof_words: 0,
+        };
+        assert_eq!(req.upload_bytes(), (((1 << 22) + 8 + 4 + 2) * 8) as u64);
     }
 
     #[test]

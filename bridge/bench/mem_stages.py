@@ -64,15 +64,28 @@ MIB = 1 << 20
 # raised it can have a stage named from it.
 NO_PEAK = "not reached in this prove -- the client high-water was set earlier"
 
+# The `[zz + <t>]` prefix all four of these lines carry is deliberately not
+# matched, on all four. pil2 writes its own `[TRACE]` lines to the same fd
+# from C++ while the bridge writes these from Rust, and the two splice: a
+# header can arrive as `[zz + [TRACE] PilStark: ...` on one physical line and
+# `<t>] mem stage grind: in_use ...` on the next. Requiring the prefix dropped
+# that header, and the block's `buf` lines then had no stage to attach to --
+# one run in fifteen died on a bare KeyError. The timestamp is not read by
+# anything here, so the body of the line is the whole of what identifies it.
+#
+# `RUN` matters as much as the other three and fails more quietly: a dropped
+# `run` line leaves its program out of `programs`, and `readers_of` then names
+# an earlier program as a section's last reader with nothing raised. Every one
+# of these lines goes out through the same `zzlog!`, so any of them can splice.
+# What this does not recover is a line spliced *inside* a field it captures --
+# the prefix is the only part being given up here.
 HEAD = re.compile(
-    r"\[zz \+\s*[\d.]+\] mem stage (\S+): in_use (-|\d+), peak (-|\d+),"
+    r"mem stage (\S+): in_use (-|\d+), peak (-|\d+),"
     r" pool (-|\d+), live (\d+) in (\d+) buffers(, INVENTORY INCOMPLETE)?"
 )
-BUF = re.compile(r"\[zz \+\s*[\d.]+\] mem stage (\S+) buf (\S+) (\d+) (\d+)")
-RUN = re.compile(r"\[zz \+\s*[\d.]+\]\s+run (\S+): enqueue")
-PROG = re.compile(
-    r"\[zz \+\s*[\d.]+\] mem prog (\S+): in_use (-|\d+), peak (-|\d+), live (\d+)"
-)
+BUF = re.compile(r"mem stage (\S+) buf (\S+) (\d+) (\d+)")
+RUN = re.compile(r"run (\S+): enqueue")
+PROG = re.compile(r"mem prog (\S+): in_use (-|\d+), peak (-|\d+), live (\d+)")
 
 
 def _opt(text: str) -> int | None:
