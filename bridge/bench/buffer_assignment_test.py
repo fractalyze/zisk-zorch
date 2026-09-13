@@ -79,10 +79,26 @@ class ParseTest(absltest.TestCase):
         self.assertEqual(executable.temp_bytes, 5 * MIB)
         self.assertEqual(executable.output_bytes, 4)
         self.assertEqual(
-            executable.added_bytes,
-            executable.temp_bytes + executable.output_bytes + executable.other_bytes,
+            executable.added_bytes, executable.temp_bytes + executable.output_bytes
         )
-        self.assertNotIn(executable.parameter_bytes, (executable.added_bytes,))
+
+    def test_load_time_allocations_are_not_what_an_execution_adds(self):
+        # The fixture's nine thread-local allocations, and a bridge program's
+        # constants, are placed once for the executable rather than per run.
+        # Counting them in `added_bytes` left the reconciliation short by
+        # exactly their total.
+        executable = buffer_assignment.parse_executable(DUMP, MODULE_ID)
+        self.assertGreater(executable.other_bytes, 0)
+        self.assertEqual(
+            executable.added_bytes, executable.temp_bytes + executable.output_bytes
+        )
+        # Still in the sum that reproduces XLA's own total.
+        self.assertEqual(
+            sum(a.size for a in executable.allocations),
+            executable.added_bytes
+            + executable.parameter_bytes
+            + executable.other_bytes,
+        )
 
     def test_shared_allocation_is_not_the_sum_of_its_values(self):
         executable = buffer_assignment.parse_executable(DUMP, MODULE_ID)
@@ -197,6 +213,24 @@ class ReconcileTest(absltest.TestCase):
     def test_a_window_that_never_saw_the_peak_bounds_it_from_below(self):
         r = buffer_assignment.reconcile(self.executable, 100 * MIB, 100 * MIB)
         self.assertLess(r.unexplained, 0)
+
+    def test_a_release_between_the_reading_and_the_run_closes_the_identity(self):
+        # The case that made `freed_before` necessary: a section dropped at
+        # its last reader means the program starts below the reading taken
+        # after the program before it, so the rise is smaller than what the
+        # executable allocates. Without the term the executable reads as
+        # larger than the run, which looks like a bad dump.
+        added = self.executable.added_bytes
+        entry, freed = 500 * MIB, 32 * MIB
+        peak = entry - freed + added
+        self.assertEqual(
+            buffer_assignment.reconcile(
+                self.executable, entry, peak, freed
+            ).unexplained,
+            0,
+        )
+        blind = buffer_assignment.reconcile(self.executable, entry, peak)
+        self.assertEqual(blind.unexplained, -freed)
 
 
 if __name__ == "__main__":

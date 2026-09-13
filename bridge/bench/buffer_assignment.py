@@ -165,18 +165,28 @@ class Executable:
 
     @property
     def other_bytes(self) -> int:
-        """Thread-local scratch and constants: everything that is neither an
-        input, an output nor the temp arena. Small, but it is in XLA's total
-        and dropping it would break the check that reproduces it."""
+        """Constants and thread-local scratch: everything that is neither an
+        input, an output nor the temp arena.
+
+        Deliberately not part of `added_bytes`: these are not allocated per
+        execution -- a module's constants are placed when the executable is
+        loaded and stay for its lifetime. Counting them as what a run adds
+        overstates it by their total, which is how this came to be separate:
+        including them left the reconciliation short by exactly this sum.
+        Small per executable, but a client holding an AIR's whole set pays
+        each one, and it is in XLA's printed total, so dropping it would
+        break the check that reproduces that."""
         return self._sum(lambda a: not (a.is_parameter or a.is_output or a.is_temp))
 
     @property
     def added_bytes(self) -> int:
         """What the execution puts on the device beyond the inputs it was
-        given: the temp arena plus the outputs plus the rest. This is the
-        quantity an allocator reading taken *during* the execution sees above
-        what was live when it started."""
-        return self.temp_bytes + self.output_bytes + self.other_bytes
+        given: the temp arena plus the outputs.
+
+        This is the quantity an allocator reading taken *during* the execution
+        sees above what was live when it started. Inputs are already live (the
+        registry's own buffers) and constants were placed at load."""
+        return self.temp_bytes + self.output_bytes
 
     def live_range(self, value: Value) -> tuple[int, int] | None:
         return self.live_ranges.get(value.name)
@@ -379,36 +389,52 @@ class Reconciliation:
     program: str
     entry_in_use: int
     peak_during: int
+    freed_before: int
     added_measured: int
     added_assigned: int
 
     @property
     def unexplained(self) -> int:
-        """Measured minus assigned. Zero is the executable accounting for the
-        whole rise; positive is something else allocating in the same window
-        -- on a default-admission log, the next instance's uploads, which run
-        concurrently with the prove. Negative means the program's peak was
-        never reached while the reading was taken, so the window bounds it
-        from below only."""
+        """Measured minus assigned.
+
+        Zero is the executable accounting for the whole rise. Positive is
+        something else allocating in the same window -- on a default-admission
+        log, the next instance's uploads, which run concurrently with the
+        prove. Negative means the window is not the one the executable ran in:
+        either its peak was never reached while the reading was taken, or a
+        buffer was released after the reading and `freed_before` does not yet
+        say so."""
         return self.added_measured - self.added_assigned
 
 
 def reconcile(
-    executable: Executable, entry_in_use: int, peak_during: int
+    executable: Executable,
+    entry_in_use: int,
+    peak_during: int,
+    freed_before: int = 0,
 ) -> Reconciliation:
     """Relate one program's compile-time allocations to a run's readings.
 
     `entry_in_use` is the allocator's `in_use` after the program before this
     one and `peak_during` its high-water while this one ran -- both from a
-    `ZZ_MEM_STAGES=2` log. The identity is
-    `peak_during = entry_in_use + added_bytes`, and it holds only where
-    nothing else allocates in the window: `ZZ_PENDING=1`, where no next
-    instance is admitted beside the running prove."""
+    `ZZ_MEM_STAGES=2` log. `freed_before` is what the driver released between
+    that reading and this execution, which is not nothing: a section is
+    dropped at its last reader, so a stage-2 program starts below the reading
+    taken at the end of stage 1. The identity is
+
+        peak_during = (entry_in_use - freed_before) + added_bytes
+
+    and it holds where nothing else allocates in the window -- `ZZ_PENDING=1`,
+    where no next instance is admitted beside the running prove. Leaving
+    `freed_before` at 0 when a release did happen makes the executable look
+    larger than the run, which is the negative case `unexplained` names rather
+    than a reason to distrust the dump."""
     return Reconciliation(
         program=executable.module,
         entry_in_use=entry_in_use,
         peak_during=peak_during,
-        added_measured=peak_during - entry_in_use,
+        freed_before=freed_before,
+        added_measured=peak_during - (entry_in_use - freed_before),
         added_assigned=executable.added_bytes,
     )
 
