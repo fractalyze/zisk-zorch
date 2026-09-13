@@ -2110,7 +2110,11 @@ boundary, per run:
 admission (`lib.rs:966-971`). This explains the null recorded above under
 "Nor does the read-ahead reach it": the knob was never on the largest
 co-resident buffer. `ZZ_PENDING=1` removes it in all three runs and takes the
-client high-water from 9,007–10,263 MiB to **8,933–8,993 MiB**.
+client high-water from 9,007–10,263 MiB to **8,933–8,993 MiB**. That band is
+one binary's: a run's high-water is whichever prove raised it last, so another
+build reproduces the composition below and not the level — a later one puts
+the same arm at 8,981–9,068. Read the composition, not the band, when
+comparing across builds.
 
 The trace is the largest of the next instance's uploads but not the only one;
 counting its `const_base` and scalars too, everything on the client that is
@@ -2210,31 +2214,33 @@ instances are eleven distinct AIRs, so every section held is held for nobody.
 proofman knows which it is before the first prove. Its instance list reaches
 the bridge already — it is what the preload works from — so the change is to
 send it with its duplicates intact (`Bridge::set_plan`) instead of one entry
-per AIR. **That half lives in the proofman fork, and until the fork's
-`zisk-zorch-bridge` rev is bumped to one carrying `set_plan`, the call site
-still calls `preload_with` and no plan reaches the bridge at all.** With an
-empty plan every AIR keeps its sections, so on the tree as it stands this
-section describes a mechanism that is present and dormant: the numbers below
-were taken with the fork change applied locally, and they are what the bridge
-does once the rev is bumped, not what it does today. (`ZZ_FIXED_RESIDENT=0`
-reaches the same releases with no plan at all, which is how a build without
-the fork change can exercise this path — but the `plan` arms below were taken
-through a real plan, not through that variable.) An AIR the list names once then hands its sections to the prove that
-uploads them rather than lending them: `driver::prove` **takes** the fixed env
-off the driver instead of cloning it, which is what makes the removes inside
-the prove actually free, and each section goes at its own last reader —
-`const_base` after `logup` (stage 1), the constant tree and its digest layers
-after `open_const`, the rest when the prove ends. An AIR the list names more
-than once is untouched: it keeps everything, exactly as before.
+per AIR. **That half lives in the proofman fork**, whose `gen_proof` call site
+pushes every instance's key and pins a `zisk-zorch-bridge` rev carrying
+`set_plan` — `371a058`
+([`proofman.rs:2047-2065`](https://github.com/fractalyze/pil2-proofman/blob/8ca7133a/proofman/src/proofman.rs#L2047-L2065),
+[`proofman/Cargo.toml:17`](https://github.com/fractalyze/pil2-proofman/blob/8ca7133a/proofman/Cargo.toml#L17)).
+The set of AIRs it preloads is unchanged, because `set_plan` dedups for the
+preload itself. A build pinned behind that rev sends no plan and so keeps
+every AIR's sections, which is why the two halves did not have to land
+together. (`ZZ_FIXED_RESIDENT=0` reaches the same releases with no plan at
+all, which is how such a build can exercise this path — but the `plan` arms
+below were taken through a real plan, not through that variable.) An AIR the
+list names once then hands its sections to the prove that uploads them rather
+than lending them: `driver::prove` **takes** the fixed env off the driver
+instead of cloning it, which is what makes the removes inside the prove
+actually free, and each section goes at its own last reader — `const_base`
+after `logup` (stage 1), the constant tree and its digest layers after
+`open_const`, the rest when the prove ends. An AIR the list names more than
+once is untouched: it keeps everything, exactly as before.
 
 Three properties of the decision are worth stating because each is a way it
 could have been got wrong:
 
 - **An AIR the plan does not name keeps its sections.** The plan comes from the
-  proofman fork; a caller that sends none — today's fork, and `zz_prove` in
-  every build — leaves every AIR behaving as it did before there was a plan.
-  This is what makes the unit safe to land ahead of the fork rather than a
-  change that has to arrive with it.
+  proofman fork; a caller that sends none — a build pinned behind the rev above,
+  and `zz_prove` in every build — leaves every AIR behaving as it did before
+  there was a plan. This is what let the unit land ahead of the fork rather
+  than having to arrive with it.
 - **The count is a run's, not a client's.** Two instances of one AIR can land
   on two clients and each prove it once, but a count taken before the slots are
   assigned cannot know that. It keeps on both — the conservative way round.
@@ -2256,7 +2262,15 @@ different questions. MiB.
 
 **Default admission, eleven runs per arm.** The boundary carries two keys and
 the co-resident one is whichever AIR was admitted beside VT0, so its size
-changes run to run.
+changes run to run. "Default" here is the **count-only** admission these runs
+were taken under — `ZZ_PENDING=2` with no byte budget. `ZZ_PENDING_BYTES` now
+bounds the admitted set at 192 MiB (see "The instance read-ahead, bounded by
+bytes"), so which instance can sit beside VT0 is a different question on the
+current default and these rows do not answer it. What they do answer is
+unaffected by that: the release is VT0's own `const_base`, and the neighbour
+is the reason the *subtraction* is unsafe here rather than part of the lever.
+The `ZZ_PENDING=1` table below is unaffected outright — a count of one admits
+nothing beside the running prove under either rule.
 
 | | `keep` | `plan` |
 |---|---|---|
@@ -2285,30 +2299,61 @@ hold whatever it drew.
 |---|---|---|
 | `const_base` live entering `stage2` | 1 x 1,408 (its own) | **none** |
 | VT0 live entering `stage2` | 6,704 | 5,296 |
-| that prove's allocator peak | 8,960–8,981 | 8,821 |
 | the run's client high-water | 8,981 | 8,821 |
 | the AIR that set it | Main 3 of 3 | Main 3 of 3 |
 
 Here the subtraction is safe, because neither arm has a neighbour to vary:
-6,704 − 5,296 = 1,408, and the `keep` arm reproduces the 8,933–8,993 MiB this
-page already records for that configuration, which is the check that the
-instrument is the same one. `stage1` is identical in every arm and run, because
-the release is *after* `logup`.
+6,704 − 5,296 = 1,408. `stage1` is identical in every arm and run, because the
+release is *after* `logup`.
+
+**Under `ZZ_PENDING=1` there is no per-prove peak to quote for VT0.** The
+allocator's `peak` at a prove's boundaries is the client's monotonic
+high-water, so it is that prove's own only when that prove raised it, and here
+the prove order decides whether VT0 did — it lands anywhere from 2nd to 11th
+of 11 across the runs behind this section, raising the high-water in one of
+six on the path-patched binary and four of six on the rev-pinned one. A row
+for it would also duplicate the high-water row beneath it, which
+is the tell. The default-admission table does carry that column, because there
+VT0 proves 1st or 2nd and raises the high-water in every run: 11 of 11 per arm
+on the path-patched binary, 3 of 3 per arm on the rev-pinned one. Rows measured
+*at* a boundary are unaffected either way — they are read there, not
+inherited.
+
+**Two binaries produced these figures and the page does not pool them.** The
+tables above are the *path-patched* binary — the bridge patched in from a
+worktree, the fork's call site edited locally. A second set, 3 runs per arm,
+comes from the *rev-pinned* binary: the bridge at the rev the fork pins
+(`371a058`) and the call site as the fork carries it. Every row measured at a
+boundary agrees between them, 3 of 3 — `const_base` absent from the
+`ZZ_PENDING=1` boundary, VT0 live entering `stage2` 6,704 against 5,296.
+
+The run-level high-water does not agree, and it is not expected to. Rev-pinned
+`keep` reads 9,041 / 8,981 / 9,068 against the path-patched arm's flat 8,981;
+`plan` is 8,821 on both. The spread is which prove raised the high-water last,
+not a difference in what the policy holds: two of the three rev-pinned runs are
+`Main_n22`'s number, and the third is VT0's, 65 MiB above the `Main` run
+beneath it, because VT0 happened to prove 11th of 11 there. So the fall is 160
+MiB on the path-patched binary and 160–247 MiB on the rev-pinned one, quoted
+apart rather than as one range.
 
 **The run's client high-water is not this lever's to move, and the unit does
 not claim it.** A run's high-water is the largest peak any of its eleven
 proves reached, so it can fall only to the second largest. Under `ZZ_PENDING=1`
-`Main_n22` already sets it in both arms and the run figure moves 160 MiB while
-the boundary moves 1,408. Under the default admission, taking VT0's peak away
-promotes Main in 11 runs of 11, and Main's peak is the `deep`/`evals` transient —
-#226's category (c), which that inventory already recorded as not reachable
-from the bridge.
+`Main_n22` sets it in six of six runs on the path-patched binary and five of
+six on the rev-pinned one, the exception being the run where VT0 proved 11th,
+and the run figure moves 160 MiB or 160–247 MiB by binary while the boundary
+moves 1,408 on both. Under the default admission, taking VT0's
+peak away promotes Main in 11 runs of 11, and Main's peak is the `deep`/`evals`
+transient — #226's category (c), which that inventory already recorded as not
+reachable from the bridge.
 
 So the two figures belong to different arms and different run counts, and this
 is the sentence to quote rather than either alone. **VT0's own `const_base` is
-gone from that boundary in all 14 runs carrying an inventory — 11 at the
-default admission, 3 at `ZZ_PENDING=1`. The run's client high-water falls 160
-MiB in the 3 `ZZ_PENDING=1` runs (8,981 → 8,821). At the default admission it
+gone from that boundary in every `plan` run carrying an inventory, on both
+binaries — 11 + 3 per admission on the path-patched one, 3 + 3 on the
+rev-pinned one. The run's client high-water falls 160 MiB under `ZZ_PENDING=1`
+on the path-patched binary and 160–247 MiB on the rev-pinned one, the two
+quoted apart. At the default admission it
 does not fall at all: `keep` spans 9,087–10,208 over 11 runs and `plan`
 8,876–10,273 over 11, because both are then reporting `Main_n22`'s transient
 rather than any key.**
@@ -2320,14 +2365,23 @@ a regression, with the two arms' ranges (5,142-5,346 and 5,120-5,227)
 overlapping across most of their width. The setup programs run exactly as
 often either way on this workload — eleven distinct AIRs means eleven
 `set_fixed` calls under both policies — so there was no leg effect to find
-here, and the arms say so rather than the reasoning alone. What would cost a
-leg is an AIR the plan undercounts, which re-runs its setup programs; the
-`sha-hasher` arms below are where that is measured.
+here, and the arms say so rather than the reasoning alone. The rev-pinned
+binary is a second null, on its own arms and its own estimator: 5 passes per
+arm interleaved, medians over passes 2–5 as this page quotes them, `keep`
+5,134 ms [5,039–5,207] against `plan` 5,218 ms [5,162–5,445]. The two binaries
+put the difference in opposite directions — 37 ms toward `plan` on one, 84 ms
+against it on the other — with every range overlapping, which is the whole
+content of a null here; the two are not subtracted from each other. `plan`'s
+5,445 ms is pass 5, not the discarded warm-up pass — that arm's spread is
+simply wider. What would cost a leg is an AIR the plan
+undercounts, which re-runs its setup programs; the `sha-hasher` arms below are
+where that is measured.
 
-That accounts for all 44 hello-world runs in this section: 28 carrying a
-`ZZ_MEM_STAGES=2` inventory (11 + 3 per arm, the last two per arm taken on the
-head this PR carries, after the review's refactor) and 16 leg runs (8 per arm)
-that do not. All 44 are 11/11 byte-identical to native.
+The run counts, by binary, because no figure here pools them. Path-patched:
+44 hello-world runs, 28 carrying a `ZZ_MEM_STAGES=2` inventory (11 + 3 per
+arm) and 16 leg runs (8 per arm) that do not. Rev-pinned: 22, of which 12
+carry an inventory (3 per arm at each admission) and 10 are leg runs (5 per
+arm). All 66 are 11/11 byte-identical to native.
 
 **Two keys sit at that boundary, and this unit removes one of them.** The
 `keep` arm's 2,576 MiB of `const_base` at VT0's `stage2` is two buffers: VT0's
@@ -2383,13 +2437,30 @@ first pass carries the run's own warm-up. Six is the minimum that works here:
 at three, `plan` read as a 500 ms leg regression that the next three erased
 (its fastest run, 19,359 ms, is below every `keep` run).
 
-**One `keep` run aborted and no `plan` or `release` run did.** `sha-keep-r6`
-died on the 5.50 GiB `VirtualTableZisk0_n21` allocation this page records
-under "Family switches", with the card clear before it started. One event in
-six is an observation, not a rate, and it is recorded here with its
-denominator rather than as a claim: the arm that holds the most is the arm
-that failed, on the workload and fraction where holding two families' constants
-is known not to fit.
+**One `keep` run aborted on each binary, and no `plan` or `release` run did.**
+`sha-keep-r6` on the path-patched binary and `sha-keep-r1` on the rev-pinned
+one (#233) both died on the 5.50 GiB `VirtualTableZisk0_n21` allocation this
+page records under "Family switches" — each with the card clear before it
+started, each with `LargestFreeBlock: 0B` and GiB still in the arena, so
+placement rather than exhaustion. Independent sessions, different binaries,
+different prove orders, the same allocation. Counted per binary, because a
+survival count pools no better than a timing one:
+
+| | path-patched | rev-pinned |
+|---|---|---|
+| `keep` | 5 of 6 | 5 of 6 |
+| `plan` | 6 of 6 | 6 of 6 |
+| `release` | 6 of 6 | 2 of 2 |
+| pre-bump (keep-policy: it cannot be sent a plan) | — | 4 of 4 |
+
+One abort per binary in the arm that holds the most is an observation with a
+denominator, not a rate, and the two binaries agree rather than being summed
+into one. Neither establishes that releasing helps: both candidate mechanisms
+predict `plan` and `release` surviving where `keep` does not, so nothing here
+separates "holding sections fragments the arena" from something specific to
+what the plan releases. What separates them is a fraction walk with `release`
+as a third cell — it gives up more than `plan`, so the two mechanisms order
+that cell differently — with repeats per cell. That is filed, not done.
 
 ### The instance read-ahead, bounded by bytes (2026-09-12, #228)
 
