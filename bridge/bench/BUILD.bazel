@@ -4,12 +4,16 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 # Bench tooling for the bridge: the guest input writer, the native <-> bridge
 # dump comparison, three readers of a run log (the per-run summarizer, the
 # leg's phase structure behind "The gap is the basic phase's wall", and the
-# memory story behind "Memory budget"), and the four capture readers behind
-# that page's "Profiling" — two per-program (ours and pil2's), one for where
-# the uploads sit and one for where the leg's device idle goes. Rules with more
-# than one reader live in a module of their own so they cannot drift:
-# :nsys_trace owns the span algebra and which prover a kernel belongs to,
-# :run_log owns the bridge's per-instance line and whether a run finished.
+# memory story behind "Memory budget"), the four capture readers behind that
+# page's "Profiling" — two per-program (ours and pil2's), one for where the
+# uploads sit and one for where the leg's device idle goes — and one reader of
+# something that is neither a run nor a capture: :buffer_assignment reads
+# XLA's own compile-time reports, behind "What the in-program transient is
+# made of". Rules with more than one reader live in a module of their own so
+# they cannot drift: :nsys_trace owns the span algebra and which prover a
+# kernel belongs to, :run_log owns the bridge's per-instance line and whether
+# a run finished, and :mem_stages owns the stage-block and rise rules
+# :buffer_assignment reads its marks through rather than re-deriving.
 # run.sh drives one prove; see the page's "Running". :pagecache is the odd one
 # out -- it reads the host rather than a run, because proofman's init reads
 # gigabytes of the proving key before it sizes anything and pays disk for what
@@ -56,6 +60,30 @@ py_test(
     srcs = ["pil2_layout_test.py"],
     deps = [
         ":pil2_layout",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
+    name = "buffer_assignment",
+    srcs = ["buffer_assignment.py"],
+    # :mem_stages owns the rule that a stage block belongs to the instance
+    # line after it; the reconciliation reads its marks rather than the log.
+    deps = [":mem_stages"],
+)
+
+py_test(
+    name = "buffer_assignment_test",
+    size = "small",
+    srcs = ["buffer_assignment_test.py"],
+    # The shipped plugin's own dump of one small program: what is under test
+    # is the format, which is the plugin's rather than the program's.
+    data = glob([
+        "testdata/xla_dump/*",
+        "testdata/xla_dump_tree/*/*",
+    ]),
+    deps = [
+        ":buffer_assignment",
         requirement("absl_py"),
     ],
 )

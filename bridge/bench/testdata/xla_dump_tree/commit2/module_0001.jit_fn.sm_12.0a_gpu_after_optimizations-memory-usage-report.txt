@@ -1,0 +1,200 @@
+Memory Space: default (color=0)
+Total bytes: 3668812184 (3.42GiB)
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+  576.00MiB( 32%);  576.00MiB;         1536;               14; goldilocks[1024], goldilocks[1048576], goldilocks[16384], goldilocks[16], goldilocks[256], goldilocks[262144], goldilocks[4096], goldilocks[4194304], goldilocks[64], goldilocks[65536], goldilocks[8388608], u64[36,2097152], 2×goldilocks[16777216]
+  832.00MiB( 46%);  256.00MiB;   1409287680;                1; goldilocks[33554432]
+    1.06GiB( 61%);  256.00MiB;   1140852224;                7; 7×goldilocks[33554432]
+    1.31GiB( 75%);  256.00MiB;    603981312;                2; 2×goldilocks[33554432]
+    1.56GiB( 89%);  256.00MiB;    872416768;               12; 4×goldilocks[16777216], 4×goldilocks[33554432], 4×goldilocks[4194304,8]
+    1.69GiB( 96%);  128.00MiB;    134219264;                1; goldilocks[16777216]
+    1.75GiB(100%);   64.00MiB;     67110400;                1; goldilocks[8388608]
+    1.75GiB(100%);    16.0KiB;   1677723136;                1; goldilocks[2048]
+    1.75GiB(100%);     4.0KiB;   1677739520;                1; goldilocks[512]
+    1.75GiB(100%);     1.0KiB;   1677743616;                1; goldilocks[128]
+    1.75GiB(100%);       256B;   1677744640;                1; goldilocks[32]
+    1.75GiB(100%);       112B;         1280;                1; (u64[4], u64[4194304,36], u64[4194304,4], u64[1048576,4], u64[262144,4], /*index=5*/u64[65536,4], u64[16384,4], u64[4096,4], u64[1024,4], u64[256,4], /*index=10*/u64[64,4], u64[16,4], u64[4,4], u64[1,4])
+    1.75GiB(100%);        64B;   1677744896;                1; goldilocks[8]
+    1.75GiB(100%);        16B;         1024;                1; (goldilocks[2097152,36], goldilocks[4194304,36])
+    1.75GiB(100%);        16B;          768;                1; (goldilocks[2097152,36], goldilocks[4194304,36])
+    1.75GiB(100%);        16B;            0;                1; (goldilocks[2097152,36], goldilocks[4194304,36])
+    1.75GiB(100%);        16B;          256;                1; (goldilocks[2097152,36], goldilocks[4194304,36])
+    1.75GiB(100%);        16B;          512;                1; (goldilocks[2097152,36], goldilocks[4194304,36])
+    1.75GiB(100%);         8B;   1677745152;                1; goldilocks[1]
+    1.75GiB(100%);         8B;   1677745408;                1; goldilocks[]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    1.12GiB(100%);    1.12GiB;            0;                6; 6×goldilocks[4194304,36]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+  576.00MiB(100%);  576.00MiB;            0;                1; u64[2097152,36]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+  128.00MiB(100%);  128.00MiB;            0;               12; goldilocks[8388608], 11×goldilocks[16777216]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+   32.00MiB(100%);   32.00MiB;            0;                2; goldilocks[1048576,4], goldilocks[8192]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    8.00MiB(100%);    8.00MiB;            0;                2; goldilocks[262144,4], goldilocks[32768]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    2.00MiB(100%);    2.00MiB;            0;                2; goldilocks[131072], goldilocks[65536,4]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+   512.0KiB(100%);   512.0KiB;            0;                2; goldilocks[16384,4], goldilocks[65536]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+   128.0KiB(100%);   128.0KiB;            0;                2; goldilocks[16384], goldilocks[4096,4]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    32.0KiB(100%);    32.0KiB;            0;                2; goldilocks[1024,4], goldilocks[4096]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+    10.3KiB(100%);    10.3KiB;            0;                1; goldilocks[1313]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     8.3KiB(100%);     8.3KiB;            0;                1; goldilocks[1057]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     8.3KiB(100%);     8.3KiB;            0;                1; goldilocks[1057]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     8.3KiB(100%);     8.3KiB;            0;                1; goldilocks[1057]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     8.3KiB(100%);     8.3KiB;            0;                1; goldilocks[1057]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     8.3KiB(100%);     8.3KiB;            0;                1; goldilocks[1057]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     8.0KiB(100%);     8.0KiB;            0;                2; goldilocks[1024], goldilocks[256,4]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     4.3KiB(100%);     4.3KiB;            0;                1; goldilocks[545]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     4.3KiB(100%);     4.3KiB;            0;                1; goldilocks[545]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     4.3KiB(100%);     4.3KiB;            0;                1; goldilocks[545]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     4.3KiB(100%);     4.3KiB;            0;                1; goldilocks[545]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     4.3KiB(100%);     4.3KiB;            0;                1; goldilocks[545]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+     2.0KiB(100%);     2.0KiB;            0;                2; goldilocks[256], goldilocks[64,4]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       512B(100%);       512B;            0;                2; goldilocks[16,4], goldilocks[64]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       384B(100%);       384B;            0;                1; goldilocks[48]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       384B(100%);       384B;            0;                1; goldilocks[48]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       176B(100%);       176B;            0;                1; goldilocks[22]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       128B(100%);       128B;            0;                2; goldilocks[16], goldilocks[4,4]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       128B(100%);       128B;            0;                1; goldilocks[16]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       128B(100%);       128B;            0;                1; goldilocks[16]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+       112B(100%);       112B;            0;                1; (u64[4], u64[4194304,36], u64[4194304,4], u64[1048576,4], u64[262144,4], /*index=5*/u64[65536,4], u64[16384,4], u64[4096,4], u64[1024,4], u64[256,4], /*index=10*/u64[64,4], u64[16,4], u64[4,4], u64[1,4])
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+        32B(100%);        32B;            0;                2; goldilocks[1,4], goldilocks[2]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+        32B(100%);        32B;            0;                2; goldilocks[4], u64[1,4]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+         8B(100%);         8B;            0;                1; goldilocks[]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+         4B(100%);         4B;            0;                1; s32[]
+
+  cumulative_size;       size;       offset; used_by_n_values; shapes_list
+  ------------------------------------------------------------
+         4B(100%);         4B;            0;                1; s32[]

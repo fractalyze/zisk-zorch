@@ -1,0 +1,169 @@
+BufferAssignment:
+allocation 0: size 1207959552, maybe-live-out:
+ value: <874 loop_broadcast_fusion @0> (size=1207959552,offset=0): goldilocks[4194304,36]{1,0}
+ value: <908 loop_dynamic_update_slice_fusion.1 @0> (size=1207959552,offset=0): goldilocks[4194304,36]{1,0}
+ value: <921 loop_dynamic_update_slice_fusion.2 @0> (size=1207959552,offset=0): goldilocks[4194304,36]{1,0}
+ value: <935 loop_dynamic_update_slice_fusion.3 @0> (size=1207959552,offset=0): goldilocks[4194304,36]{1,0}
+ value: <948 loop_dynamic_update_slice_fusion.4 @0> (size=1207959552,offset=0): goldilocks[4194304,36]{1,0}
+ value: <961 loop_dynamic_update_slice_fusion @0> (size=1207959552,offset=0): goldilocks[4194304,36]{1,0}
+allocation 1: size 603979776, parameter 0, shape |u64[2097152,36]| at ShapeIndex {}:
+ value: <872 Arg_0.79 @0> (size=603979776,offset=0): u64[2097152,36]{1,0}
+allocation 2: size 134217728, maybe-live-out:
+ value: <876 loop_reshape_fusion.6 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <880 ntt_pass_fusion.1 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <910 loop_reshape_fusion.7 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <914 ntt_pass_fusion.5 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <923 loop_reshape_fusion.8 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <927 ntt_pass_fusion.9 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <937 loop_reshape_fusion.9 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <941 ntt_pass_fusion.13 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <950 loop_reshape_fusion.12 @0> (size=67108864,offset=0): goldilocks[8388608]{0}
+ value: <955 loop_reshape_fusion.10 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <960 ntt_pass_fusion.19 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+ value: <969 sponge_hash.1 @0> (size=134217728,offset=0): goldilocks[16777216]{0}
+allocation 3: size 33554432, maybe-live-out:
+ value: <897 loop_concatenate_fusion.4 @0> (size=65536,offset=0): goldilocks[8192]{0}
+ value: <971 loop_slice_fusion.10 @0> (size=33554432,offset=0): goldilocks[1048576,4]{1,0}
+allocation 4: size 8388608, maybe-live-out:
+ value: <899 loop_concatenate_fusion.2 @0> (size=262144,offset=0): goldilocks[32768]{0}
+ value: <973 loop_slice_fusion.9 @0> (size=8388608,offset=0): goldilocks[262144,4]{1,0}
+allocation 5: size 2097152, maybe-live-out:
+ value: <901 loop_concatenate_fusion @0> (size=1048576,offset=0): goldilocks[131072]{0}
+ value: <975 loop_slice_fusion.8 @0> (size=2097152,offset=0): goldilocks[65536,4]{1,0}
+allocation 6: size 524288, maybe-live-out:
+ value: <900 loop_concatenate_fusion.1 @0> (size=524288,offset=0): goldilocks[65536]{0}
+ value: <977 loop_slice_fusion.7 @0> (size=524288,offset=0): goldilocks[16384,4]{1,0}
+allocation 7: size 131072, maybe-live-out:
+ value: <898 loop_concatenate_fusion.3 @0> (size=131072,offset=0): goldilocks[16384]{0}
+ value: <979 loop_slice_fusion.6 @0> (size=131072,offset=0): goldilocks[4096,4]{1,0}
+allocation 8: size 32768, maybe-live-out:
+ value: <896 loop_concatenate_fusion.5 @0> (size=32768,offset=0): goldilocks[4096]{0}
+ value: <981 loop_slice_fusion.5 @0> (size=32768,offset=0): goldilocks[1024,4]{1,0}
+allocation 9: size 10504, constant:
+ value: <879 constant_738 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 10: size 10504, constant:
+ value: <905 constant_740 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 11: size 10504, constant:
+ value: <913 constant_742 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 12: size 10504, constant:
+ value: <918 constant_744 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 13: size 10504, constant:
+ value: <926 constant_746 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 14: size 10504, constant:
+ value: <932 constant_748 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 15: size 10504, constant:
+ value: <940 constant_750 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 16: size 10504, constant:
+ value: <945 constant_752 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 17: size 10504, constant:
+ value: <953 constant_754 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 18: size 10504, constant:
+ value: <959 constant_756 @0> (size=10504,offset=0): goldilocks[1313]{0}
+allocation 19: size 8456, constant:
+ value: <882 constant_739 @0> (size=8456,offset=0): goldilocks[1057]{0}
+allocation 20: size 8456, constant:
+ value: <916 constant_743 @0> (size=8456,offset=0): goldilocks[1057]{0}
+allocation 21: size 8456, constant:
+ value: <929 constant_747 @0> (size=8456,offset=0): goldilocks[1057]{0}
+allocation 22: size 8456, constant:
+ value: <943 constant_751 @0> (size=8456,offset=0): goldilocks[1057]{0}
+allocation 23: size 8456, constant:
+ value: <956 constant_755 @0> (size=8456,offset=0): goldilocks[1057]{0}
+allocation 24: size 8192, maybe-live-out:
+ value: <894 loop_concatenate_fusion.7 @0> (size=8192,offset=0): goldilocks[1024]{0}
+ value: <983 loop_slice_fusion.4 @0> (size=8192,offset=0): goldilocks[256,4]{1,0}
+allocation 25: size 4360, constant:
+ value: <877 constant_737 @0> (size=4360,offset=0): goldilocks[545]{0}
+allocation 26: size 4360, constant:
+ value: <911 constant_741 @0> (size=4360,offset=0): goldilocks[545]{0}
+allocation 27: size 4360, constant:
+ value: <924 constant_745 @0> (size=4360,offset=0): goldilocks[545]{0}
+allocation 28: size 4360, constant:
+ value: <938 constant_749 @0> (size=4360,offset=0): goldilocks[545]{0}
+allocation 29: size 4360, constant:
+ value: <951 constant_753 @0> (size=4360,offset=0): goldilocks[545]{0}
+allocation 30: size 2048, maybe-live-out:
+ value: <892 loop_concatenate_fusion.9 @0> (size=2048,offset=0): goldilocks[256]{0}
+ value: <985 loop_slice_fusion.3 @0> (size=2048,offset=0): goldilocks[64,4]{1,0}
+allocation 31: size 512, maybe-live-out:
+ value: <890 loop_concatenate_fusion.11 @0> (size=512,offset=0): goldilocks[64]{0}
+ value: <987 loop_slice_fusion.2 @0> (size=512,offset=0): goldilocks[16,4]{1,0}
+allocation 32: size 384, constant:
+ value: <963 constant_733_0 @0> (size=384,offset=0): goldilocks[48]{0}
+allocation 33: size 384, constant:
+ value: <966 constant_736_0 @0> (size=384,offset=0): goldilocks[48]{0}
+allocation 34: size 176, constant:
+ value: <965 constant_735_0 @0> (size=176,offset=0): goldilocks[22]{0}
+allocation 35: size 128, maybe-live-out:
+ value: <888 loop_concatenate_fusion.13 @0> (size=128,offset=0): goldilocks[16]{0}
+ value: <989 loop_slice_fusion.1 @0> (size=128,offset=0): goldilocks[4,4]{1,0}
+allocation 36: size 128, constant:
+ value: <962 constant_732_0 @0> (size=128,offset=0): goldilocks[16]{0}
+allocation 37: size 128, constant:
+ value: <964 constant_734_0 @0> (size=128,offset=0): goldilocks[16]{0}
+allocation 38: size 112, output shape is |(u64[4], u64[4194304,36], u64[4194304,4], u64[1048576,4], u64[262144,4], /*index=5*/u64[65536,4], u64[16384,4], u64[4096,4], u64[1024,4], u64[256,4], /*index=10*/u64[64,4], u64[16,4], u64[4,4], u64[1,4])|, maybe-live-out:
+ value: <994 tuple.101{} @0> (size=112,offset=0): (u64[4]{0}, u64[4194304,36]{1,0}, u64[4194304,4]{1,0}, u64[1048576,4]{1,0}, u64[262144,4]{1,0}, /*index=5*/u64[65536,4]{1,0}, u64[16384,4]{1,0}, u64[4096,4]{1,0}, u64[1024,4]{1,0}, u64[256,4]{1,0}, /*index=10*/u64[64,4]{1,0}, u64[16,4]{1,0}, u64[4,4]{1,0}, u64[1,4]{1,0})
+allocation 39: size 4, constant:
+ value: <968 constant_22_0 @0> (size=4,offset=0): s32[]
+allocation 40: size 32, maybe-live-out:
+ value: <885 input_concatenate_fusion.2 @0> (size=16,offset=0): goldilocks[2]{0}
+ value: <991 loop_slice_fusion @0> (size=32,offset=0): goldilocks[1,4]{1,0}
+allocation 41: size 32, maybe-live-out:
+ value: <886 input_concatenate_fusion.1 @0> (size=32,offset=0): goldilocks[4]{0}
+ value: <993 copy.12 @0> (size=32,offset=0): u64[1,4]{1,0}
+allocation 42: size 4, constant:
+ value: <967 constant_20_0 @0> (size=4,offset=0): s32[]
+allocation 43: size 8, constant:
+ value: <883 constant_731_0 @0> (size=8,offset=0): goldilocks[]
+allocation 44: size 1677745416, preallocated-temp:
+ value: <873 wrapped_transpose @0> (size=603979776,offset=1536): u64[36,2097152]{1,0}
+ value: <875 tuple.10.0{} @0> (size=16,offset=1024): (goldilocks[2097152,36]{0,1}, goldilocks[4194304,36]{1,0})
+ value: <878 ntt_pass_fusion @0> (size=134217728,offset=872416768): goldilocks[16777216]{0}
+ value: <881 loop_reshape_fusion.5 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <884 loop_multiply_fusion @0> (size=8,offset=1677745152): goldilocks[1]{0}
+ value: <887 input_concatenate_fusion @0> (size=64,offset=1677744896): goldilocks[8]{0}
+ value: <889 loop_concatenate_fusion.12 @0> (size=256,offset=1677744640): goldilocks[32]{0}
+ value: <891 loop_concatenate_fusion.10 @0> (size=1024,offset=1677743616): goldilocks[128]{0}
+ value: <893 loop_concatenate_fusion.8 @0> (size=4096,offset=1677739520): goldilocks[512]{0}
+ value: <895 loop_concatenate_fusion.6 @0> (size=16384,offset=1677723136): goldilocks[2048]{0}
+ value: <902 loop_multiply_fusion.1 @0> (size=8,offset=1677745408): goldilocks[]
+ value: <903 loop_reshape_fusion.1 @0> (size=268435456,offset=603981312): goldilocks[33554432]{0}
+ value: <904 ntt_pass_fusion.2 @0> (size=268435456,offset=872416768): goldilocks[33554432]{0}
+ value: <906 ntt_pass_fusion.3 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <907 input_transpose_fusion.3 @0> (size=268435456,offset=872416768): goldilocks[4194304,8]{1,0}
+ value: <909 tuple.11.0{} @0> (size=16,offset=768): (goldilocks[2097152,36]{0,1}, goldilocks[4194304,36]{1,0})
+ value: <912 ntt_pass_fusion.4 @0> (size=134217728,offset=872416768): goldilocks[16777216]{0}
+ value: <915 loop_reshape_fusion.4 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <917 ntt_pass_fusion.6 @0> (size=268435456,offset=872416768): goldilocks[33554432]{0}
+ value: <919 ntt_pass_fusion.7 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <920 input_transpose_fusion.2 @0> (size=268435456,offset=872416768): goldilocks[4194304,8]{1,0}
+ value: <922 tuple.12.0{} @0> (size=16,offset=0): (goldilocks[2097152,36]{0,1}, goldilocks[4194304,36]{1,0})
+ value: <925 ntt_pass_fusion.8 @0> (size=134217728,offset=872416768): goldilocks[16777216]{0}
+ value: <928 loop_reshape_fusion.3 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <930 loop_reshape_fusion @0> (size=268435456,offset=1409287680): goldilocks[33554432]{0}
+ value: <931 ntt_pass_fusion.10 @0> (size=268435456,offset=872416768): goldilocks[33554432]{0}
+ value: <933 ntt_pass_fusion.11 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <934 input_transpose_fusion.1 @0> (size=268435456,offset=872416768): goldilocks[4194304,8]{1,0}
+ value: <936 tuple.13.0{} @0> (size=16,offset=256): (goldilocks[2097152,36]{0,1}, goldilocks[4194304,36]{1,0})
+ value: <939 ntt_pass_fusion.12 @0> (size=134217728,offset=872416768): goldilocks[16777216]{0}
+ value: <942 loop_reshape_fusion.2 @0> (size=268435456,offset=1140852224): goldilocks[33554432]{0}
+ value: <944 ntt_pass_fusion.14 @0> (size=268435456,offset=872416768): goldilocks[33554432]{0}
+ value: <946 ntt_pass_fusion.15 @0> (size=268435456,offset=603981312): goldilocks[33554432]{0}
+ value: <947 input_transpose_fusion @0> (size=268435456,offset=872416768): goldilocks[4194304,8]{1,0}
+ value: <949 tuple.14.0{} @0> (size=16,offset=512): (goldilocks[2097152,36]{0,1}, goldilocks[4194304,36]{1,0})
+ value: <952 ntt_pass_fusion.16 @0> (size=67108864,offset=1536): goldilocks[8388608]{0}
+ value: <954 ntt_pass_fusion.17 @0> (size=67108864,offset=67110400): goldilocks[8388608]{0}
+ value: <957 loop_reshape_fusion.11 @0> (size=134217728,offset=1536): goldilocks[16777216]{0}
+ value: <958 ntt_pass_fusion.18 @0> (size=134217728,offset=134219264): goldilocks[16777216]{0}
+ value: <970 sparse_poseidon.11 @0> (size=134217728,offset=1536): goldilocks[16777216]{0}
+ value: <972 sparse_poseidon.12 @0> (size=33554432,offset=1536): goldilocks[4194304]{0}
+ value: <974 sparse_poseidon.13 @0> (size=8388608,offset=1536): goldilocks[1048576]{0}
+ value: <976 sparse_poseidon.14 @0> (size=2097152,offset=1536): goldilocks[262144]{0}
+ value: <978 sparse_poseidon.15 @0> (size=524288,offset=1536): goldilocks[65536]{0}
+ value: <980 sparse_poseidon.16 @0> (size=131072,offset=1536): goldilocks[16384]{0}
+ value: <982 sparse_poseidon.17 @0> (size=32768,offset=1536): goldilocks[4096]{0}
+ value: <984 sparse_poseidon.18 @0> (size=8192,offset=1536): goldilocks[1024]{0}
+ value: <986 sparse_poseidon.19 @0> (size=2048,offset=1536): goldilocks[256]{0}
+ value: <988 sparse_poseidon.20 @0> (size=512,offset=1536): goldilocks[64]{0}
+ value: <990 sparse_poseidon.21 @0> (size=128,offset=1536): goldilocks[16]{0}
+ value: <992 tuple.100{} @0> (size=112,offset=1280): (u64[4]{0}, u64[4194304,36]{1,0}, u64[4194304,4]{1,0}, u64[1048576,4]{1,0}, u64[262144,4]{1,0}, /*index=5*/u64[65536,4]{1,0}, u64[16384,4]{1,0}, u64[4096,4]{1,0}, u64[1024,4]{1,0}, u64[256,4]{1,0}, /*index=10*/u64[64,4]{1,0}, u64[16,4]{1,0}, u64[4,4]{1,0}, u64[1,4]{1,0})

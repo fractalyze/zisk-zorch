@@ -3,7 +3,7 @@
 //! proofman.
 //!
 //!   zz_prove <artifacts-dir> <case-dir> [--repeat N]
-//!   zz_prove --warm <artifacts-dir> [<Air>_n<nBits> ...]   # compile + cache only
+//!   zz_prove --warm <artifacts-dir> [<Air>_n<nBits> ...] [--only p1,p2]
 //!
 //! A case directory comes from `python -m zisk_zorch.export.cases` and
 //! holds raw little-endian u64 files (`trace.bin`, `publics.bin`,
@@ -11,6 +11,11 @@
 //! `const_base.bin`, `custom_base_<id>.bin`, `expected_proof.bin`) plus
 //! `case.json` naming the AIR and its height. `--repeat` re-proves the
 //! warm driver to time a prove without the compile.
+//!
+//! `--only` restricts the warm to named programs of each named AIR, for a
+//! measurement that wants one program's compile rather than the AIR's ~34 --
+//! a plugin bisect, or the buffer-assignment dump `bench/buffer_assignment.py`
+//! reads.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -30,6 +35,49 @@ fn warm_split(threads: usize, dirs: usize) -> Vec<usize> {
     let across = threads.min(dirs).max(1);
     let (base, extra) = (threads / across, threads % across);
     (0..across).map(|worker| (base + usize::from(worker < extra)).max(1)).collect()
+}
+
+/// The programs a warm should compile: all of the AIR's, or the `--only` set.
+///
+/// An unknown name is an error rather than a silent skip. `--only` exists to
+/// make a one-program compile cheap, so a typo would otherwise compile
+/// nothing at all and print the same "0 programs" a correct run of an empty
+/// AIR prints.
+/// The `--only` list, if the flag is there at all.
+///
+/// A `--only` with nothing after it is an error rather than an absent flag.
+/// Read as absent it warms the AIR's whole set -- the silent wrong warm
+/// `select_programs` below exists to turn into an error -- and a shell that
+/// expanded an empty variable into the flag's place is exactly how that
+/// happens.
+fn only_arg(args: &[String]) -> Result<Option<String>, String> {
+    match args.iter().position(|a| a == "--only") {
+        None => Ok(None),
+        Some(i) => match args.get(i + 1) {
+            Some(list) if !list.starts_with("--") => Ok(Some(list.clone())),
+            _ => Err("--only needs a comma-separated list of program names".to_string()),
+        },
+    }
+}
+
+fn select_programs(available: &[String], only: Option<&str>) -> Result<Vec<String>, String> {
+    let Some(only) = only else {
+        let mut all = available.to_vec();
+        all.sort();
+        return Ok(all);
+    };
+    let wanted: Vec<&str> = only.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let unknown: Vec<&str> =
+        wanted.iter().copied().filter(|w| !available.iter().any(|a| a == w)).collect();
+    if !unknown.is_empty() {
+        let mut known = available.to_vec();
+        known.sort();
+        return Err(format!("no such program: {}; this AIR has {}", unknown.join(", "), known.join(", ")));
+    }
+    if wanted.is_empty() {
+        return Err("--only was given no program names".to_string());
+    }
+    Ok(wanted.into_iter().map(str::to_string).collect())
 }
 
 fn words(path: &Path) -> Vec<u64> {
@@ -52,8 +100,17 @@ fn main() {
             .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| artifacts.join(".pjrt-cache"));
-        let dirs: Vec<std::path::PathBuf> = if args.len() > 3 {
-            args[3..].iter().map(|a| artifacts.join(a)).collect()
+        let only = match only_arg(&args) {
+            Ok(only) => only,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        };
+        let named: Vec<&String> =
+            args[3..].iter().take_while(|a| !a.starts_with("--")).collect();
+        let dirs: Vec<std::path::PathBuf> = if !named.is_empty() {
+            named.iter().map(|a| artifacts.join(a.as_str())).collect()
         } else {
             let mut d: Vec<_> = std::fs::read_dir(artifacts)
                 .unwrap()
@@ -82,6 +139,7 @@ fn main() {
                 let client = client.clone();
                 let queue = queue.clone();
                 let cache = cache.clone();
+                let only = only.clone();
                 std::thread::spawn(move || loop {
                     let dir = match queue.lock().unwrap().pop() {
                         Some(d) => d,
@@ -89,11 +147,15 @@ fn main() {
                     };
                     let t = Instant::now();
                     let art = Artifact::load(client.clone(), &dir, Some(&cache)).unwrap();
-                    art.compile_all(within).unwrap();
+                    let names: Vec<String> = art.manifest.programs.keys().cloned().collect();
+                    let programs = select_programs(&names, only.as_deref())
+                        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+                    let count = programs.len();
+                    art.compile_some(programs, within).unwrap();
                     eprintln!(
                         "warm {} ({} programs, {} from the cache) in {:.1} s",
                         dir.display(),
-                        art.manifest.programs.len(),
+                        count,
                         art.cache_hits.load(std::sync::atomic::Ordering::Relaxed),
                         t.elapsed().as_secs_f64()
                     );
@@ -225,7 +287,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::warm_split;
+    use super::{only_arg, select_programs, warm_split};
 
     #[test]
     fn warm_split_uses_the_whole_budget_at_any_ratio() {
@@ -244,6 +306,61 @@ mod tests {
                 assert_eq!(split.iter().sum::<usize>(), threads, "{threads}/{dirs}");
             }
         }
+    }
+
+    fn available() -> Vec<String> {
+        ["commit2", "const_setup", "deep", "evals"].iter().map(|s| s.to_string()).collect()
+    }
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn only_arg_reads_the_list_after_the_flag() {
+        assert_eq!(
+            only_arg(&argv(&["zz_prove", "--warm", "art", "Main_n22", "--only", "deep,evals"])).unwrap(),
+            Some("deep,evals".to_string())
+        );
+        assert_eq!(only_arg(&argv(&["zz_prove", "--warm", "art", "Main_n22"])).unwrap(), None);
+    }
+
+    #[test]
+    fn only_arg_refuses_a_flag_with_no_list() {
+        // Read as an absent flag this warms all ~34 programs of every named
+        // AIR, which is the silent wrong warm select_programs exists to
+        // prevent -- and an empty shell variable in the flag's place is how
+        // it arrives.
+        assert!(only_arg(&argv(&["zz_prove", "--warm", "art", "Main_n22", "--only"])).is_err());
+        assert!(only_arg(&argv(&["zz_prove", "--warm", "art", "--only", "--repeat"])).is_err());
+    }
+
+    #[test]
+    fn without_only_every_program_is_selected() {
+        // Sorted, so the compile order does not depend on the manifest's
+        // hash-map iteration order.
+        assert_eq!(
+            select_programs(&available(), None).unwrap(),
+            ["commit2", "const_setup", "deep", "evals"]
+        );
+    }
+
+    #[test]
+    fn only_selects_the_named_programs_in_the_order_given() {
+        assert_eq!(select_programs(&available(), Some("deep,commit2")).unwrap(), ["deep", "commit2"]);
+        // Whitespace and a trailing comma are what a copied command line has.
+        assert_eq!(select_programs(&available(), Some("deep, evals,")).unwrap(), ["deep", "evals"]);
+    }
+
+    #[test]
+    fn an_unknown_program_is_an_error_not_an_empty_warm() {
+        // The failure this guards: a typo compiles nothing and prints the
+        // same "0 programs" a correct run would, so the dump comes back
+        // empty and reads as the plugin dumping nothing.
+        let err = select_programs(&available(), Some("commit2,evls")).unwrap_err();
+        assert!(err.contains("evls"), "{err}");
+        assert!(err.contains("evals"), "{err}");
+        assert!(select_programs(&available(), Some(",")).is_err());
     }
 
     #[test]

@@ -2610,3 +2610,155 @@ count-only arm, where Main's boundary carries a neighbour too: 7,077 MiB live
 and 9,690 MiB of peak. A figure from that run belongs in the co-residency story
 above, not in this one.) 8,960 MiB is therefore not a number further work on
 the keys walks down much further without moving Main.
+
+### What the in-program transient is made of (2026-09-14, #232)
+
+Every figure in this section is from the go hello-world guest on build-server-2
+(RTX 5090), against the artifacts in `zz-artifacts-191` exported from proving
+key `v1.0.0-alpha`, compiled by the wheel pinned in `requirements.in`
+(`0.10.2.dev20260910150749`). The compile-side figures are properties of that
+(artifacts, plugin) pair and of nothing else — no arm, no prove order, no
+machine state. The run-side column names its arm where it appears.
+
+#226's category (c) — the part of a prove's peak that belongs to no buffer the
+bridge registered, because it exists only while a program runs — is XLA's own
+allocation inside one execution, and neither the registry nor the allocator can
+name it: both report totals. XLA itemises it at compile time. Compiling with
+`--xla_dump_to` leaves three reports per executable (every allocation with its
+size and the HLO values that own it, each value's live range over the printed
+instruction sequence, and XLA's own totals), and `bench/buffer_assignment.py`
+reads them.
+
+**The dump is written while compiling, so a warm cache produces none.** A prove
+against `$ZZ_ARTIFACTS/.pjrt-cache` loads serialized executables and never
+reaches the code that writes these files — the obvious mechanism, a prove with
+the dump flags set, silently dumps nothing. Point `ZZ_COMPILE_CACHE` at an
+empty directory and compile with `zz_prove --warm <artifacts> <AIR> --only
+<program>`: no prove, no proofman, and the client grows on demand rather than
+preallocating an arena, so it needs no card of its own. One program per
+directory, because XLA numbers modules per process and every exported module is
+named `jit_fn` — the directory is what says which program it is, and
+`--manifest` checks that against the shapes the AIR declares.
+
+#### The arena is measurable from a run, but only where the peak rose
+
+While a program runs the client holds what it already held, plus that program's
+outputs, plus its temp arena; when the program ends the arena goes and the
+outputs stay. So
+
+```
+arena = peak_during - in_use_after
+```
+
+with both readings on one side of the program, from a `ZZ_MEM_STAGES=2` log.
+Inputs and outputs cancel, so the figure does not move with the AIR's section
+sizes, and there is nothing for an analyst to supply. Measuring instead from
+the reading *before* a program needs a term for whatever the driver released in
+between, and that term is a free parameter: tune it and any residual vanishes.
+It is also wrong in a specific way — a section is dropped at its last reader,
+so every stage-2 program starts below the stage-1 reading, and the entry-based
+form understates its arena by exactly the released buffer. On
+`VirtualTableZisk0_n21` that is the instance's 368 MiB `trace` and on
+`VirtualTableZisk1_n21` its 128 MiB one.
+
+Two conditions. The high-water must have risen across the program —
+`mem_stages.py`'s "peak rose across" names where it did; everywhere else `peak`
+is an older client-lifetime figure and differencing it means nothing. And
+nothing else may allocate in the window, which is `ZZ_PENDING=1`. Where both
+hold, the compile and the run agree to **0–504 bytes** on arenas of one to two
+gigabytes:
+
+| AIR | program | arena (compile) | arena (run) |
+|---|---|---|---|
+| `VirtualTableZisk0_n21` | `const_setup` | 2,176 | 2,176 |
+| `VirtualTableZisk0_n21` | `commit2` | 1,600 | 1,600 |
+| `VirtualTableZisk1_n21` | `const_setup` | 1,936 | 1,936 |
+| `VirtualTableZisk1_n21` | `deep` | 1,632 | 1,632 |
+| `VirtualTableZisk1_n21` | `commit2` | 1,008 | 1,008 |
+
+MiB. Run side from the `cfm-p1` arm (`ZZ_PENDING=1`) of #228's confirmation
+runs, identical across its two; compile side from the dump described above.
+**`Main_n22` has no row in
+that table and cannot have one**: its prove never raises the client high-water
+in that arm, so no allocator reading anywhere bounds its arenas from above.
+Main's figures below are from the compile alone, which is the case for taking
+them that way.
+
+#### Two shapes, and what each would cost to remove
+
+Every arena over 32 MiB in the eleven-AIR workload is one of two shapes.
+
+**The extend (`const_setup`, `commit2`): a full transpose of the input, plus
+the NTT's stage buffers.** The arena is one region exactly the size of the
+program's input, owned by a `wrapped_transpose` whose shape is the input's
+transposed — `u64[88,2097152]` where the section is `[2097152,88]` — plus two to
+four 256 MiB `ntt_pass_fusion` / `loop_reshape_fusion` buffers the passes
+ping-pong between. On these five the two account for the arena exactly:
+
+| AIR | program | arena | transpose (= inputs) | stage buffers |
+|---|---|---|---|---|
+| `VirtualTableZisk0_n21` | `const_setup` | 2,176 | 1,408 | 3 x 256 |
+| `VirtualTableZisk1_n21` | `const_setup` | 1,936 | 1,168 | 3 x 256 |
+| `VirtualTableZisk0_n21` | `commit2` | 1,600 | 576 | 4 x 256 |
+| `Main_n22` | `commit2` | 1,280 | 768 | 2 x 256 |
+| `VirtualTableZisk1_n21` | `commit2` | 1,008 | 240 | 3 x 256 |
+
+`Main_n22`'s `const_setup` is the exception at 256 MiB, because its input is 96
+MiB: with no section worth transposing the stage buffer is the whole arena.
+
+That the parts add up is a fact about these five programs, not a rule. An
+arena is the worst *simultaneous* overlap of its regions, and XLA reuses one
+offset for values whose live ranges do not meet — `fri_fold_0`'s regions have
+maxima summing to 697 MiB inside a 360 MiB arena. Read a region table as a
+layout, and the arena total as the only figure that bounds the device.
+
+**The openings (`deep`, `evals`): N extended-domain columns at once.** The arena
+is a multiple of one cubic column over the extended domain — 192 MiB on the
+n22 AIRs, 96 MiB on the n21s — with N from 7 to 17 of them alive together.
+What indexes N is not established here; it tracks the AIR rather than the
+domain size, since the two n21 AIRs differ. `VirtualTableZisk1_n21`'s `deep` is 17 x 96,
+`VirtualTableZisk0_n21`'s 16 x 96, `Main_n22`'s `evals` 10 x 192.
+`Main_n22`'s `deep` is 2,560 MiB, of which ten columns are 1,920 and the rest
+is smaller regions.
+
+The levers differ. The transpose is one region and one change: whether the NTT
+can read the section in its original layout, or the re-layout can be fused into
+its first pass, is an exporter question, and it is worth the input's size on
+each of the five programs above. The stage buffers are what #191 chunked for
+its predecessor. The openings are not a copy at all — they are N independent
+results held simultaneously, so the lever there is computing them in chunks,
+and it scales with the chunk count rather than removing a fixed region.
+
+#### Main's `fri` cannot give up half a gigabyte, because it does not have it
+
+The unit was framed as sizing a one-change exporter edit at `Main_n22`'s `fri`
+peak. It cannot be: `fri` is not an executable but a stage of fourteen, and the
+largest arena among them is `fri_fold_0`'s **360 MiB** — laid out as a 192 MiB
+`wrapped_transpose`, a 192 MiB `loop_transpose_fusion` and thirteen 24 MiB
+slices, whose partial overlap is what makes 360 rather than their sum — with
+`fri_fold_1` next at 45 MiB and the remaining twelve at or under 32 MiB. They run
+sequentially, so the stage's transient is that maximum and not the 456 MiB sum.
+There is less than half a gigabyte of in-program transient at Main's `fri` to
+recover, whatever the change — which is consistent with the section above,
+where Main's boundary is identical at 6,357 MiB while the run figure moves over
+a 30 MiB range: 30 MiB fits inside a 360 MiB arena, 2.6 GiB does not.
+
+Where half a gigabyte is, and more: the input transpose. It is ≥ 0.5 GiB on
+four of the five extend programs, and on `VirtualTableZisk0_n21`'s `commit2`
+(576 MiB) it sits inside the program the client high-water actually rose across
+in every arm measured so far. `const_setup` on the same AIR has the larger
+transpose at 1,408 MiB, in a 2,176 MiB arena.
+
+Which of the two a fix moves off the *client* peak is a separate question this
+unit does not settle, and the arms on disk cannot: the `plan` arms of #229
+admit by count, so the rise across `const_setup` there has the next instance's
+uploads inside the same window, and the byte cap of #228 was measured on a
+client that keeps every AIR's sections. The stacked configuration is still
+unmeasured — the caution the section above states about its own rows applies
+here too. What is arm-independent is the arena, which is why these figures are
+quoted from the compile.
+
+A fix unit is sized from those two rows. The feasibility question it has to
+answer first is whether the extend can consume the section in its declared
+layout, or fuse the re-layout into the NTT's first pass; this unit did not
+attempt that.

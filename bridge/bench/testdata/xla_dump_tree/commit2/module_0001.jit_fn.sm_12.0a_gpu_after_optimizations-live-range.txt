@@ -1,0 +1,352 @@
+HloLiveRange (max 173):
+  InstructionSequence:
+    0:constant_731_0
+    1:loop_multiply_fusion
+    2:input_concatenate_fusion.2
+    3:input_concatenate_fusion.1
+    4:input_concatenate_fusion
+    5:loop_concatenate_fusion.13
+    6:loop_concatenate_fusion.12
+    7:loop_concatenate_fusion.11
+    8:loop_concatenate_fusion.10
+    9:loop_concatenate_fusion.9
+    10:loop_concatenate_fusion.8
+    11:loop_concatenate_fusion.7
+    12:loop_concatenate_fusion.6
+    13:loop_concatenate_fusion.5
+    14:loop_concatenate_fusion.4
+    15:loop_concatenate_fusion.3
+    16:loop_concatenate_fusion.2
+    17:loop_concatenate_fusion.1
+    18:loop_concatenate_fusion
+    19:loop_multiply_fusion.1
+    20:loop_reshape_fusion.1
+    21:loop_broadcast_fusion
+    22:Arg_0.79
+    23:wrapped_transpose
+    24:bitcast.126.0
+    25:tuple.10.0
+    26:get-tuple-element.50.0
+    27:loop_reshape_fusion.6
+    28:constant_737
+    29:ntt_pass_fusion
+    30:constant_738
+    31:ntt_pass_fusion.1
+    32:loop_reshape_fusion.5
+    33:constant_739
+    34:ntt_pass_fusion.2
+    35:constant_740
+    36:ntt_pass_fusion.3
+    37:input_transpose_fusion.3
+    38:get-tuple-element.51.0
+    39:loop_dynamic_update_slice_fusion.1
+    40:tuple.11.0
+    41:get-tuple-element.52.0
+    42:loop_reshape_fusion.7
+    43:constant_741
+    44:ntt_pass_fusion.4
+    45:constant_742
+    46:ntt_pass_fusion.5
+    47:loop_reshape_fusion.4
+    48:constant_743
+    49:ntt_pass_fusion.6
+    50:constant_744
+    51:ntt_pass_fusion.7
+    52:input_transpose_fusion.2
+    53:get-tuple-element.53.0
+    54:loop_dynamic_update_slice_fusion.2
+    55:tuple.12.0
+    56:get-tuple-element.54.0
+    57:loop_reshape_fusion.8
+    58:constant_745
+    59:ntt_pass_fusion.8
+    60:constant_746
+    61:ntt_pass_fusion.9
+    62:loop_reshape_fusion.3
+    63:loop_reshape_fusion
+    64:constant_747
+    65:ntt_pass_fusion.10
+    66:constant_748
+    67:ntt_pass_fusion.11
+    68:input_transpose_fusion.1
+    69:get-tuple-element.55.0
+    70:loop_dynamic_update_slice_fusion.3
+    71:tuple.13.0
+    72:get-tuple-element.56.0
+    73:loop_reshape_fusion.9
+    74:constant_749
+    75:ntt_pass_fusion.12
+    76:constant_750
+    77:ntt_pass_fusion.13
+    78:loop_reshape_fusion.2
+    79:constant_751
+    80:ntt_pass_fusion.14
+    81:constant_752
+    82:ntt_pass_fusion.15
+    83:input_transpose_fusion
+    84:get-tuple-element.57.0
+    85:loop_dynamic_update_slice_fusion.4
+    86:tuple.14.0
+    87:get-tuple-element.58.0
+    88:loop_reshape_fusion.12
+    89:constant_753
+    90:ntt_pass_fusion.16
+    91:constant_754
+    92:ntt_pass_fusion.17
+    93:loop_reshape_fusion.10
+    94:loop_reshape_fusion.11
+    95:constant_755
+    96:ntt_pass_fusion.18
+    97:constant_756
+    98:ntt_pass_fusion.19
+    99:get-tuple-element.59.0
+    100:loop_dynamic_update_slice_fusion
+    101:bitcast.2.0
+    102:constant_20_0
+    103:constant_22_0
+    104:constant_732_0
+    105:constant_733_0
+    106:constant_734_0
+    107:constant_735_0
+    108:constant_736_0
+    109:sponge_hash.1
+    110:sparse_poseidon.11
+    111:loop_slice_fusion.10
+    112:bitcast.6.0
+    113:sparse_poseidon.12
+    114:loop_slice_fusion.9
+    115:bitcast.8.0
+    116:sparse_poseidon.13
+    117:loop_slice_fusion.8
+    118:bitcast.10.0
+    119:sparse_poseidon.14
+    120:loop_slice_fusion.7
+    121:bitcast.12.0
+    122:sparse_poseidon.15
+    123:loop_slice_fusion.6
+    124:bitcast.14.0
+    125:sparse_poseidon.16
+    126:loop_slice_fusion.5
+    127:bitcast.16.0
+    128:sparse_poseidon.17
+    129:loop_slice_fusion.4
+    130:bitcast.18.0
+    131:sparse_poseidon.18
+    132:loop_slice_fusion.3
+    133:bitcast.20.0
+    134:sparse_poseidon.19
+    135:loop_slice_fusion.2
+    136:bitcast.22.0
+    137:sparse_poseidon.20
+    138:loop_slice_fusion.1
+    139:bitcast.24.0
+    140:sparse_poseidon.21
+    141:loop_slice_fusion
+    142:bitcast.79.0
+    143:bitcast.26.0
+    144:bitcast.93.0
+    145:bitcast.92.0
+    146:bitcast.91.0
+    147:bitcast.90.0
+    148:bitcast.89.0
+    149:bitcast.88.0
+    150:bitcast.87.0
+    151:bitcast.86.0
+    152:bitcast.85.0
+    153:bitcast.84.0
+    154:bitcast.27.0
+    155:bitcast.81.0
+    156:tuple.100
+    157:get-tuple-element.265
+    158:get-tuple-element.266
+    159:get-tuple-element.267
+    160:get-tuple-element.268
+    161:get-tuple-element.269
+    162:get-tuple-element.270
+    163:get-tuple-element.271
+    164:get-tuple-element.272
+    165:get-tuple-element.273
+    166:get-tuple-element.274
+    167:get-tuple-element.275
+    168:get-tuple-element.276
+    169:get-tuple-element.277
+    170:get-tuple-element.278
+    171:copy.12
+    172:tuple.101
+  BufferLiveRange:
+    Arg_0.79{}:0-173
+    wrapped_transpose{}:23-88
+    loop_broadcast_fusion{}:21-39
+    tuple.10.0{}:25-38
+    loop_reshape_fusion.6{}:27-29
+    constant_737{}:28-29
+    ntt_pass_fusion{}:29-31
+    constant_738{}:30-31
+    ntt_pass_fusion.1{}:31-32
+    loop_reshape_fusion.5{}:32-34
+    constant_739{}:33-34
+    constant_731_0{}:0-19
+    loop_multiply_fusion{}:1-94
+    input_concatenate_fusion.2{}:2-94
+    input_concatenate_fusion.1{}:3-94
+    input_concatenate_fusion{}:4-94
+    loop_concatenate_fusion.13{}:5-94
+    loop_concatenate_fusion.12{}:6-94
+    loop_concatenate_fusion.11{}:7-94
+    loop_concatenate_fusion.10{}:8-94
+    loop_concatenate_fusion.9{}:9-94
+    loop_concatenate_fusion.8{}:10-94
+    loop_concatenate_fusion.7{}:11-94
+    loop_concatenate_fusion.6{}:12-94
+    loop_concatenate_fusion.5{}:13-94
+    loop_concatenate_fusion.4{}:14-94
+    loop_concatenate_fusion.3{}:15-94
+    loop_concatenate_fusion.2{}:16-94
+    loop_concatenate_fusion.1{}:17-94
+    loop_concatenate_fusion{}:18-94
+    loop_multiply_fusion.1{}:19-94
+    loop_reshape_fusion.1{}:20-80
+    ntt_pass_fusion.2{}:34-36
+    constant_740{}:35-36
+    ntt_pass_fusion.3{}:36-37
+    input_transpose_fusion.3{}:37-39
+    loop_dynamic_update_slice_fusion.1{}:39-54
+    tuple.11.0{}:40-53
+    loop_reshape_fusion.7{}:42-44
+    constant_741{}:43-44
+    ntt_pass_fusion.4{}:44-46
+    constant_742{}:45-46
+    ntt_pass_fusion.5{}:46-47
+    loop_reshape_fusion.4{}:47-49
+    constant_743{}:48-49
+    ntt_pass_fusion.6{}:49-51
+    constant_744{}:50-51
+    ntt_pass_fusion.7{}:51-52
+    input_transpose_fusion.2{}:52-54
+    loop_dynamic_update_slice_fusion.2{}:54-70
+    tuple.12.0{}:55-69
+    loop_reshape_fusion.8{}:57-59
+    constant_745{}:58-59
+    ntt_pass_fusion.8{}:59-61
+    constant_746{}:60-61
+    ntt_pass_fusion.9{}:61-62
+    loop_reshape_fusion.3{}:62-65
+    constant_747{}:64-65
+    loop_reshape_fusion{}:63-65
+    ntt_pass_fusion.10{}:65-67
+    constant_748{}:66-67
+    ntt_pass_fusion.11{}:67-68
+    input_transpose_fusion.1{}:68-70
+    loop_dynamic_update_slice_fusion.3{}:70-85
+    tuple.13.0{}:71-84
+    loop_reshape_fusion.9{}:73-75
+    constant_749{}:74-75
+    ntt_pass_fusion.12{}:75-77
+    constant_750{}:76-77
+    ntt_pass_fusion.13{}:77-78
+    loop_reshape_fusion.2{}:78-80
+    constant_751{}:79-80
+    ntt_pass_fusion.14{}:80-82
+    constant_752{}:81-82
+    ntt_pass_fusion.15{}:82-83
+    input_transpose_fusion{}:83-85
+    loop_dynamic_update_slice_fusion.4{}:85-100
+    tuple.14.0{}:86-99
+    loop_reshape_fusion.12{}:88-90
+    constant_753{}:89-90
+    ntt_pass_fusion.16{}:90-92
+    constant_754{}:91-92
+    ntt_pass_fusion.17{}:92-93
+    loop_reshape_fusion.10{}:93-96
+    constant_755{}:95-96
+    loop_reshape_fusion.11{}:94-96
+    ntt_pass_fusion.18{}:96-98
+    constant_756{}:97-98
+    ntt_pass_fusion.19{}:98-100
+    loop_dynamic_update_slice_fusion{}:100-173
+    constant_732_0{}:104-140
+    constant_733_0{}:105-140
+    constant_734_0{}:106-140
+    constant_735_0{}:107-140
+    constant_736_0{}:108-140
+    constant_20_0{}:102-109
+    constant_22_0{}:103-109
+    sponge_hash.1{}:109-173
+    sparse_poseidon.11{}:110-111
+    loop_slice_fusion.10{}:111-173
+    sparse_poseidon.12{}:113-114
+    loop_slice_fusion.9{}:114-173
+    sparse_poseidon.13{}:116-117
+    loop_slice_fusion.8{}:117-173
+    sparse_poseidon.14{}:119-120
+    loop_slice_fusion.7{}:120-173
+    sparse_poseidon.15{}:122-123
+    loop_slice_fusion.6{}:123-173
+    sparse_poseidon.16{}:125-126
+    loop_slice_fusion.5{}:126-173
+    sparse_poseidon.17{}:128-129
+    loop_slice_fusion.4{}:129-173
+    sparse_poseidon.18{}:131-132
+    loop_slice_fusion.3{}:132-173
+    sparse_poseidon.19{}:134-135
+    loop_slice_fusion.2{}:135-173
+    sparse_poseidon.20{}:137-138
+    loop_slice_fusion.1{}:138-173
+    sparse_poseidon.21{}:140-141
+    loop_slice_fusion{}:141-173
+    tuple.100{}:156-170
+    copy.12{}:171-173
+    tuple.101{}:172-173
+  Live ranges at 39 (peak):
+    loop_broadcast_fusion{}: 1207959552 bytes (cumulative: 1207959552 bytes)
+    loop_dynamic_update_slice_fusion.1{}: 1207959552 bytes (cumulative: 2415919104 bytes)
+    Arg_0.79{}: 603979776 bytes (cumulative: 3019898880 bytes)
+    wrapped_transpose{}: 603979776 bytes (cumulative: 3623878656 bytes)
+    input_transpose_fusion.3{}: 268435456 bytes (cumulative: 3892314112 bytes)
+    loop_reshape_fusion.1{}: 268435456 bytes (cumulative: 4160749568 bytes)
+    loop_concatenate_fusion{}: 1048576 bytes (cumulative: 4161798144 bytes)
+    loop_concatenate_fusion.1{}: 524288 bytes (cumulative: 4162322432 bytes)
+    loop_concatenate_fusion.2{}: 262144 bytes (cumulative: 4162584576 bytes)
+    loop_concatenate_fusion.3{}: 131072 bytes (cumulative: 4162715648 bytes)
+    loop_concatenate_fusion.4{}: 65536 bytes (cumulative: 4162781184 bytes)
+    loop_concatenate_fusion.5{}: 32768 bytes (cumulative: 4162813952 bytes)
+    loop_concatenate_fusion.6{}: 16384 bytes (cumulative: 4162830336 bytes)
+    loop_concatenate_fusion.7{}: 8192 bytes (cumulative: 4162838528 bytes)
+    loop_concatenate_fusion.8{}: 4096 bytes (cumulative: 4162842624 bytes)
+    loop_concatenate_fusion.9{}: 2048 bytes (cumulative: 4162844672 bytes)
+    loop_concatenate_fusion.10{}: 1024 bytes (cumulative: 4162845696 bytes)
+    loop_concatenate_fusion.11{}: 512 bytes (cumulative: 4162846208 bytes)
+    loop_concatenate_fusion.12{}: 256 bytes (cumulative: 4162846464 bytes)
+    loop_concatenate_fusion.13{}: 128 bytes (cumulative: 4162846592 bytes)
+    input_concatenate_fusion{}: 64 bytes (cumulative: 4162846656 bytes)
+    input_concatenate_fusion.1{}: 32 bytes (cumulative: 4162846688 bytes)
+    input_concatenate_fusion.2{}: 16 bytes (cumulative: 4162846704 bytes)
+    loop_multiply_fusion{}: 8 bytes (cumulative: 4162846712 bytes)
+    loop_multiply_fusion.1{}: 8 bytes (cumulative: 4162846720 bytes)
+  Stack trace breakdown for peak usage: 4 162 846 720 bytes
+    main.42 (100.0%, total: 4 162 846 720 bytes, current: 0 bytes, remaining: 4 162 846 720 bytes)
+      ├── loop_broadcast_fusion (29.0%, total: 1 207 959 552 bytes, current: 1 207 959 552 bytes, remaining: 2 954 887 168 bytes)
+      ├── loop_dynamic_update_slice_fusion.1 (29.0%, total: 1 207 959 552 bytes, current: 1 207 959 552 bytes, remaining: 1 746 927 616 bytes)
+      ├── Arg_0.79 (14.5%, total: 603 979 776 bytes, current: 603 979 776 bytes, remaining: 1 142 947 840 bytes)
+      ├── wrapped_transpose (14.5%, total: 603 979 776 bytes, current: 603 979 776 bytes, remaining: 538 968 064 bytes)
+      ├── input_transpose_fusion.3 (6.4%, total: 268 435 456 bytes, current: 268 435 456 bytes, remaining: 270 532 608 bytes)
+      ├── loop_reshape_fusion.1 (6.4%, total: 268 435 456 bytes, current: 268 435 456 bytes, remaining: 2 097 152 bytes)
+      ├── loop_concatenate_fusion (0.0%, total: 1 048 576 bytes, current: 1 048 576 bytes, remaining: 1 048 576 bytes)
+      ├── loop_concatenate_fusion.1 (0.0%, total: 524 288 bytes, current: 524 288 bytes, remaining: 524 288 bytes)
+      ├── loop_concatenate_fusion.2 (0.0%, total: 262 144 bytes, current: 262 144 bytes, remaining: 262 144 bytes)
+      ├── loop_concatenate_fusion.3 (0.0%, total: 131 072 bytes, current: 131 072 bytes, remaining: 131 072 bytes)
+      ├── loop_concatenate_fusion.4 (0.0%, total: 65 536 bytes, current: 65 536 bytes, remaining: 65 536 bytes)
+      ├── loop_concatenate_fusion.5 (0.0%, total: 32 768 bytes, current: 32 768 bytes, remaining: 32 768 bytes)
+      ├── loop_concatenate_fusion.6 (0.0%, total: 16 384 bytes, current: 16 384 bytes, remaining: 16 384 bytes)
+      ├── loop_concatenate_fusion.7 (0.0%, total: 8 192 bytes, current: 8 192 bytes, remaining: 8 192 bytes)
+      ├── loop_concatenate_fusion.8 (0.0%, total: 4 096 bytes, current: 4 096 bytes, remaining: 4 096 bytes)
+      ├── loop_concatenate_fusion.9 (0.0%, total: 2 048 bytes, current: 2 048 bytes, remaining: 2 048 bytes)
+      ├── loop_concatenate_fusion.10 (0.0%, total: 1 024 bytes, current: 1 024 bytes, remaining: 1 024 bytes)
+      ├── loop_concatenate_fusion.11 (0.0%, total: 512 bytes, current: 512 bytes, remaining: 512 bytes)
+      ├── loop_concatenate_fusion.12 (0.0%, total: 256 bytes, current: 256 bytes, remaining: 256 bytes)
+      ├── loop_concatenate_fusion.13 (0.0%, total: 128 bytes, current: 128 bytes, remaining: 128 bytes)
+      ├── input_concatenate_fusion (0.0%, total: 64 bytes, current: 64 bytes, remaining: 64 bytes)
+      ├── input_concatenate_fusion.1 (0.0%, total: 32 bytes, current: 32 bytes, remaining: 32 bytes)
+      ├── input_concatenate_fusion.2 (0.0%, total: 16 bytes, current: 16 bytes, remaining: 16 bytes)
+      ├── loop_multiply_fusion (0.0%, total: 8 bytes, current: 8 bytes, remaining: 8 bytes)
+      └── loop_multiply_fusion.1 (0.0%, total: 8 bytes, current: 8 bytes, remaining: 0 bytes)
