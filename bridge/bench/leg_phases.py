@@ -2,7 +2,7 @@
 """The inner-proof leg's structure out of a `cargo-zisk prove -vv` run log:
 the wall the basic proofs occupied, the wall the recursion occupied, and how
 much of the leg neither of them explains. This is where the phase walls in
-docs/bridge.md "The gap is the basic phase's wall" come from, so a native and
+docs/bridge.md "What the measurements settled" come from, so a native and
 a bridged run can be compared by the shape of their legs and not only by the
 one number at the end.
 

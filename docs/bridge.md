@@ -76,7 +76,7 @@ export ZZ_LOG=1
 # worth 0.48 s of this leg, but that was before fractalyze/xla#698 moved the
 # same work into the plugin's own module load: the leg now reaches its old
 # EAGER ceiling with the variable unset, and what it adds on top is unmeasured.
-# See "The plugin materializes the kernels now". If you do set it, set it in
+# See "The module-loading knobs". If you do set it, set it in
 # the environment -- the driver reads it at initialization and pil2 has
 # initialized CUDA before any bridge client exists, so the bridge cannot.
 
@@ -109,7 +109,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_DUMP_PROOFS` | (fork) write every basic proof as raw words into this directory | off |
 | `ZZ_DUMP_INPUTS` | write each instance as a `zz_prove` case directory under this one | off |
 | `ZZ_DUMP_TRACES` | (fork) write each host trace as `gen_proof` receives it | off |
-| `CUDA_MODULE_LOADING` | the CUDA driver's, not the bridge's: `EAGER` puts a module's kernel code on the device as it loads, process-wide. It was what made `ZZ_EAGER_MODULES` pay until fractalyze/xla#698 gave the plugin its own way to do the same thing for the bridge's executables alone — `ZZ_EAGER_MODULES` is now worth 6.167 → 5.517 s with this unset | driver default `LAZY` |
+| `CUDA_MODULE_LOADING` | the CUDA driver's, not the bridge's: `EAGER` puts a module's kernel code on the device as it loads, process-wide. It was what made `ZZ_EAGER_MODULES` pay until fractalyze/xla#698 gave the plugin its own way to do the same thing for the bridge's executables alone — see "The module-loading knobs" for what the pair is worth and why a scoped option is the durable form | driver default `LAZY` |
 
 ## Profiling
 
@@ -183,1136 +183,226 @@ carrying all of them. `pil2_timers.py` is per instance, and its rows are per
 air: a row carries the `x<n>` instances it sums and their average, because a
 workload runs several instances of the same air.
 
-### Where the leg's idle goes
-
-The per-program table above says what the device *did*; on the hello-world
-guest it is busy for under half the bridge's leg, so the larger question is
-what the host was doing for the rest. The bridge opens a second family of
-NVTX ranges, prefixed `host/`, one per step of `Bridge::take`, `prove_owned`
-and the schedule in `AirDriver::prove`; `host_idle.py` charges every idle
-nanosecond of the leg to the phase that was running.
-
-Only the prove *holding the client* can explain the idle. The bridge proves
-one instance at a time per client but gives every instance a thread, so a
-dozen threads are alive and all but one are queued: a queued thread's
-`host/admit` and `host/slot_wait` cover almost the whole leg by construction
-and are waits, not costs. So the report splits the idle at a prove's turn —
-from where its thread leaves `host/slot_wait` holding the slot mutex to the
-end of its `host/prove` — and reports what the other threads were doing
-separately, as overlapping rather than additive.
-
-```bash
-# A whole run, both provers on the card. The bridge must be built with the
-# feature ON inside the proofman build, which the fork does not expose: add
-# `default = ["nvtx"]` to the [features] of the bridge that zisk's Cargo.toml
-# [patch] points at, build cargo-zisk, and take it out again afterwards.
-nsys profile --cuda-graph-trace=node -t cuda,nvtx --sample=none --cpuctxsw=none \
-    -o run cargo-zisk prove -e guest.elf -k $PK -g -y -o proof -vv
-nsys stats --report cuda_gpu_trace --report nvtx_pushpop_trace \
-    --report cuda_api_trace --format csv -o s run.nsys-rep
-bench/host_idle.py s_cuda_gpu_trace.csv s_nvtx_pushpop_trace.csv \
-    s_cuda_api_trace.csv
-```
-
-The third CSV is optional and cuts the same idle a second way: which CUDA
-driver call the holding thread was inside. The phase cut says which step of a
-prove starved the device; this one says what the driver was doing there, and
-the two are answers about the same nanoseconds rather than separate budgets.
-`-t cuda` already collects it, so an existing capture can be re-exported
-without re-running anything.
-
-`--minus-call <name>` crosses the two, reporting what each phase keeps once
-that driver call leaves the prove path. It is how a bridge-side lever is
-sized against a bump that is already coming: with
-`--minus-call cuGraphInstantiateWithFlags` the leg's largest phase rows on
-hello-world (`lev`, the quotient chunks) fall to milliseconds, because they
-were graph instantiation wearing a phase's name. It needs the API CSV and
-refuses a name no call in the capture carries — subtracting nothing prints the
-phase column back unchanged, which reads as "that call is free" rather than
-"that is not its name". A call the capture *does* carry but which never ran
-while the device starved is a real answer, and the report says so on the
-header rather than leaving two identical tables to tell apart.
-
-`--sample=none --cpuctxsw=none` is not optional here either: with CPU
-sampling on, nsys 2026.1.3 collects a run this size and then deadlocks in
-report generation. Set `ZZ_CLIENTS=1` by hand when wrapping the binary
-directly — the bridge's own default is 3, and three clients splitting one
-`ZZ_MEMORY_FRACTION` land under a client's floor and abort mid-prove.
-
-Two things about reading the result, both learned by getting them wrong.
-
-**Quote the share of the *leg*, not of the idle.** The two denominators
-differ by about 2x, and the milestone's criterion is wall time. The same
-`cuModuleLoadFatBinary`, on the two workloads measured 2026-09-09: on the
-hello-world guest 1.53-1.60 s, which is 53-56 % of that leg's idle but
-28-29 % of the leg itself (1.9x); on the block-shaped `sha-hasher` mix
-2.94 s, 34 % of the idle and 15 % of the leg (2.25x). One number, two
-denominators — and the leg is the one that decides anything.
-
-**Module loads are once per (AIR, program) pair, not per execution and not
-per instance.** A program that runs four times in a prove loads once, and
-every later instance of an AIR already seen loads nothing — measured on the
-block-shaped workload, where 16 of 38 proves load a full program set and the
-other 22 load zero. Eviction does not undo it: a module lives in the CUDA
-context, and `ZZ_RESIDENT_AIRS` only drops device buffers. So this cost
-scales with how many *families* a workload touches, and a guest whose
-instances are all distinct AIRs — hello-world — is its worst case and a bad
-place to size it from. Per-load cost is not constant either (~4.2 ms on
-hello-world against ~5.5 ms on the block-shaped mix, over the calls that
-contributed idle — not over every load made), so scaling by program
-count alone under-predicts.
-
-Cross-check any figure this produces against `ZZ_LOG=2`, which prints each
-`Artifact::run`'s enqueue time from the bridge's own clock with no profiler
-attached; on the 2026-09-09 runs the two agreed to within 8 % (3.448 s of
-enqueue summed, against 3.457-3.731 s of NVTX range time under nsys), which
-is what says the dispatch cost is real and not an artifact of tracing.
-
-### The module-loading mode decides where the first-execution cost lands
-
-`cuModuleLoadFatBinary` and `cuGraphInstantiateWithFlags` are not two costs.
-They are one piece of first-execution work, and which of them pays depends on
-the CUDA driver's module-loading mode.
-
-CUDA 12 defaults `CUDA_MODULE_LOADING` to `LAZY`, under which loading a module
-only registers its fatbin: each kernel's code reaches the device when something
-first references it, and for the bridge that reference is the
-`cuGraphInstantiateWithFlags` building a program's graph inside the prove slot.
-So `eager_load_executable_modules` (#176) moves the registration to preload and
-leaves the code load on the prove path. Under the profiler (2026-09-09, two
-capture pairs, the bump-jax binary) enabling it took `cuModuleLoadFatBinary`
-from 1.45-1.51 s to zero inside the leg and took `cuGraphInstantiateWithFlags`
-from 0.06-0.12 s to 1.16-1.33 s, which moved the leg 5.10-5.11 s to
-4.94-5.04 s — 2.3 %.
-
-Unprofiled and interleaved (the arms below, five passes on `main`) the same
-flag moves the leg 5.77 s to 5.72 s, 0.9 %, with the ranges overlapping. Take
-that as the better-controlled figure and the 2.3 % as its profiled upper
-bound: the flag's own effect on the leg is at most ~2 % and this design cannot
-tell it from zero. What #176 bought is real but it is the driver-call
-bookkeeping, not the leg.
-
-`CUDA_MODULE_LOADING=EAGER` makes the driver do both at load time, which
-`ZZ_PRELOAD` has already put off the prove path. Measured 2026-09-09 on one
-binary, arms interleaved, five passes each on hello-world and six on the
-block-shaped mix:
-
-| arm | hello-world leg | block-shaped leg |
-|---|---|---|
-| `ZZ_EAGER_MODULES=0` | 5.77 s | 19.71 s |
-| `=1` | 5.72 s | 19.61 s |
-| `=1` + `CUDA_MODULE_LOADING=EAGER` | 5.24 s | 18.53 s |
-| `=0` + `CUDA_MODULE_LOADING=EAGER` | 5.71 s | — |
-
-Byte-gate green on every run gated — a sample of the sweep, not all of it: on
-hello-world, passes 1/3/5 of each arm, 12 of the 20 runs, at 11 of 11 native
-dumps each; on the block-shaped mix, passes 1/2/3 of the three arms that ran it
-(`ZZ_EAGER_MODULES=0`, `=1`, and `=1` + `CUDA_MODULE_LOADING=EAGER`), nine of
-the 18, at 38 of 38 — except one `ZZ_EAGER_MODULES=0` pass that aborted
-mid-proof and matched on the seven dumps it had written. That abort is also
-why the block-shaped `ZZ_EAGER_MODULES=0` leg above is a mean over five passes;
-the other two arms have all six.
-
-**The two knobs are only worth anything together.** The last row is the whole
-argument: the driver variable with lazy executable loading buys nothing,
-because there is no earlier place for the code load to go. Paired with the
-preload it returns 0.48 s of the hello-world leg (8.4 %) and 1.08 s of the
-block-shaped one (5.5 %), with graph instantiation dropping 1.32 s to 0.56 s
-over a whole run.
-
-That last row does a second job. `CUDA_MODULE_LOADING` is process-wide, so the
-0.48 s arm also changed how pil2 loads its own modules, and a plugin-side
-option scoped to the bridge's executables would not. The `=0` + `EAGER` arm is
-what bounds that share: with the bridge's executables loading lazily, the
-variable moves the leg 5.77 s to 5.71 s with the ranges overlapping. So at most
-~0.06 s of the 0.48 s belongs to everything that is not a bridge executable,
-and a scoped change should expect ~0.42-0.48 s rather than the whole of it.
-
-Read the two shares the way the difference implies rather than picking one:
-first-execution cost is paid once per (AIR, program) pair however many
-instances follow, so the *share* falls as instances per AIR rise and the
-*absolute* figure travels. 5.5 % is an upper bound for block-shaped work, not
-a constant; 1.08 s is the portable number.
-
-**The bridge cannot set this itself.** The driver reads the variable when it
-initializes, and pil2 has initialized CUDA before any bridge client exists:
-setting it in `artifact::new_session` was measured as a no-op (leg 5.65 s
-against 5.17 s for the same binary with the variable set in the environment,
-four interleaved passes each). It has to be set before the process starts, or
-the plugin has to materialize the kernels itself after loading a module —
-which is where the durable fix belongs: beside `eager_load_executable_modules`,
-scoped to the executables loaded through it rather than to every module the
-process loads.
-
-### The plugin materializes the kernels now, and it is worth what the bound said
-
-[fractalyze/xla#698](https://github.com/fractalyze/xla/pull/698) made
-`eager_load_executable_modules` enumerate an executable's kernels and load each
-one (`cuModuleEnumerateFunctions` + `cuFuncLoad`, CUDA ≥ 12.3), so the code
-load happens where the module load already does rather than at first
-reference. Measured on the wheel that carries it, five arms interleaved pass by
-pass, four passes each, one binary and one artifacts directory with both plugin
-builds warm. Four of the arms are the module-loading question; the fifth is the
-staging threshold, and it has its own section below:
-
-| arm | | leg, median | sd |
-|---|---|---|---|
-| `old` | the previous wheel, eager module loads on | 5.970 s | 0.087 |
-| `oldctl` | + `CUDA_MODULE_LOADING=EAGER` | 5.675 s | 0.307 |
-| `newoff` | this wheel, eager module loads **off** | 6.167 s | 0.018 |
-| `new` | this wheel, eager module loads on | **5.517 s** | 0.240 |
-| `newstg` | this wheel, eager on + staging at 2 GiB | 5.986 s | 0.262 |
-
-The short names are this page's handle for these five arms; sections below
-cite them.
-
-**−0.453 s**, against the ~0.42–0.48 s the `=0` + `EAGER` arm above bounds it
-at. The scoped change reaches the process-wide variable's ceiling — `oldctl`
-and `new` overlap — without changing how pil2 loads its own modules.
-
-The driver calls say the same thing directly. Over one capture per arm,
-`cuGraphInstantiateWithFlags` falls **1.457 s → 0.359 s** across the same 245
-calls, `cuFuncLoad` appears where it did not exist (0 → 6140 calls, 0.162 s),
-and `cuModuleLoadFatBinary` is unchanged at 0.21–0.23 s over 369 calls —
-that one was already moved by
-[#664](https://github.com/fractalyze/xla/pull/664). So the first-execution work
-is not removed, it is relocated a second time: out of the prove's
-`cuGraphInstantiateWithFlags` and into the load, which `ZZ_PRELOAD` has already
-put off the prove path.
-
-Note what this does to the knob's history. The same
-`ZZ_EAGER_MODULES=0 → 1` that was worth 5.77 → 5.72 s (null) before #698 is
-worth 6.167 → 5.517 s after it. The flag was never the lever; it was the
-place to put one.
-
-### Staging the big uploads is a faster copy and a slower leg
-
-The same wheel carries
-[fractalyze/xla#718](https://github.com/fractalyze/xla/pull/718), which turns
-the plugin's 1 GiB host-to-device staging cutoff into the
-`staging_threshold_bytes` create option. The bridge's four largest uploads sit
-above that cutoff, so they were being DMA'd out of pageable memory; setting the
-option above them (`ZZ_STAGING_THRESHOLD`) moves them onto the pinned path, and
-it does exactly that:
-
-| one capture each | option off | option at 2 GiB |
-|---|---|---|
-| bridge uploads, pageable | 1205 copies, 5.29 GB at 11.1 GB/s | 1201 copies, 0.01 GB at 11.3 GB/s |
-| bridge uploads, pinned | 356 copies, 4.46 GB at 43.0 GB/s | 360 copies, 9.75 GB at 46.4 GB/s |
-| the four over 1 GiB | 105, 73, 66, 234 ms — all pageable | 26, 23, 30, 28 ms — all pinned |
-| upload time inside the leg | 0.31 s | 0.12 s |
-
-**And the leg gets worse by 0.469 s** (5.517 s → 5.986 s, four interleaved
-passes each — the `new` and `newstg` arms of the same sweep). The pinned pool
-has to grow to hold a 1.4 GB transfer and pays for it inside the prove:
-`cuMemHostAlloc` goes from 0.258 s over 16 calls to 1.071 s over 17. One
-allocation costs more than every faster copy returns, because this guest
-uploads each large section once.
-
-So the option ships **off**. A workload that uploads the same large section
-repeatedly would amortize the pool growth this one cannot — the block-shaped
-mix is where that would show, and it is unmeasured, which is why the knob
-exists and why its default is the case that was measured.
-
-Two traps for anyone re-running this. The pageable copy *count* barely moves
-(1205 → 1201): those are sub-megabyte XLA runtime internals on the compute
-stream, not the bridge's uploads, so read the bytes and the rate, not the
-count. And `bench/h2d_overlap.py` is the instrument — it attributes by stream
-and reports `SrcMemKd`; a hand-rolled filter on `nsys_trace.owner()` gives
-`bridge` for both provers' copies, because `owner()` keys on `(` in the name
-and no memcpy row has one.
-
-A caveat for anyone sizing a lever off a per-program table. Across three
-captures of one arm (`ZZ_EAGER_MODULES=1`), a program's instantiate cost moves
-by more than most levers are worth: `fri_fold_0` 0.004 / 0.181 / 0.002 s,
-`deep` 0.106 / 0.108 / 0.002 s, `quotient_1048576` 0.490 / 0.387 / 0.275 s.
-The third capture is a different binary, which accounts for some of `deep`'s
-spread but not `fri_fold_0`'s — that one moves 0.18 s between two captures of
-one arm on one binary. So per-program attribution from a single capture
-supports claims above roughly **0.2 s** and nothing below, and two captures of
-one arm is the cheapest way to confirm that floor before trusting a table.
-
-### A phase's share of the idle is where the device waits, not what for (2026-09-10)
-
-The report above charges every idle nanosecond to the host phase that was
-running. That is an exact split, and it is still not a list of levers: twice
-now, a change that removed a large share outright has left the leg where it
-was, because the cost re-appeared in the phase next door.
-
-Measured on the hello-world guest with `ZZ_EAGER_MODULES=1`, one binary per
-arm, arms interleaved pass by pass so run order cannot favour one, leg from
-proofman's `GENERATING_INNER_PROOFS`:
-
-| arm | what it removes | leg, mean [min-max] |
-|---|---|---|
-| baseline | — | 5963 ms [5818-6121] |
-| `FIXED_AHEAD = 0` | the fixed-section read-ahead, so every upload is under the slot | 6047 ms [5886-6210] |
-| `constants` shared per program | 9 of 11 runs of `constants` | 6010 ms [5820-6198] |
-
-> Read these against each other, not against the 5.72 s the `=1` arm shows
-> above: that table is another session's, and the absolute leg and init on
-> this host are not reproducible across sessions. 39 runs over two of them
-> failed to explain the level — run order moved init 0.57 s in one session and
-> nothing in another, and two same-binary populations ten minutes apart
-> differed by 1.18 s. Every arm here is interleaved against the baseline beside
-> it, minutes apart, which is what makes the comparison sound while the level
-> is not. Take a baseline in your own session and never quote a cross-session
-> delta.
-
-Both arms are nulls, and the phase table says why. Dropping the read-ahead
-grows `host/fixed_install` (0.37-0.50 s to 0.62-0.89 s) and shrinks `constants`
-(0.46-0.77 s to 0.32-0.64 s); sharing `constants` takes its row to zero and
-grows `host/fixed_install` to 0.74-0.90 s with `const_setup` and `commit1`
-taking the rest. The sum over the fixed-section install — `constants`,
-`host/fixed_install`, `const_setup`, `custom_setup_*` — is what stays put. It
-is one quantity, and which phase is holding the bag when the device starves is
-not a property of the bridge's scheduling.
-
-This is the same shape as the module-load result above, where moving the loads
-off the prove path re-priced them into `cuGraphInstantiateWithFlags` instead of
-recovering them, and it is why the report's own header calls a phase's share an
-upper bound on what removing it returns.
-
-**So run a positive control before believing a null on this leg.**
-`CUDA_MODULE_LOADING=EAGER` is the one to use: same binary, an environment
-variable, no build, and an effect of the size most bridge-side levers are
-sized at. Five interleaved passes each on the arms above's baseline binary:
-
-| arm | leg, mean [min-max] |
-|---|---|
-| unset (the driver's `LAZY` default) | 6099 ms [5987-6219] |
-| `CUDA_MODULE_LOADING=EAGER` | 5510 ms [5264-5690] |
-
-0.59 s apart with the ranges disjoint, which is what says a 0.4-0.6 s effect
-would have shown in the table above had one been there. A null quoted without
-a control like this says only that the harness did not see anything.
-
-**Why neither removal recovered anything.** The same three captures answer it,
-because `nsys` sees more than kernels. Splitting each phase's idle by whether
-the device was moving bytes or doing nothing at all — counting only the
-*bridge's* copies, which under `cargo-zisk` means the ones PJRT issues through
-the CUDA driver API, since pil2 shares the process and owns more of the
-traffic than we do — the fixed-section install (`constants` +
-`host/fixed_install` + `const_setup` + `custom_setup_*`) is 0.93-1.51 s of
-idle, of which only 0.27-0.35 s is host-to-device transfer: **71-77 % is dead
-device time, no kernel and no copy.** The bridge's whole H2D is 9.75 GB a run
-("The uploads, measured" below), and its upload calls cost exactly their DMA
-(`const_base` 1408 MB in 68.07 ms against 67.88 ms of DMA), so the uploads are
-neither a bandwidth floor nor a staging cost. Nor is the dead time the
-allocator reclaiming the AIR just evicted: against the size of what was freed,
-r = -0.15 over 30 installs, and the proves that freed the most were faster.
-
-What it is, is a cost with no per-AIR structure. `constants` is the cleanest
-probe in the leg — one program, no inputs, identical outputs on every prove of
-a given size — and its dispatch cost for **the same AIR** across three captures
-of one arm runs 0.82 / 62.97 / 95.94 ms (`Rom_n22`), 233.03 / 0.63 / 26.99 ms
-(`Binary_n22`), 8.13 / 3.51 / 386.91 ms (`VirtualTableZisk0_n21`). Correlating
-the eleven AIRs between captures gives r = -0.28, -0.27, -0.30 — no structure,
-if anything anti-correlated. The per-run total carries (473 / 614 / 779 ms);
-which prove pays it is redrawn every run.
-
-So the cost is not in the phase, which is why removing a phase cannot remove
-it, and not in the AIR, which is why residency and ordering cannot reach it. It
-lands wherever the holder happens to be. Almost none of it is inside a CUDA
-driver call, so what is left is XLA/PJRT host code between `Artifact::run` and
-the device having work — the same place graph instantiation lives, but making
-no driver call at all. **Read this as a bound on bridge-side scheduling work in
-the leg, not as a lever waiting to be pulled**: three captures cannot separate
-"no per-AIR structure" from "structure far below the share being sized", and
-either way a change to what the bridge schedules is not what reaches it.
-
-**The check to run before building any lever that moves or removes a phase.**
-It costs one extra capture of the arm you already have, and it predicts the
-result:
-
-```bash
-# Two or three captures of ONE arm, then the same report on each.
-for c in c1 c2 c3; do
-    bench/host_idle.py ${c}_cuda_gpu_trace.csv ${c}_nvtx_pushpop_trace.csv \
-        ${c}_cuda_api_trace.csv --minus-call cuGraphInstantiateWithFlags
-done
-```
-
-Compare the phase you mean to attack across the captures. A phase whose share
-moves by more than the win you are sizing is not a lever, however large its
-mean: the cost is landing there rather than living there, and moving the phase
-will move the cost somewhere else in the same run. `constants` above swings
-0.46-0.77 s across three captures of one arm while the win being sized was
-0.4-0.6 s — the check fails, and both removals that were built on it measured
-null. Sharper still if the capture lets you name the per-prove unit: correlate
-the same AIR's cost between captures, and an r near zero says the phase is not
-where the cost lives.
-
-This is the same discipline as the positive control, from the other side. The
-control asks whether the harness could see the effect; this asks whether the
-effect is attached to the thing you are about to change.
-
-## Status (2026-09-06, RTX 5090, block-shaped sha-hasher workload)
-
-> Measured 2026-09-06, on that date's binary and plugin. Do not adjust these
-> figures for `CUDA_MODULE_LOADING=EAGER`: the 2026-09-09 arms above read
-> 19.61 s of leg without it and 18.53 s with it, both under the 20.3-20.7 s
-> here, so this table is stale by more than that one knob. Take the shape of
-> the gap from here and the leg from those arms.
-
-The wall-clock comparison the issue asks for, on the closest stand-in for
-block 21740136 this host can run: the `sha-hasher` example guest at
-14,000 iterations, hint-free, under the ASM emulator. Its 51.1 M steps plan
-into 38 instances across 16 families — 13 Main, 6 Binary, 5
-BinaryExtension, 2 BinaryAdd, and one each of Arith, Dma, Dma64AlignedMem,
-DmaPrePost, DmaUnaligned, InputData, Mem, MemAlign, Rom, RomData and the
-two virtual tables — where the block was 38 instances with 12 Main. (The
-block's captures and the zec-reth guest's hints are not on this host; the
-guest uses the `sha2` crate's software path, so no precompile family
-appears.) Same binary for both stacks, alternating runs, three per stack,
-proof dumps compared after every bridge run; every bridge run's 38 basic
-proofs were byte-identical to native's and its final proof verified.
-
-| | native (3 basic streams + 1 recursive) | bridge (1 client at 45 % of the card; pil2 on 1 basic stream, recursion on it too) |
-|---|---|---|
-| `cargo-zisk prove` wall | 31.3–31.9 s | 34.5–38.0 s |
-| proofman init | 5.2–7.2 s | 4.3–7.4 s |
-| contributions | 3.5–3.6 s | 4.1–4.3 s |
-| inner-proof leg (38 basic + their recursion) | 15.0–15.3 s | 20.3–20.7 s |
-| ├ the 38 proves' own time on the client | | 18.9–19.5 s (Main 0.53 s ×13, Binary 0.53 ×6, BinaryExtension 0.48 ×5, BinaryAdd 0.36 ×2, the rest 0.35–0.82 once each) |
-| ├ of which fixed sections rebuilt on family switches | | 4.5–5.0 s over 30–34 switches |
-| └ waiting for the client, summed over instances | | 147–157 s (the serialization) |
-
-So on a block-shaped mix the bridge's leg is 1.35× native's and its wall
-1.10–1.19×, against 1.75× / 1.4× on the hello-world guest: the fixed
-per-run costs amortize, and per instance the proves are where pil2's are
-(Main 0.53 s here against pil2's ~0.6 s single-stream). Two things
-separate the legs, both already named in #170:
-
-- **One client.** The 38 proves run back to back; pil2 overlaps three.
-  The instances' summed wait says the client is never idle from the first
-  prove to the last (19 s span for 19 s of proves).
-- **Family switches.** With `ZZ_RESIDENT_AIRS=1` (the default) every
-  switch re-uploads and re-hashes the incoming family's constants, ~4.7 s
-  per run — Main alone comes and goes 13 times. Raising the resident set
-  does not fit on a 32 GB card at this share: `ZZ_RESIDENT_AIRS=2`, 3, 4
-  and 8 all abort once the second or third family is resident (PJRT
-  `Out of memory` from the client's BFC pool, which xla-pjrt's `check`
-  turns into a panic rather than an error the bridge could evict on — the
-  read-ahead's upload catches that unwind and falls back to uploading
-  under the slot, so a full card costs it the head start rather than the
-  run), and
-  a larger share (`ZZ_MEMORY_FRACTION=0.55`) leaves pil2 13.3 GB, below
-  the minimum it will start with. The resident-set trim was the candidate
-  lever and has since been measured: it does not move the floor, because
-  what binds a client is a single program's own working set rather than
-  anything kept between proves ("Memory budget" below).
-
-Reproduce with the scripts in [`../bridge/bench/`](../bridge/bench/):
-`mk_input.py 14000 in.bin` for the guest's input (a ZiskStdin frame of a
-bincode-varint `u32`), `run.sh <tag> native|bridge` for a prove with its
-dumps, `compare_dumps.py` for the byte-gate, `summarize.py` for the table's
-rows. The guest builds with `cargo-zisk build --release` in
-`examples/sha-hasher/guest` of the ZisK checkout after
-`cargo-zisk toolchain install`; the bridge's cache needs BinaryAdd and the
-four Dma AIRs warmed beyond the hello-world set (58 min on 5 threads
-here). Start a run only once `nvidia-smi` shows the card empty: a
-process still releasing its memory makes pil2 size 20 streams from the
-1.6 GB it sees and exit.
-
-## Status (2026-09-11, RTX 5090, go hello-world guest)
-
-Where #170 leaves this guest. On `main` at f5bd8fb, frx quad pinned to
-`0.10.2.dev20260910150749` (fractalyze/jax@1b7c92fe, xla `fff9509ab012`, which
-carries fractalyze/xla#698 and #718), proving key v1.0.0-alpha, artifacts
-`zz-artifacts-191`, warmth probed for the pinned plugin before the sweep
-(`zz_prove --warm`, three AIRs, every program from the cache).
-
-Every row names the session that measured it, and none of them is re-derived
-from another. That is not bookkeeping: on this rig both init and the leg drift
-between sessions by more than most of the levers #170 chased are worth, so a
-figure without a native baseline taken in the same session and interleaved with
-it says nothing about either stack — which is what "Bridge start-up" below had
-to establish the expensive way.
-
-| | the figure | where it comes from |
-|---|---|---|
-| inner-proof leg | bridge **5.327 s**, native **3.455 s** (1.54x) | #214, both arms in one session, one binary, interleaved pass by pass and rotated within a pass, eight passes each; medians over passes 2–8, bridge sd 0.136 [5.195–5.608], native sd 0.124 [3.319–3.668] |
-| proofman init, bridge minus native | **0.248 s** behind, on a page cache warmed to the set init reads | #217, on the bumped wheel, both arms interleaved and rotated in one session, three passes each, that set warmed immediately before every run: bridge 3.107 s [3.046–3.123] against native 2.859 s [2.820–2.881], ranges disjoint. Counting each bridged run's own client creation (0.181–0.192 s, `ZZ_LOG`'s `bridge up`) it is 0.43 s. **The cache state is part of the figure**, which is why this row names it: with that same set evicted and nothing else changed the gap is 3.478 s (bridge 8.434 s against native 4.956 s), and on the uncontrolled cache of #217's own predecessor sweep it is 0.128 s. All three are inside the criterion; none of them is the difference without a state. A difference, not two levels: neither stack's init has a level this page will quote (see "Bridge start-up"). #214's 0.17–0.22 s is the same quantity on an uncontrolled cache and is not contradicted, only unquotable on its own — see "What sets a run's init is the page cache" for which to read and why |
-| basic proofs byte-identical to native's | 11 of 11 | #214, two independent pass pairs out of the interleaved sweep, each a native and a bridged run in the shipped configuration, compared by `bench/compare_dumps.py` |
-| `MemAlign_n21` first prove, bridge | 0 of 60 wrong | #204, 60 fresh processes doing one first prove each under `CUDA_LAUNCH_BLOCKING=1` |
-
-The leg is proofman's own `GENERATING_INNER_PROOFS` on both sides.
-
-**Both leg figures are from one session and one binary**, which is what the
-rule above asks for and what the table carried until #214 spent the run. The
-pair it replaces was #204's bridge arm against #209's native arm, taken a day
-apart; the two designs agree on the gap to within 0.055 s (1.817 s then,
-1.872 s now), so nothing downstream of the older pairing moves. Where the gap
-sits is "The gap is the basic phase's wall" below.
-
-Three figures the older table carries are absent here rather than stale: the
-`cargo-zisk prove` wall, the eleven proves' own time on the client, and the
-summed client waiting. Nothing since that table has quoted them, and the runs
-that could have yielded them are off the rig, so the rows would need a fresh
-sweep rather than a re-read. Take their shape from "The per-stage shape" below
-without carrying the values forward. The fourth, the fixed sections uploaded
-under the prove's own slot, is current and lives in "Raising the read-ahead
-permit": 1.42 s summed at the default permit, on the pre-bump wheel.
-
-Reproduce with the same `bridge/bench/` scripts as the block-shaped
-section, minus the input: the guest takes none, and it needs
-`ZISK_PROVE_FLAGS=` (empty) on a host with no ASM emulator built, since
-run.sh's default is the ASM emulator's `-a -u`. So
-`ZISK_PROVE_FLAGS= run.sh <tag> native|bridge`, then `compare_dumps.py`
-for the byte-gate and `summarize.py` for the rows. "Memory budget" below
-was measured this way, adding `ZZ_MEMORY_FRACTION` and
-`ZZ_GPU_HEADROOM_GB` per run. An arm is an env swap rather than a rebuild,
-so interleave the arms pass by pass and rotate them within a pass.
-
-### The acceptance #170 set, and where it lands
-
-| criterion | verdict |
-|---|---|
-| inner-proof leg within 1.2x of native's (≤ 4.15 s against 3.455 s) | **not met** — 5.327 s is 1.54x, over by 1.181 s |
-| proofman init within 0.5 s of native's | **met on the baseline the recipe now guarantees** — the set init reads warmed: 0.248 s behind by proofman's own timer, 0.43 s counting the bridge's client creation, #217. Not met on a cold page cache, where the same pair is 3.478 s apart. The criterion is only readable with the cache state named, which is why `bench/run.sh` sets that state and records it per run |
-| all 11 basic proofs byte-identical to native's dumps | met — 11 of 11 |
-| this section traces every number to a run recipe and a commit | met by the table above |
-
-The leg is the criterion that did not close, and nothing on the list below
-closes it: of everything #170 tried, only eager kernels moved the leg, and the
-1.181 s the bridge sits above the 1.2x bar is more than twice the 0.453 s that
-one was worth. The gap to native is a wider figure measured to a different
-reference — 1.872 s, of which the bar forgives the first 0.691 s — so the two
-are not quantities to subtract from each other. What the rest of it is, the
-section below now says: it is the basic phase's wall, and one client is why.
-
-### The gap is the basic phase's wall
-
-#214 spent the run the Status table had been waiting for: both arms in one
-session, one binary, one plugin, interleaved pass by pass and rotated within a
-pass, eight passes each. Medians over passes 2–8, the first pass of each arm
-dropped as the sweep's own first run:
-
-| | native, pil2's three streams | bridge, one client | difference |
-|---|---|---|---|
-| inner-proof leg | 3.455 s | 5.327 s | **+1.872 s** |
-| the basic phase's wall | 2.343 s | 4.279 s | **+1.936 s** |
-| `leg − basic phase` | 1.112 s | 1.048 s | −0.064 s |
-
-The basic phase is the wall in which that arm's eleven basic proofs were
-running — the union of their intervals, not their sum. On native they are
-proofman's `GEN_PROOF_n` spans. Under the bridge they are not: `gen_proof`
-returns as soon as the work is handed to a worker, so those spans run 1–438 ms
-against proves that take seconds, and the phase is the union of the `ZZ_LOG`
-per-instance intervals from where an instance takes the client to where it
-gives it back.
-
-Every difference in this section is between the two columns' medians, which is
-what makes the rows sum to the gap exactly. Where the median of the per-pass
-differences disagrees it is given too: here it is −0.219 s (native 1.230 s,
-bridge 1.011 s, sd ~0.2 on each) against the −0.064 s above, and both sit
-inside the ~0.2 s floor, so read `leg − basic phase` as "small, sign not
-established".
-
-**The gap is the basic-phase row — and `leg − basic phase` is a residual, not
-the recursion's cost.** Both arms run the same seventeen recursive proofs on
-pil2, and the residual holds only the part of them the basic phase did not
-already cover. How much that is moves with how long the basic phase is:
-
-| | native, n=7 | bridge, n=7 | native, one basic stream, n=3 |
-|---|---|---|---|
-| the recursion's wall | 2.640 s [2.330–2.764] | 3.006 s [2.231–3.513] | 2.695 s [2.509–2.938] |
-| of which inside the basic phase, at least | 1.528 s | 1.958 s | 1.977 s |
-| `leg − basic phase` | 1.112 s | 1.048 s | 0.718 s |
-
-The overlap row is `basic + recursion − leg`: both phases sit inside the leg,
-so whatever they cover past its length they cover at once. It is a lower bound
-and it needs no common clock, which matters because the bridge's basic phase is
-read off the bridge's clock and its recursion off proofman's. Like every other
-row here it is computed from the medians above it, so it reconciles with them;
-`leg_phases.py` also prints the median of the per-pass bounds, which is a
-different statistic of a different thing and reads 1.419 / 1.914 / 1.965 s.
-
-**The bridge's recursion wall sits 0.366 s above native's, and that is not a
-share of the gap.** Its range contains native's whole range — it is the widest
-quantity in this section, sd 0.422 against the leg's 0.136 — so the difference
-between the two medians is not resolvable on seven passes. What is structural
-is the shape rather than the size: native's seventeen recursive proofs overlap
-one another, 5.413 s of spans inside a 2.640 s wall (2.05x), because they
-contend with its three basic streams and each one's span inflates while it
-waits; under the bridge, where pil2 has no basic proofs of its own to run, they
-go through clean and serial at 1.00x. Either way it does not reach the leg,
-because the residual row is where it would show and that row is −0.064 s.
-
-And the one-stream column shows why a residual must not be read as the
-recursion's cost even inside one stack: its recursion is unchanged while its
-residual falls to 0.718 s, purely because a longer basic phase hides more of
-it. What the leg table establishes is the identity — leg is the basic phase's
-wall plus whatever is left — and that the whole of the gap sits in the wall.
-
-Within the basic phase the bridge achieves 1.00x concurrency — 4.283 s of
-proving in 4.279 s of wall, which is one client doing eleven proves back to
-back and nothing else. Native's is 2.22x by the same arithmetic (5.199 s of
-spans in 2.343 s of wall; 2.39x if the ratio is taken per pass and those
-medianed), but either overstates what its streams buy, because proofs on three
-contending streams each take longer than they would alone. The
-honest pivot is to force the same stack serial, which the fork's headroom knob
-does (`ZZ_GPU_HEADROOM_GB=15`, one basic stream, three runs):
-
-| | wall of the basic phase | concurrency | leg |
-|---|---|---|---|
-| native, three basic streams (the baseline arm, n=7) | 2.343 s | 2.22x | 3.455 s |
-| native, one basic stream (diagnostic, n=3) | 3.164 s [3.123–3.172] | 1.00x | 3.882 s |
-| bridge, one client (n=7) | 4.279 s | 1.00x | 5.327 s |
-
-So the phase's +1.936 s splits into **+0.821 s** that pil2's three streams buy
-it (3.164 → 2.343 s, a 1.35x speedup rather than 3x, because the streams
-contend for one card) and **+1.115 s** by which the bridge's serial prove is
-dearer than pil2's serial prove (4.279 against 3.164 s). With the rest row those
-three sum to the 1.872 s gap. Two caveats on the split and neither on the sum.
-The headroom knob shrinks pil2's own buffers as well as its stream count, so
-the 3.164 s pivot carries that and the shares either side of it do too. And the
-pivot run's leg is not the baseline's with one term swapped: its remainder is
-0.718 s against the baseline arm's 1.112 s, which is the residual above moving
-with the basic phase rather than the recursion changing. The +1.936 s phase
-share depends on neither — it is two walls, each measured on its own arm.
-
-**Of the bridge's serial phase, its own kernels cover 2.58 s.** Three captures
-of the bridge arm put it at 2.58 / 2.59 / 2.58 s — the steadiest figure in this
-section — against phases of 4.41 / 4.53 / 5.08 s, so 1.83 / 1.94 / 2.51 s of it
-is the client's device idle. Carried onto the unprofiled 4.279 s phase that is
-about 1.7 s, a number that crosses a profiled quantity into an unprofiled
-window and should be read to one digit. The part that costs the leg is the part
-with the client held, 1.611 / 1.939 / 2.506 s across the three.
-
-**None of that idle is a lever, and the captures say so themselves.** Its
-phases move more between captures of one arm than any of them is worth:
-`constants` 0.364 / 0.735 / 0.937 s, `host/fixed_install` 0.519 / 0.429 /
-0.566 s, on one binary in one session. That is #205's result, re-confirmed on
-the shipped wheel and now with the thing it is a share *of* measured beside it.
-`--minus-call cuGraphInstantiateWithFlags` takes the held idle from 1.611 s to
-1.320 s in the first capture, and that 0.291 s is the plugin's rather than the
-bridge's.
-
-The bridge's kernels are not where its leg goes. Its eleven proves carry
-2.58 s of kernel time where pil2's own per-instance timers put its eleven at
-3.310–3.678 s (`bench/pil2_timers.py` on the one-stream runs). Those are
-different instruments — nsys kernel spans against pil2's CUDA-event timers,
-which for the same eleven proofs exceed proofman's span for them by 0.19, 0.41
-and 0.51 s over the three one-stream runs — so it is a direction, not a
-subtraction.
-
-What this sizes for a second client (#215), as arithmetic on this section's
-shares rather than a measurement: at pil2's own 1.35x the bridge's basic phase would
-be 3.17 s and its leg about 4.2 s, still over the 4.15 s that 1.2x of native
-allows; at perfect packing the phase cannot go below the 2.58 s of kernel time
-it carries, which puts the leg at about 3.6 s. So a second client is the only
-share anyone has left to take, it is worth about 1.1 s of the 1.9, and it does
-not on its own close the criterion.
-
-It also does not fit on this card. #215 re-walked the memory floors on this
-wheel: a client needs an 11.60 GiB arena and two of them can have at most 8.47
-GiB each before pil2 refuses to start, so the second client is 3.1-3.5 GiB per
-client out of reach and the 1.1 s above stays arithmetic. "Memory budget" has
-the walk, what is in the arena, and the sizes a memory unit would have to move.
-
-Reproduce: `ZISK_PROVE_FLAGS= bench/run.sh <tag> native|bridge`, the bridge arm
-with `ZZ_EAGER_MODULES=1 ZZ_STAGING_THRESHOLD=0` and run.sh's own `ZZ_CLIENTS=1
-ZZ_MEMORY_FRACTION=0.45`, alternating the arm order pass by pass. Probe warmth
-before the first timed run: `zz_prove --warm <artifacts> <one AIR>`, per plugin
-the sweep will use. run.sh warms the proving-key set init reads before each run
-and records the census beside the log; if you drive the prover directly, warm
-it yourself (`bench/pagecache.py --warm --proofman-init $PK`) or the init
-column is measuring the host's page cache.
-
-Every wall in this section — 2.343, 4.279, 3.164 s and the recursion and
-overlap figures beside them — comes out of **`bench/leg_phases.py <run.log>...`**,
-which is where the union-of-spans arithmetic and the rule for finding a
-bridged run's basic proofs live; hand it a whole arm's logs and it prints the
-median and range per quantity. The one-stream pivot is the same script on a run
-made at `ZZ_GPU_HEADROOM_GB=15`, and `bench/pil2_timers.py` on that run is what
-gives its per-instance timers. For the device idle inside the phase, the
-capture recipe in "Profiling" and `bench/host_idle.py`;
-`bench/compare_dumps.py` between a native and a bridged run's dumps is the
-byte-gate.
-
-**What the rotation caught about init.** A run's `INITIALIZING_PROOFMAN`
-tracks the *previous run's arm*, in both stacks. Of the sixteen runs, fifteen
-have a predecessor, and they split 3.07–3.85 s (n=7) after a native run against
-4.04–7.74 s (n=8) after a bridged one; dropping the two that immediately follow
-the sweep's start — the runs still filling a cold page cache, at 3.851 and
-7.737 s — leaves 3.07–3.33 s and 4.04–4.27 s, which are disjoint. It is not the
-arm being timed: native and bridge each appear in both groups, and the
-alternation rules out drift. That is a candidate for the regime #178 found and
-could not select ("Bridge start-up"), and it is worth about 0.95 s — four to
-five times the arm difference underneath it. The predecessor's arm turned out
-to be a proxy rather than a mechanism: #217 isolated it and found what it
-stands for, which is the section after next.
-
-Which is why the arm difference has to be read *within* a predecessor group,
-and can be: the rotation puts both arms in both groups.
-
-| init | after a native run | after a bridged run |
-|---|---|---|
-| native | 3.101 s [3.074–3.109], n=3 | 4.081 s [4.042–4.133], n=4 |
-| bridge | 3.320 s [3.307–3.326], n=3 | 4.254 s [4.246–4.269], n=3 |
-| bridge − native | +0.219 s | +0.173 s |
-
-Ranges are disjoint in both groups, and the two groups agree on the difference
-to 0.046 s while disagreeing on the level by 0.95 s. Add each bridged run's own
-client creation, which proofman's timer starts after — median 0.186 s,
-[0.183–0.309], from `ZZ_LOG`'s `bridge up` line — and the bridge is 0.36–0.41 s
-behind. Both readings are what the Status table's init row carries, and both
-agree with #178's pre-bump pair (0.10–0.23 s by the timer, 0.28–0.41 s with
-client creation). The two runs dropped above are dropped for the level, not the
-difference: they are one arm each and sit either side of it.
-
-### What sets a run's init is the page cache (2026-09-11, #217)
-
-The rotation above read init against the arm that ran *before* it. Isolate that
-predecessor and it stops predicting anything. Four cells — native or bridged
-first, native or bridged measured — three repeats each, the pairs run back to
-back and the cell order rotated each repeat so a cell's grand-predecessor is
-not the same arm every time. Only each pair's second run is quoted:
-
-| init | after a native run | after a bridged run |
-|---|---|---|
-| native | 3.286 s [3.255–3.712], n=3 | 3.279 s [3.204–4.850], n=3 |
-| bridge | 3.409 s [3.349–3.412], n=3 | 3.437 s [3.376–3.535], n=3 |
-
-No step. Read down instead of across and the arm difference is still there at
-+0.12 to +0.16 s (pooled over the predecessor, which is a null: +0.128 s);
-read across and the 0.95 s #214 measured is gone. **That is not the figure the
-Status table quotes**, and the difference between them is this section's
-subject rather than a discrepancy in it — see "Which of the two to quote"
-below. Both outlying runs — 4.850 s, and 5.094 s on
-the predecessor side of a pair — are in the sweep's first four, and both
-started with part of one file family missing from the page cache. Every other
-run in the sweep started with that family whole.
-
-**Which family, and why init cares.** `INITIALIZING_PROOFMAN` splits at two
-landmarks proofman prints: the buffer sizes it announces, then
-`LOADING_FIXED_POLS`. Across all four cells above and both states below, the
-second and third parts do not move — the GPU allocation stays inside
-0.27–0.34 s and `LOADING_FIXED_POLS` inside 0.67–0.87 s. Everything that moves
-is in the first part, before proofman has sized anything, and that part is a
-file read. A run polled from a fully evicted key fetched 8.57 GiB from storage
-inside it (`/proc/<pid>/io` `read_bytes`, sampled against the log's own
-landmarks) and gained 8.44 GiB of resident proving key over the same window:
-the const pols in GPU layout, the `.exec` and `.dat` files of the recursion
-setups, and the small binaries and JSON beside them. The constant trees are not
-in it — the allocation and `LOADING_FIXED_POLS` pull one air's worth each, and
-the rest of that 34 GiB belongs to the leg.
-
-**So set it directly.** The same runs with only that set's cache state flipped
-immediately before each one — read back in, or dropped with `posix_fadvise` —
-interleaved and rotated, three repeats a cell:
-
-| init | the set warm | the set evicted |
-|---|---|---|
-| native | 2.859 s [2.820–2.881] | 4.956 s [4.918–4.979] |
-| bridge | 3.107 s [3.046–3.123] | 8.434 s [8.361–8.472] |
-
-Ranges are disjoint by seconds, and it lands where the poll said it would: the
-pre-allocation part goes 1.877 → 3.973 s on native and 2.132 → 7.481 s on the
-bridge, while the allocation and `LOADING_FIXED_POLS` sit still in every cell.
-The leg is the control and does not move (native 3.445 s warm against 3.380 s
-cold, bridge 5.182 against 5.382): the arms differ in the files init reads and
-in nothing else, which is why `.const` and the constant trees are left alone by
-both. **That makes it a control for this experiment, not a general one** — the
-leg reads the constant trees, and no arm here evicts them, so nothing above
-says what the leg does when *they* are cold.
-
-**Which of the two to quote.** These are two measurements of one difference on
-two different baselines, and the page's own rule is that a figure names its
-baseline. The four cells ran on whatever cache state the previous run left:
-`.const_gpu` was resident in 11 of the 12, but nothing censused `.exec` and
-`.dat`, and their absolute init sits about 0.4 s above the warmed arms' —
-which is what a partly cold set looks like. The warmed arms are the only ones
-whose state was set. So **criterion 3 reads the warmed figure, +0.248 s**, and
-the sweep's +0.128 s is a consistency check rather than a second quote: it was
-designed to test the predecessor, not to resolve a tenth of a second between
-the arms, and its native arm carries a 4.850 s outlier that its median only
-survives by being a median. Both are far inside the 0.5 s the criterion
-allows. What neither licenses is a bare number: the same difference is
-+0.128 s on an uncontrolled cache, +0.248 s warmed and +3.478 s cold, and it is
-not a monotone function of warmth, because the two arms are not hurt equally by
-a partial one.
-
-**The bridge is not the actor here, and neither is either stack.** The cold
-penalty is 2.1 s on native and 5.3 s on the bridge — a bridged run's init also
-holds its own client creation and preload, which queue behind proofman on the
-same disk — but the state that decides it belongs to the host, not to the run
-before. In this session the set survived every bridged run; what emptied it was
-a sibling session's build server starting between two of this unit's own
-sweeps, after which the key held none of the 18 GiB it had held minutes
-earlier — while free memory went *up*. #214's session was one
-where a bridged run did the evicting, and the arm inherited the credit. Any
-process on this machine that reads a few GiB is a large enough actor.
-fractalyze/zisk-zorch#222 would shrink the bridge's own contribution to it; on
-this evidence that makes the bridge a smaller tenant, not the one that matters.
-
-**What this costs a reader of init.** The bridge is 0.248 s behind native with
-the set warm and 3.478 s behind with it cold, same binary, same session. A
-criterion of the form "init within 0.5 s of native's" is therefore a statement
-about the page cache as much as about either stack, and an init figure with no
-cache state beside it says nothing. `bench/run.sh` warms the set before every
-run and leaves the census in `pagecache.txt` beside the log, so the state is
-recorded rather than assumed — on every run, warmed or not, since a cold run is
-exactly the one whose figure depends on the state. The cold arm above is that
-step inverted: `--evict` the set, then `ZZ_WARM_KEY=0` so run.sh censuses it
-and leaves it evicted.
-
-```bash
-# the reset, the check that it took, and the cold arm on purpose
-bench/pagecache.py --warm --proofman-init $PK
-bench/pagecache.py --proofman-init $PK          # census only, faults nothing in
-bench/pagecache.py --evict --proofman-init $PK
-```
-
-Three native/bridge pairs out of these sweeps were compared with
-`bench/compare_dumps.py`: 11 of 11 basic proofs byte-identical in each.
+### Reading a capture
+
+- **Quote the share of the *leg*, not of the idle.** The two denominators
+  differ by about 2x and the criterion is wall time, so a cost that is half
+  the idle can be a quarter of the leg. One number, two denominators; the leg
+  is the one that decides anything.
+- **Module loads are once per (AIR, program) pair**, not per execution and
+  not per instance. A program that runs four times in a prove loads once, and
+  every later instance of an AIR already seen loads nothing. Eviction does not
+  undo it — a module lives in the CUDA context and `ZZ_RESIDENT_AIRS` only
+  drops device buffers. So the cost scales with how many *families* a workload
+  touches, which makes hello-world, whose instances are all distinct AIRs, its
+  worst case and a bad place to size it from. Per-load cost is not constant
+  either, so scaling by program count alone under-predicts.
+- **Cross-check any profiled figure against `ZZ_LOG=2`**, which prints each
+  `Artifact::run`'s enqueue time from the bridge's own clock with no profiler
+  attached. Agreement is what says a dispatch cost is real rather than an
+  artifact of tracing.
+- **A phase's share of the idle is where the device waits, not what for**, so
+  it is not the size of a lever that removes the phase: the cost re-prices
+  into the phase next door. Check that a candidate moves the leg by less than
+  the win across repeated captures, and run a positive control — on this leg
+  `CUDA_MODULE_LOADING=EAGER` is one — before believing a null.
+
+### The module-loading knobs
+
+The eager preload and `CUDA_MODULE_LOADING=EAGER` are only worth anything
+together: the driver variable with lazy executable loading buys nothing,
+because there is no earlier place for the code load to go. Paired, they move
+both workloads' legs and drop graph instantiation substantially.
+
+- **`CUDA_MODULE_LOADING` is process-wide**, so an arm that sets it also
+  changes how pil2 loads its own modules. Bounding that share separately —
+  the variable with the bridge's executables loading lazily — says most of
+  the win belongs to bridge executables, so a plugin-side option scoped to
+  them should expect nearly all of it but not the whole.
+- **The bridge cannot set it itself.** The driver reads the variable when it
+  initializes and pil2 has initialized CUDA before any bridge client exists,
+  so setting it in `artifact::new_session` is a no-op. It has to be in the
+  environment before the process starts, or the plugin has to materialize the
+  kernels after loading a module — which is where the durable fix belongs,
+  scoped to the executables loaded through it rather than to every module the
+  process loads. The shipped plugin now does that, which is why `Running`
+  does not export the variable.
+- **Staging the big uploads is a faster copy and a slower leg.** Raising
+  `ZZ_STAGING_THRESHOLD` above the bridge's section sizes does make the
+  copies faster, and grows the pinned pool inside the prove by more than they
+  return. It ships off.
+
+## Status
+
+The sweep's per-run tables are on #239; what follows is what stays true of the
+tree.
+
+- **The byte-gate #238 merged without now holds.** Re-exported from `main`
+  into `zz-artifacts-239`, all 11 basic proofs are byte-identical to native's
+  dumps on three interleaved passes. 34 of the 380 programs re-lower —
+  `const_setup`, `commit1` and `commit2` on every AIR, plus `Rom_n22`'s
+  `custom_setup_0` — and every AIR's `manifest.json` is byte-identical to the
+  previous export's, so the re-lowering moved no interface the bridge binds to.
+- **What sets a client's high-water is `Main_n22`'s `deep`.** It reaches
+  8,821 MiB there, against the 8,960-9,005 MiB #228 measured for the shipped
+  192 MiB admission (#239 has both runs). `deep` is a single `art.run("deep", ...)`, so one
+  program is what to aim a trim at. Read the stage from `mem_stages.py`'s
+  `peak stage` and never off a boundary label: `Stage::set` reports a boundary
+  under the *incoming* stage's name, so the row carrying this peak is headed
+  `fri` while the stage that made it is `deep`.
+- **Two clients still fit at no fraction**, and they fail from both ends:
+  give the pair enough of the card and pil2 will not start (`Not enough GPU
+  memory to run the proof`), give it less and a client's arena goes dry
+  mid-prove. #215's own grid ended the same way, so nothing since has opened
+  that window and the serialization term #170 named stays unmeasured.
+
+## What the measurements settled
+
+Rules established by units under #170 and #213. Each names the issue that
+holds the runs, the arms and the scatter; this page carries only what a
+later change has to respect.
+
+**The leg is the basic phase's wall plus a residual, and the whole gap to
+native sits in the wall** (#214). The basic phase is the union of the
+intervals in which that arm's basic proofs ran — under the bridge, the
+`ZZ_LOG` per-instance intervals, since `gen_proof` returns as soon as the
+work is handed to a worker and proofman's `GEN_PROOF_n` spans are then
+meaningless. `bench/leg_phases.py` does that arithmetic.
+
+- **`leg − basic phase` is a residual, never the recursion's cost.** It
+  shrinks as the basic phase lengthens, because both phases sit inside the
+  leg and a longer phase hides more of the recursion. Forcing native serial
+  leaves its recursion unchanged and its residual falls anyway.
+- **One client proves serially, at 1.00x.** pil2's three basic streams buy
+  it 1.35x, not 3x — they contend for one card. The honest pivot is to force
+  pil2 serial (`ZZ_GPU_HEADROOM_GB=15`), not to compare against its
+  three-stream wall.
+- **A second client is the only share left, and it is not enough.** At
+  pil2's own 1.35x the bridge's leg lands above the 1.2x bar, and at perfect
+  packing it cannot go below the kernel time the phase carries. It also does
+  not fit on this card — "Memory budget", and the Status above.
+- **The client's device idle is not a lever.** Its phases move more between
+  captures of one binary in one session than any of them is worth, and
+  removing one re-prices the cost into the phase next door (#205, #209).
+  What a candidate has to beat is the `CUDA_MODULE_LOADING=EAGER` control on
+  the same binary, not zero.
+
+**What sets a run's init is the page cache, not either stack** (#217).
+proofman reads 8.4 GiB of the proving key before it sizes any buffer, so
+what init measures is how much of that set came off disk. The same pair is
+0.128 s apart on an uncontrolled cache, 0.248 s apart with the set warmed
+and 3.478 s apart with it evicted — not a monotone function of warmth,
+since a partial cache does not hurt the two arms equally.
+
+- **An init figure with no cache state beside it says nothing.**
+  `bench/run.sh` warms the set and censuses it into `pagecache.txt` on every
+  run, warmed or not, because a cold run is exactly the one whose figure
+  depends on the state. `bench/pagecache.py --warm|--evict|--census`.
+- The apparent effect of *the previous run's arm* is this same state seen
+  through a proxy: any tenant that reads a few GiB empties the set, and a
+  sibling session will do it between two of your own runs.
+
+**The bridge's start-up is not a lever** (#178, #217). Its client is up in
+0.16–0.19 s and its whole preload finishes one to four seconds before
+proofman's init ends, at every thread count tried — the preload runs beside
+init rather than inside it. Hooking in earlier moves work that already
+finishes with slack; deferring the client gives up what `ZZ_MEMORY_FRACTION`
+is for, since the clients claim their share before pil2 sizes its buffers
+from what it sees free. That the preload finishes first is a measured
+margin, not an invariant: a key still in the queue is loaded by the prove
+that wants it.
+
+**An upload never overlaps the prove it belongs to, and that is PJRT's
+ordering rather than the hardware's** (#193, #204). A GPU client is
+`kComputeSynchronized`: a buffer the allocator returns at time t may only be
+written once the compute stream has drained everything enqueued before t, so
+an upload into a freshly allocated buffer waits on that client's own
+kernels. The card is willing — in the same captures pil2's copies overlap
+the bridge's kernels. Allocating an instance's buffers up front through the
+async transfer manager was built and measured, and moved neither the overlap
+nor the leg.
+
+- Uploads are a fraction of a second over the leg, and most copies start
+  into a device that has already been idle for milliseconds, so an upload
+  freed to run beside kernels would find none to run beside.
+- Pageable transfers reach 11–16 GB/s on this card and pinned ones 42–45,
+  but pinning the difference is worth less than the pinned pool's growth
+  inside the prove costs — which is why `ZZ_STAGING_THRESHOLD` ships off.
+
+**`ZZ_FIXED_AHEAD` has only two settings, and neither moves the leg**
+(#209). The permit is taken in `plan` and returned in `installed`, both
+inside the admission `prove_owned` holds for the whole prove, so at most
+`ZZ_PENDING` proves can hold one: 1 is the permit refusing, anything at or
+above the admission is it never refusing, and the value is capped there.
+Paired within passes the difference is smaller than the difference between
+two *labels for the same configuration* in the same sweep. It stays at 1
+because turning it off costs memory — the sections held ahead include the
+two virtual tables' `const_base`, and those two prove back to back.
+
+Hello-world puts the most pressure on that permit, not the least: its eleven
+instances are eleven distinct AIRs, so every prove needs a key no prove
+before it uploaded. On a mix where an AIR repeats, most proves find their
+sections resident and plan no read-ahead at all.
+
+**Three things the byte-gate surfaced**, all handled by the bridge now:
+traces are bit-packed for AIRs carrying `witness_bits` hints and are
+unpacked on the host from the packing proofman registers
+(`set_packed_info`); the custom-commit `_gpu.bin` is a 32-byte root then the
+base, extended and tree sections in the prover's 256x4 tiled device layout,
+which the bridge untiles and recomputes from (a CPU run writes the same file
+row-major and names it `.const`, which is what the layout is keyed on); and
+a trace holds raw machine words, some above the modulus, reduced on the way
+in.
 
 ### The levers, each closed with a measurement
 
 | lever | what it was worth |
 |---|---|
-| eager kernels at module load (xla#698, landed by #204) | **−0.453 s** — #204's wheel bump with eager module loads already on (`old` 5.970 → `new` 5.517 s). The only lever that moved this leg, and it lands at the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling. "The plugin materializes the kernels now" |
-| eager module loads on their own (#176 / xla#661) | null — 5.77 → 5.72 s toggling the flag on the pre-#698 wheel, ranges overlapping. It moves the registration to preload and leaves the kernels' code on the prove path, so there is nothing to collect until #698 puts that at module load too. "The module-loading mode" |
-| upload overlap (#193) | null — an upload into a freshly allocated buffer waits on the client's own compute stream, so it never overlaps that client's kernels. "The uploads, measured" |
-| host-idle remainder (#205) | null — two built changes measured null against an `EAGER` control on the same binary; the cost re-prices into the phase next door. "A phase's share of the idle" |
-| read-ahead depth (#209) | null — −26 ms paired, smaller than the −120 ms that two labels of a single configuration differed by in the same sweep. "Raising the read-ahead permit" |
-| constant tree over the extended domain (#183, #206) | worse — the same 8.4 GB over the same read-ahead path took the leg 6.1–6.6 s to 7.3–7.5 s |
-| H2D staging threshold (#204 / xla#718) | **+0.469 s**, so it ships off — the copies do get faster, and the pinned pool's growth inside the prove costs more than they return. "Staging the big uploads" |
-| XLA fusion cap (#149) | retracted — the flag has no occurrence in this wheel, its replacement measured a net tree regression, and under the bridge pil2 proves the recursion tree on its own CUDA, where an XLA fusion cap has no surface |
+| eager kernels at module load (xla#698, landed by #204) | **−0.453 s** — the only lever that moved this leg, and it lands at the process-wide `CUDA_MODULE_LOADING=EAGER` ceiling |
+| eager module loads on their own (#176 / xla#661) | null — it moves the registration to preload and leaves the kernels' code on the prove path |
+| upload overlap (#193) | null — an upload into a freshly allocated buffer waits on the client's own compute stream |
+| host-idle remainder (#205) | null — two built changes, both null against an `EAGER` control; the cost re-prices into the phase next door |
+| read-ahead depth (#209) | null — smaller than two labels of one configuration differed by in the same sweep |
+| constant tree over the extended domain (#183, #206) | worse — the same 8.4 GB over the same read-ahead path |
+| H2D staging threshold (#204 / xla#718) | worse, so it ships off — the copies get faster and the pinned pool's growth inside the prove costs more than they return |
+| XLA fusion cap (#149) | retracted — no occurrence in this wheel, and under the bridge pil2 proves the recursion on its own CUDA, where the flag has no surface |
 
-**The two eager rows do not add, and must not be subtracted from each other.**
-Each is a different baseline: −0.453 s toggles the wheel with the flag on,
-−0.05 s toggles the flag on the wheel that predates #698, and toggling the
-same flag on the post-#698 wheel is worth −0.650 s (`newoff` 6.167 → `new`
-5.517 s, #204). The parts sum to −0.503 s against that −0.650 s, and the
-0.147 s is not a lever anyone has left to claim: the two mechanisms gate each
-other, since #698 has nothing to do without an eager module load and the flag
-had nothing to collect before #698. Read the pair from one session's own two
-arms, never by adding a row here to a row there.
+**The two eager rows do not add and must not be subtracted from each
+other.** Each is a different baseline: one toggles the wheel with the flag
+already on, the other toggles the flag on the wheel that predates #698, and
+toggling that flag on the post-#698 wheel is a third figure again. The parts
+do not sum to it, and the difference is not a lever anyone has left to
+claim — the two mechanisms gate each other, since #698 has nothing to do
+without an eager module load and the flag had nothing to collect before
+#698. Read the pair from one session's own two arms.
 
-### The per-stage shape (2026-09-04, superseded)
+### The block-shaped mix
 
-Kept for the per-instance breakdown, which nothing since re-measures. Every
-figure here is from 2026-09-04's binary and plugin and none of them is current:
-the leg alone has moved 6.5 s to the 5.327 s the Status table now carries,
-across the units #170 landed and a wheel bump, so do not adjust these rows for
-one knob and do not quote them. Take the
-shape of the gap from here and every number from the table above.
+The closest stand-in for a real block this host runs: the `sha-hasher` example
+guest at 14,000 iterations, hint-free, under the ASM emulator. Its 51.1 M steps
+plan into 38 instances across 16 families — 13 Main, 6 Binary, 5
+BinaryExtension, 2 BinaryAdd, and one each of Arith, Dma, Dma64AlignedMem,
+DmaPrePost, DmaUnaligned, InputData, Mem, MemAlign, Rom, RomData and the two
+virtual tables — where block 21740136 was 38 instances with 12 Main. The guest
+uses the `sha2` crate's software path, so no precompile family appears.
 
-`cargo-zisk prove -g -y` through the bridge completes and its final proof
-verifies. All 11 basic instances (Rom, Main, Mem, InputData, RomData,
-MemAlign, BinaryExtension, Binary, Arith, both virtual tables) are
-byte-identical to native pil2's, compared as per-instance proof dumps
-(`ZZ_DUMP_PROOFS`) from a native run and a bridge run of the same guest.
-The in-process `ZZ_AB=1` variant reproduces the same verdict per instance
-but still crashes once the card fills; the dump comparison is the gate to
-quote.
+Two things separate the legs on such a mix, both named in #170 and neither
+specific to it:
 
-Quiet host, three consecutive runs per stack, the second and third quoted
-(a run right after another process has churned the page cache — a Bazel
-build, the other stack, a cache warm — adds 4–5 s of file reading to
-either stack's init):
+- **One client.** The proves run back to back while pil2 overlaps three, so the
+  client is never idle from the first prove to the last.
+- **Family switches.** With `ZZ_RESIDENT_AIRS=1` every switch re-uploads and
+  re-hashes the incoming family's constants, and Main alone comes and goes 13
+  times. Raising the resident set does not fit on a 32 GB card at this share:
+  `ZZ_RESIDENT_AIRS` of 2, 3, 4 and 8 all abort once the second or third family
+  is resident, on a PJRT `Out of memory` that xla-pjrt's `check` turns into a
+  panic rather than an error the bridge could evict on. A larger share leaves
+  pil2 below the minimum it will start with. The trim was the candidate lever
+  and does not move the floor, because what binds a client is a single
+  program's own working set rather than anything kept between proves.
 
-| | native (3 basic streams + 1 recursive) | bridge (1 client) |
-|---|---|---|
-| `cargo-zisk prove` wall | 11.2–11.6 s | 15.3–16.9 s |
-| proofman init | 3.0 s | 5.4 s (bridge up 0.2 s, then init beside the executable loads) — closed since, see "Bridge start-up" |
-| inner-proof leg | 3.7 s (28 proofs) | 6.5 s |
-| ├ proves, one client, back to back, own time | | 5.45 s (InputData 0.17, RomData 0.30, MemAlign 0.32, Arith 0.42, VirtualTableZisk1 0.45, Rom 0.49, BinaryExtension 0.57, VirtualTableZisk0 0.57, Mem 0.62, Binary 0.75, Main 0.64–0.79) |
-| ├ waiting for the client, summed over the 11 instances | | 28 s (the serialization) |
-| └ executable loads, per AIR from the cache | | 0.52 s |
-| Main, single stream on both sides | 0.61 s (commit 0.165 + proof 0.444) | 0.64–0.79 s |
-
-### Bridge start-up (2026-09-09/10, post-#176)
-
-The bridge's start is hidden inside proofman's init with time to spare.
-`ZZ_LOG` timestamps a run against that start, so the three figures after
-this colon are on the bridge's zero rather than proofman's: over 23 runs at
-the default six preload threads, the client is up at 0.16–0.19 s, the
-whole preload — 11 AIRs, 380 programs out of the cache — is done at
-1.03–1.19 s, and `INITIALIZING_PROOFMAN` does not end until 3.40–5.19 s.
-proofman's own timer starts once the client is up, so the same runs read
-0.16–0.19 s shorter on it — 3.23–5.00 s — and that is the figure the rest
-of this section compares against native. The preload finishes
-2.30–4.09 s before init does, in every one of them, a difference of two
-timestamps on the same zero and so the same on either clock. Starving it
-makes that point rather than breaking it: at three preload threads it
-lands 1.90–2.03 s early, and at two, where it takes nearly twice as long
-to run, still 1.49–1.56 s early.
-
-Beside native, treat the bridge's init as bounded rather than known. It
-was 0.10–0.23 s behind on one session, taken pass by pass across four
-interleaved passes rather than as an envelope over the two arms' ranges,
-or 0.28–0.41 s adding each run's own client creation; and ahead of
-native on both paired sets of another. Do not read the levels as a
-property of either stack: over 31 bridge runs and 15 native ones, on
-identical source, wheel and artifacts, the bridge's init ranged
-3.16–5.00 s and native's 3.00–5.75 s. The two covariates that look explanatory each fail
-somewhere. Run order was worth 570 ms on 2026-09-10 — a bridge run
-after a native one took 3.38 s against 3.95 s after another bridge,
-reproduced in a second block either side of the control — and did
-nothing at all across twelve runs the day before. Blocks read
-(`/usr/bin/time -v`, which `bench/run.sh` already captures) tracks init
-inside a bridge-after-bridge sequence at r ≈ +0.9, then inverts between
-the arms, where the faster arm read *more*; and it counts a whole run,
-not an init. Nor does run order exhaust it: a sibling session's
-bridge-after-bridge runs on the same binary averaged 5.13 s against
-3.95 s for the same arm here about ten minutes later — a residual
-larger than the ordering effect and with no account of its own. Those
-runs are not among the 31 above, which is why the range there stops at
-5.00 s.
-
-**#217 names it, and it is neither covariate.** Both of those are the same
-thing seen through different windows. proofman's init reads 8.4 GiB of the
-proving key before it sizes its buffers, and the page cache decides how much
-of that comes off the disk. That is why blocks read tracks init *within* a
-sequence and inverts *between* the arms — the reads that cost a run are not
-its own — and why run order was worth 0.57 s on one day and nothing on the
-next: a bridged run evicts the set on a host under memory pressure and not on
-one that is idle. It is also what the sibling session's slower runs were: a
-sibling session is exactly the kind of tenant that empties it. Set the state
-instead of measuring around it ("What sets a run's init is the page cache")
-and the same pair sits 0.248 s apart warm and 3.478 s apart cold, both with
-ranges that do not overlap.
-
-That instability is why the comparison above is stated as a bound, and
-also why the conclusion survives it: the slower init gets, the more of
-it the bridge's start hides inside. The tightest margin of the 23 came
-from the *fastest* init, not the slowest. What the instability does bind
-is anyone quoting init later — a figure means nothing without a native
-baseline taken in the same session and interleaved with it, and the run
-order stated beside it.
-
-So neither lever #178 proposed has anything to buy. Hooking the bridge in
-earlier moves work that already finishes with slack; deferring the client
-to the first prove would give up what `ZZ_MEMORY_FRACTION` is for, since
-the clients claim their share before pil2 sizes its stream buffers from
-the memory it sees free. Nor is the preload's own cost a lever.
-Swept in one interleaved session, `ZZ_PRELOAD_THREADS` at six,
-three and two moves when the preload *finishes*, by the better part of
-a second, and leaves proofman's init within 0.1 s of itself — the
-preload runs beside init, not inside it. In the same session
-`ZZ_PRELOAD=0` reaches native's init only by moving the loads into the
-contributions phase rather than removing them, and that spelling turns
-eager module loads off as well, so it moves two things at once. The
-#176 bump is worth 0.24–0.71 s of init on the same measure: the
-pre-#176 configuration ran 3.50–3.94 s against the default's
-3.23–3.26 s. That arm changed the plugin and disabled eager module
-loads together, so the 0.24–0.71 s belongs to the pair, not the plugin.
-
-Two tests pin the scheduling this leans on, and it is worth being exact
-about which: `lib.rs` pins that the preload queue keeps its callers'
-priority and order — a requested batch ahead of queued background work,
-in the order given — and `artifact.rs` pins the load/prove gate, where a
-prove waits for the loads already in flight and a waiting prove holds new
-loads back. Neither pins that a requested AIR is loaded *before* a prove
-wants it: a key still sitting in the queue is loaded by the prove itself
-(`Bridge::artifact`), which is also what keeps an AIR outside
-`.last-used` from waiting on the rest of the preload. That the preload
-finishes first is the margin measured above, not an invariant.
-
-### The uploads, measured (2026-09-09, post-#192)
-
-Three `nsys` captures of the whole run on a quiet card, read by
-`bench/h2d_overlap.py` (recipe under "Profiling"). Every figure in the table
-below is a line that tool prints over those captures. Three numbers in the
-prose are not its, and each says so where it appears: proofman's own
-`GENERATING_INNER_PROOFS` timer, the device-idle share `host_idle.py`
-produces, and the pinning projection at the end, which is arithmetic on the
-table rather than a measurement. The bridge's leg here is its first kernel to
-its last, which is 0.8–1.2 s inside `GENERATING_INNER_PROOFS` (6.29, 6.63,
-6.62 s here against 5.93–6.01 s uninstrumented — nsys costs the leg 5–11 %).
-
-| per run | run 1 | run 2 | run 3 |
-|---|---|---|---|
-| bridge leg | 5.45 s | 5.47 s | 5.59 s |
-| its kernels, busy | 2.60 s | 2.60 s | 2.61 s |
-| its uploads, 9.75 GB | 0.58 s | 0.44 s | 0.49 s |
-| ├ overlapped by its own kernels | 0.00 s | 0.00 s | 0.00 s |
-| ├ on the critical path | 0.58 s | 0.44 s | 0.49 s |
-| ├ … of that, inside the leg | 0.31 s | 0.31 s | 0.31 s |
-| └ … of that, before the leg's first kernel | 0.27 s | 0.14 s | 0.19 s |
-| copies starting >1 ms after a kernel ended | 71 % | 74 % | 75 % |
-| ├ median idle before a copy | 1.62 ms | 1.90 ms | 1.98 ms |
-| └ p90, longest | 27, 217 ms | 29, 125 ms | 27, 156 ms |
-| pil2's copies overlapped by *the bridge's* kernels | 0.09 s | 0.08 s | 0.07 s |
-| pageable, 5.29 GB | 11.2 GB/s | 15.7 GB/s | 13.4 GB/s |
-| pinned, 4.46 GB | 42.0 GB/s | 41.9 GB/s | 44.9 GB/s |
-
-The two parts of the critical path are each rounded to a hundredth, so they
-do not always re-add to it: run 2 is 0.308 s inside the leg and 0.136 s
-before it, against 0.444 s in total.
-
-Two things this settles. Uploads are **0.44–0.58 s**, not the ~1.9 s the
-pre-#175 profile put on them, and pageable transfers on this card run at
-11–16 GB/s rather than the 3–6 GB/s that number assumed — most of the
-difference is #182's read-ahead and #183's parallel key reads, which took
-the host-side staging out of the transfer. And **none of it overlaps the
-prove it belongs to**: 0.00 s against its own client's kernels in all three
-runs, on both provers. The separate host-to-device stream
-(`local_device_state.h`) exists and is never busy at the same time as that
-client's compute stream.
-
-That zero is enforced, and not by the hardware: in the same captures
-pil2's copies overlap *the bridge's* kernels for 0.07–0.09 s, so the card
-runs copy and compute together happily. What neither prover overlaps is
-its own kernels, and for the bridge PJRT is why. A GPU client is
-`kComputeSynchronized` (`xla/pjrt/local_device_state.h`): a buffer the
-allocator returns at time t may only be written once the compute stream
-has drained everything enqueued before t. So `AllocatedRawSEDeviceMemory`
-records a compute-stream sync point when it allocates
-(`tracked_device_buffer.cc`), and both `BufferFromHostBuffer` paths call
-`WaitForAllocation`, which makes the host-to-device stream wait on that
-sync point's event (`pjrt_stream_executor_client.cc`). An upload into a
-*freshly allocated* buffer therefore cannot start until the client's own
-compute stream is empty — no host-buffer-semantics flag changes that,
-which is why the 2026-09-03 `kImmutableOnlyDuringCall` attempt only moved
-the wait into the next `Execute`. It also explains the shape of the
-capture: the 25–29 % of copies that start within a millisecond of the last
-kernel ending had waited on exactly that event.
-
-The host is separately late: the other 71–75 % start into a device that
-has been idle longer than that, a median of 1.6–2.0 ms and a p90 of 27–29
-ms. **Removing the ordering was tried and does not help.** Allocating an
-instance's four input buffers together, up front, through PJRT's async
-host-to-device transfer manager — so the sync point is taken at admission
-rather than once per buffer behind the previous copy — leaves the overlap
-at 0.00/0.01/0.00 s and proofman's `GENERATING_INNER_PROOFS` unmoved:
-6110/6188/6254 ms before against 6218/6140/6223 ms after. Those are the
-uninstrumented timer on a separate same-session A/B — old bridge and new
-bridge built one after the other on the same card, three runs each — so
-they are comparable to each other and to nothing else on this page, neither
-the nsys legs in the table above nor the 5.93–6.01 s beside them.
-
-The second constraint is what binds, and the idle distribution is what
-makes it visible. The device is not idle for the whole leg — its own
-kernels are busy 2.60 s of 5.45 s — but it is idle when the copies run:
-three in four start after it has already been doing nothing for over a
-millisecond, so an upload freed to run beside kernels finds none to run
-beside. `host_idle.py` says where that idle goes: 76–83 % of it is
-host-side dispatch inside `Artifact::run` — #197's measurement, on its own
-`-t cuda,nvtx` captures of the same guest and card on the same day, not on
-the three here. So at the moment the next instance uploads, the prove
-holding the client is on the host rather than on the device.
-
-Which also means the 0.31 s inside the leg is an upper bound that
-overstates its own cost here: an upload landing in idle the leg would have
-had anyway is not paid for twice. Uploads are not this leg's problem, and
-no change to the upload path makes them one. Bandwidth is smaller still: on
-the table's own rates, pinning the pageable 5.29 GB at the 42 GB/s the
-already-pinned copies reach would take 0.34–0.47 s to about 0.13 s.
-
-Before #168 (2026-09-03) the same table read 21.2–21.5 s wall, a 9.9–10.1 s
-leg with 9.1 s of proves, Main at 1.2 s and ~4.5 CPU-s of executable loads
-per AIR. All of that difference was one cause: the hash-frx wheel pinned
-then emitted marker spellings the frx plugin had retired (fractalyze/xla#557),
-so every Poseidon permutation and sponge inlined into hundreds of loop
-fusions over the whole leaf set — Main's `commit1` held 2034 fusions, 44.5
-GiB of writes, and took 0.385 s where the fused kernel takes 0.08 s. Bytes
-never changed, so no golden noticed; `//zisk_zorch/commit:fusion_test` now
-compiles a commit on the GPU leg and asserts one custom fusion per level.
-The same `commit1` now holds 77 fusions (17 NTT passes, 13 hash kernels,
-the rest reshapes and slices) and loads in 75 ms.
-
-What remains above native is structural, tracked in #170: the bridge
-proves the 11 instances back to back on one client while pil2 overlaps
-three basic streams and its recursion (re-measured on the #171 artifacts,
-a second client is still more than this card has — "Memory budget"
-below, where the shortfall is 6.3 GiB on the shipped wheel); and
-`const_setup` recomputes each AIR's constant tree per run
-where pil2 reads it from disk. The bridge's own start is no longer one of
-them: it finishes well inside proofman's init ("Bridge start-up" above).
-Per instance, Main is within 5–30 % of single-stream pil2. The block-shaped
-comparison is the section above.
-
-Facts the gate surfaced, all now handled by the bridge:
-
-- **Packed traces.** For AIRs carrying `witness_bits` hints the witness
-  library bit-packs rows (`num_packed_words` per row, bits per column);
-  pil2 unpacks on the device. The bridge unpacks on the host from the
-  packing proofman registers (`set_packed_info`). The virtual tables are
-  not packed, which is why they matched before this was found.
-- **Custom-commit fixed file.** The `_gpu.bin` proofman hands over is a
-  32-byte root, then the base section, extended section and tree in the
-  prover's tiled device layout (256x4 column-major tiles); the bridge
-  untiles the base section and recomputes the rest. A CPU run (`prove`
-  without `-g`) writes the same file row-major and names its constants
-  `.const` rather than `.const_gpu`, which is what the bridge keys the
-  layout on.
-- **Out-of-range words.** A trace holds raw machine words, some above the
-  modulus; they are reduced on the way in (pil2 reads them as residues).
-
-### Raising the read-ahead permit moves the upload, not the leg
-
-`ZZ_FIXED_AHEAD` is how many AIRs' fixed sections may be uploaded ahead of the
-running prove's. **It has only two settings.** The permit is taken in `plan` and
-given back in `installed`, both inside the admission `prove_owned` holds for the
-whole prove, so at most `ZZ_PENDING` proves — two by default — can hold one at a
-time: 1 is the permit refusing, anything at or above the admission is the permit
-never refusing, and the value is capped to it. There is no third arm to run.
-
-At 1, four to six of hello-world's eleven proves find the permit taken and
-upload under their own slot; with it off, none do, and the bridge's own `fixed
-sections for X` line shows the work moving out from under the slot. **The leg
-does not follow it.** One binary, arms interleaved and rotated within each pass,
-leg from proofman's `GENERATING_INNER_PROOFS`:
-
-| | permit at 1 | permit off |
-|---|---|---|
-| leg, mean [min-max] | 6113 ms [5852-6247], n=14 | 6075 ms [5815-6351], n=20 |
-| proves uploading under the slot | 4-6 of 11 | 0 |
-| `under the slot`, summed | 1.42 s | 1.29 s |
-| `ahead of it`, summed | 1.67 s | 1.93 s |
-
-Paired inside each pass, which cancels the session drift, the permit off is
-**-26 ms** (sd 109 ms, 14 passes, 8 of them favouring it). Two things size that
-against the harness rather than against zero: a `CUDA_MODULE_LOADING=EAGER`
-control on the same binary and session is -450 ms with every pass the same sign,
-and two *labels for the same configuration* — the sweep ran the capped value as
-if it were an arm of its own — differ by -120 ms (sd 194, 6 passes), more than
-the effect. The run-to-run scatter is the whole of what the depth arms show.
-
-The reason is the ordering in "The uploads, measured" above: an upload into a
-freshly allocated buffer waits on the client's compute stream, so it never
-overlaps that client's own kernels. Two captures, one per setting, hold the same
-1205 copies and 9.75 GB in 0.47 s, still 0.00-0.01 s overlapped. A copy moved
-earlier lands in device idle either way, and there is no leg time to win by
-choosing which idle it lands in. This is the third arm on this leg to move
-host-side work without moving the leg — #205 measured the other two, switching
-the read-ahead off from below and sharing the `constants` program across AIRs
-(that one removed nine of eleven executions outright and was still null, so the
-shape is not "moving is free, removing pays").
-
-Read it as a prior with a control attached, rather than as a law that host-side
-work cannot matter. In those two captures the *capture's* leg — the bridge's
-first kernel to its last, which is 0.8-1.2 s inside proofman's timer and so not
-the 6.1 s above — has the client's kernels busy 2.4 s of 5.1-5.3 s, so host work
-is most of what the leg is; what these arms show is that taking a piece of it
-away lets the neighbouring pieces expand into the device idle it was living in.
-Nobody has a mechanism for that conservation, and it is a prediction that can
-fail — so a fourth arm is worth running, and what it has to beat is the `EAGER`
-control, not zero.
-
-Turning the permit off costs memory, so 1 stays the default: the sections held
-ahead are the AIR's `const_base`, 16-96 MiB for nine of hello-world's eleven
-AIRs but 1168 and 1408 MiB for the two virtual tables, and those two prove back
-to back. It does not move the client's floor, because the floor is not set by
-them — every failure walking `ZZ_MEMORY_FRACTION` down is the same 5.50 GiB
-allocation on `VirtualTableZisk0_n21` (on the `-168` artifacts this arm ran
-on: post-#191 the largest is that AIR's 2.75 GiB `const_ext`, and the verdict
-is unchanged — see "Memory budget"), at either setting (3 repeats per cell:
-0.41 passes 3/3 with the permit at 1 and 5/6 with it off, 0.39 passes 1/3 and
-3/6, 0.37 passes 0/3 and 1/6). That is the aggregate floor "Memory budget"
-describes, and the read-ahead's extra `const_base` neither raises nor lowers it
-within these repeats.
-
-Hello-world is the workload that puts the most pressure on this permit, not the
-least: its eleven instances are eleven distinct AIRs, so every prove needs a key
-no prove before it uploaded. On a mix where an AIR repeats, most proves find
-their sections resident and never plan a read-ahead at all. The block-shaped mix
-is unmeasured here for that reason, not overlooked.
+Start a run only once `nvidia-smi` shows the card empty: a process still
+releasing its memory makes pil2 size its streams from what it sees and exit.
 
 ## Design notes
 
@@ -1353,598 +443,48 @@ is unmeasured here for that reason, not overlooked.
   stage-1 value, three for a later one); the stage-2 hints rewrite the
   air values inside the `logup` program and every later stage reads
   those, as pil2 does.
-- **Memory budget (RTX 5090, 31.8 GiB).** Three pools share the card,
-  and what each gets is `ZZ_MEMORY_FRACTION` (the clients' share, claimed
-  up front), `ZZ_GPU_HEADROOM_GB` (held back from pil2's sizing) and
-  whatever is left (pil2's). The floors below were measured on the
-  hello-world key by walking the fraction down until a run failed, repeats
-  at each fraction — a single run at the boundary is a race and lands
-  either way — on the shipped wheel (`0.10.2.dev20260910150749`, eager
-  kernels on, staging off) against the #191 artifacts (#215, 2026-09-11).
-  `bench/mem_budget.py <run.log>...` reads these tables back out of the
-  logs they came from, and carries the traps below as its own rules.
+- **Memory budget (RTX 5090).** Three pools share the card: the clients'
+  share, claimed up front (`ZZ_MEMORY_FRACTION`), what is held back from
+  pil2's sizing (`ZZ_GPU_HEADROOM_GB`), and pil2's own, which is whatever is
+  left. Floors are found by walking the fraction down until a run fails, with
+  repeats at each step — a single run at the boundary is a race and lands
+  either way. `bench/mem_budget.py` reads those tables back out of the logs
+  they came from and carries these traps as its own rules. The per-prove
+  inventory is a different question and a different tool:
+  `bench/mem_stages.py` over a `ZZ_MEM_STAGES` run, with
+  `bench/pil2_layout.py` over the proving key.
 
-  **A share is the arena the run allocated, not the fraction times the
-  card.** XLA divides `ZZ_MEMORY_FRACTION` by the client count and applies
-  it to its own base — 33670758400 B, which is 31.36 GiB, 0.48 GiB under
-  this card's 31.84 GiB — and every client of a run gets the same arena.
-  The run prints the product it allocated (`XLA backend allocating N bytes
-  on device 0 for BFCAllocator`), so read that rather than computing it.
-  An earlier version of this note computed the column as `fraction × 31.84
-  GiB`: the fractions below are unchanged, the GiB beside them are 1.5 %
-  lower than they were.
-  - **A client needs an 11.60 GiB arena**, at headroom 3 — the arena every
-    run survives, below which the outcome is a coin flip rather than a
-    cliff. The right column turns the fixed-section read-ahead's upload
-    off (`ZZ_FIXED_AHEAD=0`):
+  Five rules that a memory unit here has got wrong before:
 
-    | `ZZ_MEMORY_FRACTION` | the client's arena | shipped | read-ahead off |
-    |---|---|---|---|
-    | 0.45 | 14.11 GiB | 3/3 | — |
-    | 0.39 | 12.23 GiB | 3/3 | — |
-    | 0.37 | 11.60 GiB | 6/6 | 3/3 |
-    | 0.35 | 10.98 GiB | 5/6 | 3/3 |
-    | 0.34 | 10.66 GiB | 3/6 | 1/3 |
-    | 0.32 | 10.03 GiB | 0/3 | 0/3 |
-    | 0.30 | 9.41 GiB | 0/3 | 0/3 |
-    | 0.28 | 8.78 GiB | 0/3 | — |
+  - **A share is the arena the run allocated, not the fraction times the
+    card.** XLA divides the fraction by the client count and applies it to
+    its own base, which is under this card's total; the run prints the arena
+    it allocated, and that is the figure to quote.
+  - **Every "GB" pil2 prints is a GiB**, by two independent routes in its
+    source, so its figures are already comparable to ours and "converting"
+    one silently shrinks the bridge's excess.
+  - **pil2 prints its own per-AIR need** on the `-vv` `TOTAL PROVER MEMORY
+    USAGE` line, which is `mapTotalN * 8`. The ceiling it prints elsewhere is
+    `max(basic, recursion)` over the whole key and is the compressor's, so it
+    bounds nothing about a basic AIR.
+  - **A lever is sized against the prove that actually fails, and the shape
+    moves when you fix one.** Size against the failing run's live set rather
+    than its largest allocation, and re-read which shape fails after each
+    fix: freeing N bytes buys well under N of arena, because what a run needs
+    is placement on top of its data. Do not subtract the two.
+  - **A client-lifetime high-water is not a per-prove peak.** Only the prove
+    that raised it can be attributed from it, and the order the proves ran in
+    decides which that is.
 
-    The surviving fraction is where #191 left it, so the wheel's eager
-    kernel loads and its pinned staging pool do not reach the client's
-    floor. #177 first put the floor at 0.38 off one run per fraction and
-    #188 revised it to 0.39 off seven; a repeated figure supersedes a
-    single run, and 0.37 here is six.
+  Per prove the bridge is at parity: section for section it holds what pil2
+  holds, and on one of the two binding shapes it holds less. pil2 takes one
+  buffer per stream and places sections at offsets inside it, so sections
+  dead by the time a later one is written share their bytes; the bridge
+  reaches the same place by releasing at each section's last reader. What
+  separates a client from pil2 is therefore co-residency plus an in-program
+  transient, not the prove's own sections — which is why three units that
+  sized an excess per prove found none.
 
-    **Nor does the read-ahead reach it.** `ZZ_FIXED_AHEAD=0` takes the next
-    AIR's `const_base` off the device — up to 1.38 GiB, and the two virtual
-    tables that are 88 % of the 2928 MiB the eleven carry between them prove
-    back to back (#209) — and the two columns
-    are not told apart at these counts, with the same cliff between 10.66
-    and 10.03 GiB. `MaxInUse` at 10.03 GiB is 8.69–9.73 GiB with it off
-    against 8.73–9.55 GiB with it on. Only the *upload* is off at depth 0;
-    the key read still runs ahead of the slot, which is why the `ahead`
-    column of the `fixed sections for X` lines does not go to zero.
-
-    **That null is a knob that was never on the right buffer**, not a
-    read-ahead that costs nothing. `ZZ_FIXED_AHEAD` governs `const_base` and
-    `custom_base`; the next instance's `trace` — 32 MiB to 1,248 MiB across
-    these eleven AIRs, and the largest thing another instance leaves on the
-    client — goes up under the per-client admission `ZZ_PENDING` instead
-    (`lib.rs:966-971`). `ZZ_PENDING=1` does move it, by 1.2 GiB of client
-    high-water; see "Where a prove's device memory goes" below.
-
-    **What is in the 11.60 GiB.** A run that dies leaves BFC's own
-    accounting in the log, and 20 of these 21 report the same largest
-    single allocation: **2.75 GiB, `VirtualTableZisk0_n21`'s `const_ext`**
-    (88 constants × 2²² × 8 B from its manifest; the twenty-first died
-    earlier and got no further than 2.44 GiB). The running prove's own extended
-    trace is the next size down — `cm1_ext` 2.44 GiB on `Binary_n22`, 2.38
-    GiB on `Main_n22`, `cm2_ext` 1.50 GiB on `Main_n22` — and the last two
-    are both live in the chunk list of a `Main_n22` abort. #209's 5.50 GiB
-    is the pre-#191 figure on the `-168` artifacts: the blocked extend took
-    that scratch out, and what stands now is the section itself.
-
-    **The room above the data is a range, and its tight end is a few
-    hundred MiB.** A run that *finishes* can be asked what its allocator
-    held — `PJRT_Device_MemoryStats`, through the readout parked on branch
-    `issue220-parked`, not through anything on `main`, where
-    `bench/mem_budget.py` reads `MaxInUse` off the logs of runs that died.
-    At the 11.60 GiB arena the client's own peak in use came back
-    11.27, 10.68 and 10.22 GiB over three runs — 0.33, 0.92 and 1.38 GiB of
-    arena above the live high-water. What binds is the tight end: an arena
-    barely larger than the data it had to hold. An earlier version of this
-    note put it at "at most 1.2 GiB", from the highest `MaxInUse` seen
-    (10.40 GiB) on runs that *died*, where the figure is truncated at the
-    abort; measured on runs that finish it is a range, because the live peak
-    itself swings about a GiB between runs of one workload (#220).
-
-    **The aborts are placement, but `LargestFreeBlock` is not the
-    evidence.** Neither allocator the bridge can build writes
-    `tsl::AllocatorStats::largest_free_block_bytes`, and it is not the only
-    such field: of that dump BFC maintains `InUse`, `MaxInUse`, `NumAllocs`,
-    `MaxAllocSize` and `Limit`, and assigns none of `Reserved`,
-    `PeakReserved` or `LargestFreeBlock` — all three print the zero
-    `AllocatorStats` initialises them to. So the `LargestFreeBlock: 0B` an
-    earlier version of this note cited is printed whatever the heap holds,
-    on a full pool and an empty one alike, and it is not a reading. The same
-    dump does carry the statement — a #220 run at the 8.78 GiB arena:
-    `Total size in pool: 8.78GiB ... available size: 40B` beside `Sum Total
-    of in-use chunks: 7.54GiB`, with a 1.12 GiB request refused. 1.24 GiB
-    free inside the pool and no block large enough is the placement finding,
-    and it stands.
-
-    **`cuda_async` is reachable, and it is not an arena.** The GPU client's
-    create options take an `allocator` kind as a string — `default`,
-    `platform`, `bfc`, `cuda_async`, `vmm`, parsed in
-    [`pjrt_c_api_gpu_internal.cc`](https://github.com/fractalyze/xla/blob/64ebf90f17/xla/pjrt/c/pjrt_c_api_gpu_internal.cc#L96)
-    and carried by the shipped wheel, whose refusal message names all five —
-    so the kind is a create option rather than the plugin change #215 took it
-    for. Walked with it (#220: one binary, the kind an env var, the two arms
-    back to back inside each repeat, three repeats a cell). **The floor
-    record is the table further up, not this one**: that walk was taken to
-    site the floor, with six repeats at the boundary cells, while this one
-    exists to compare two columns taken in one session. Its BFC column lands
-    a rung harsher than the floor table's at the same fractions (2/3 against
-    5/6 at 0.35, 0/3 against 3/6 at 0.34) — different session, a different
-    build, a co-tenant on the host throughout and swap full, and boundary
-    cells that are races either way. The floor cells were not re-run under
-    these conditions, so the two tables are not a controlled comparison of
-    each other; what this one measures is the gap between its own columns.
-
-    | `ZZ_MEMORY_FRACTION` | the client's arena | BFC | `cuda_async` |
-    |---|---|---|---|
-    | 0.37 | 11.60 GiB | 3/3 | 3/3 |
-    | 0.35 | 10.98 GiB | 2/3 | 3/3 |
-    | 0.34 | 10.66 GiB | 0/3 | 3/3 |
-    | 0.32 | 10.03 GiB | 0/3 | 3/3 |
-    | 0.30 | 9.41 GiB | 0/3 | 3/3 |
-    | 0.28 | 8.78 GiB | 0/3 | 3/3 |
-    | 0.26 | 8.15 GiB | 0/3 | 3/3 |
-    | 0.24 | 7.53 GiB | 0/3 | 2/3 |
-    | 0.22 | 6.90 GiB | 0/3 | 0/3 |
-
-    **The right column is not a smaller client.** That kind builds no arena:
-    it allocates from the device's default CUDA memory pool, so the share is
-    the pool's release threshold — claimed up front, and not a ceiling. The
-    client reports itself past it: at the 8.15 GiB claim its allocator gives
-    `limit 8348 MiB` against a peak in use of 10613 and 11093 MiB, 2.2 and
-    2.7 GiB above its own limit. Those are the two runs that *finished* in a
-    later set of three at that cell — a set that passed 2 of 3 where the
-    table's walk passed 3 of 3, the cell being near its boundary either way.
-    The third aborted on a 2.50 GiB allocation, so its peak is truncated at
-    the abort, in the way "The room above the data is a range" above gives
-    as the reason not to quote such a figure; it is a lower bound, and it is
-    over the limit too. What the lower cliff measures is the pool growing
-    into room pil2 did not take. The working set is not what moved: at one claim of 11.60 GiB the
-    peaks are 10.22–11.27 GiB under BFC against 9.90–10.83 under
-    `cuda_async`, ranges a one-GiB run-to-run swing cannot tell apart. All
-    three `cuda_async` runs are byte-identical to a native run from the same
-    session, 11 of 11. The table is one build; the peaks beside it are a
-    second build of the same tree, which adds the off-by-default readout
-    they are taken from and nothing else. Both were read off the run logs by
-    hand — the arena from each run's own `XLA backend allocating N bytes on
-    device 0 for CudaAsyncAllocator`, the peaks from the readout's `client 0
-    memory: ... peak_in_use N MiB`. `bench/mem_budget.py` does **not** produce
-    this table: its arena pattern matches `for BFCAllocator` only, and it
-    knows nothing of the readout's line — the reader that handles both is
-    parked with the option.
-
-    So the kind is not the lever the 2.75 GiB `const_ext` made it look like.
-    It buys no arena, it gives up the ceiling `ZZ_MEMORY_FRACTION` exists
-    for — a client that outgrows its claim takes memory pil2 has already
-    sized itself against — and what it could recover is the few hundred MiB
-    above the data. It is measured, and parked rather than shipped: the
-    bridge option and the memory-stats readback it was measured with are on
-    branch `issue220-parked` (with fractalyze/xla-pjrt#6 behind it), not on
-    `main`.
-
-    Which AIR aborts is not fixed: 13 of these 21 on `Main_n22`, 7 on
-    `VirtualTableZisk0_n21`, one on `Binary_n22`. Read the floor off the
-    arena, not off the AIR named in the log.
-  - **pil2 needs 12.904 GB left to it and refuses to start below that**,
-    since `commit_witness` stays on the card. It is pil2's own check and
-    pil2 prints both sides of it: at one client and headroom 0, fraction
-    0.55 leaves it 12.927 GB and it comes up with one basic stream and
-    5.05 GB of fixed pols, while 0.56 leaves 12.613 GB and it exits with
-    `Insufficient memory. Need 12.904107 GB but only 12.612976 GB
-    available`. The requirement is the same figure at either client count.
-
-    **That figure already contains the module loads**, because it is free
-    memory as pil2 finds it — after the clients have claimed their arenas
-    and their module loads have begun. An earlier version of this note put
-    pil2's floor at 14.3 GiB, which is the *card space* left at the last
-    fraction pil2 survived, and then added ~2 GiB of module loads on top of
-    it: that is the same memory counted twice, and it is most of why the
-    two-client shortfall below is smaller than the 8.1 GiB this note used
-    to carry.
-
-    The block-shaped section above says `ZZ_MEMORY_FRACTION=0.55` leaves pil2
-    13.3 GB and calls that below the minimum it will start with. That does not
-    reconcile with either number here — 0.55 leaves 12.93 GB on this key, and
-    12.93 is above the 12.904 pil2 asks for, so it starts. That run's headroom
-    is not recorded and its workload is the block-shaped one, so the two are
-    not the same measurement; #170 carries the discrepancy.
-
-    pil2 refuses in a second sentence as well. When what it can see is
-    small enough that its own stream sizing asks for a card nobody has, it
-    prints `Not enough GPU memory to run the proof` and no figures — at two
-    clients holding their floor it sized 20 basic streams and asked for
-    162.077 GB. That `Need` is the sizing, not a requirement.
-  - **Module loads come out of neither pool**, which is what
-    `ZZ_GPU_HEADROOM_GB` buys: at headroom 0 a run both pools fit in still
-    dies, on `Failed to get module function: CUDA_ERROR_OUT_OF_MEMORY` or
-    `too many resources requested for launch`. The bench's 3 is enough and
-    0 is not. The headroom does not come out of what pil2 reports as
-    available — across these runs the fraction alone accounts for pil2's
-    `Using minimum memory` to within 0.2 GB at headroom 0 and 3 alike — so
-    it acts on the stream sizing that follows and on what is left for the
-    loads, not on the check above.
-  - **What pil2 actually allocates — 12.9 GiB — is already sized for
-    recursion**, so taking its basic proofs away frees none of it
-    (#194). It is 1.72 GiB of basic fixed pols, 3.33 GiB of aggregation
-    fixed pols and one 7.85 GiB auxiliary trace, and three lines every
-    run prints just above the stream count place that last term
-    ([`proof_ctx.rs:961-988`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/proof_ctx.rs#L961-L988)):
-    `Max prover buffer size: 7.85 GB` is `max(basic, recursion)`, `Max
-    prover recursive buffer size: 7.85 GB` is the recursion term alone,
-    and `Max prover recursive1/recursive2 buffer size: 1.53 GB` is the
-    per-recursive-stream buffer, `max(recursive1, recursive2)`. The
-    first two being equal says only that recursion is at least basic —
-    enough to know basic proving does not size the buffer, not enough to
-    say what does. The third takes recursive1 and recursive2 out of the
-    five-way max
-    ([`setup_ctx.rs:149-154`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/setup_ctx.rs#L149-L154)),
-    leaving the compressor and the two vadcop finals, and the proving
-    key separates those. Holding every committed section at extended
-    size plus the trace — a lower bound on the `mapTotalN` the buffer is
-    cut from — the largest compressor (Keccakf's) comes to 6.41 GiB
-    against 2.36 for `vadcop_final` and 0.60 for
-    `vadcop_final_compressed`, with `recursive2` at 1.22 against its
-    logged 1.53. Only the compressor is in range. It is also sized over
-    the whole proving key rather than the workload: none of
-    hello-world's 11 airs has a compressor at all, and the buffer is
-    still Keccakf's.
-  - **Nor can the basic stream itself go.** Contributions stay on pil2
-    under the bridge, and `commit_witness_gpu` takes a *non-recursive*
-    stream, reads the basic fixed pols and writes that same auxiliary
-    trace
-    ([`starks_api.cu:1231-1292`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/pil2-stark/src/api/starks_api.cu#L1231-L1292));
-    so does the compressor, since `gen_recursive_proof_gpu` sets
-    `aggregation` for `recursive1` and `recursive2` only
-    ([`:894-901`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/pil2-stark/src/api/starks_api.cu#L894-L901)).
-    At zero basic streams `selectStream` has no candidate for either and
-    spins in its wait loop
-    ([`:1746-1812`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/pil2-stark/src/api/starks_api.cu#L1746-L1812)).
-    The mirror image is in every bridge run already: it sizes **0**
-    recursive streams and still finishes, recursion falling back to the
-    basic stream.
-
-  One client fits with room: at the bench's `ZZ_MEMORY_FRACTION=0.45` a
-  whole run peaks at 28.33 GiB of the 31.84 the card has (`nvidia-smi`
-  every 50 ms, the same figure in three runs; 27.35 GiB at 0.37, and native
-  alone peaks at 30.95 GiB). The card is not full because pil2 sizes itself
-  down to what is left — which is why taking 2.51 GiB off the client's
-  arena moved the run's peak by 0.98 GiB, not by 2.51.
-
-  **Two clients are at least 6.3 GiB short** (#215), and both ends of that
-  are measured rather than summed. Give each client the 11.60 GiB it needs
-  (`ZZ_CLIENTS=2 ZZ_MEMORY_FRACTION=0.74`) and pil2 is left 6.55 GB against
-  the 12.904 GB it asks for. Walk down instead until pil2 will start, and
-  the clients get 8.15 GiB each — 8.47 GiB is the last arena at which pil2
-  still refuses, and it refuses by 0.076 GB:
-
-  | `ZZ_CLIENTS=2` | each client | outcome |
-  |---|---|---|
-  | 0.74 | 11.60 GiB | pil2 refused, sees 6.55 GB — 0/4 |
-  | 0.60 | 9.41 GiB | pil2 refused — 0/2 |
-  | 0.56 | 8.78 GiB | pil2 refused — 0/2 |
-  | 0.55 | 8.62 GiB | pil2 refused by 0.393 GB — 0/3 |
-  | 0.54 | 8.47 GiB | pil2 refused by 0.076 GB — 0/2 |
-  | 0.52 | 8.15 GiB | pil2 up on one basic stream, client OOM — 0/2 |
-  | 0.48 | 7.53 GiB | pil2 up, client OOM — 0/2 |
-  | 0.45 | 7.06 GiB | pil2 up, client OOM — 0/3 (headroom 3) |
-
-  So **a client has to fit in at most 8.47 GiB and needs 11.60: the target
-  is 3.1 to 3.5 GiB per client, 6.3 to 6.9 GiB over the pair.** It is a
-  lower bound on the shortfall — every row but the last runs at headroom 0,
-  where the module loads have no reserve and the clients abort anyway.
-  #194's counterfactual comes close and still does not close it, as
-  arithmetic on the rows above rather than a run: had pil2 been sizable for
-  recursion alone — 1.72 + 3.33 + one 1.53 GiB recursive stream, 6.58 GiB
-  against the 12.02 GiB it asks for — the rows' 31.37 GB per unit fraction
-  puts its break-even near 0.72, which is about 11.35 GiB a client, still
-  under the 11.60 they need. The bullet above is why that saving is not on
-  offer anyway. **The unset `ZZ_CLIENTS`
-  default is 3**, which puts three arenas past the whole card before pil2
-  gets any; the bench pins `ZZ_CLIENTS=1`, and every number here is from
-  one client.
-
-  Where a client's 3.2 GiB could come from, sized above and **in this
-  order**: the 1.19–1.22 GiB base trace the prove was holding past its last
-  reader (#219, done — worth 0.31–0.95 GiB of arena, a bracket rather than a
-  figure for the reason the walk below gives), then the 2.75 GiB `const_ext`
-  it holds resident, which only becomes the binding shape once the trace is
-  gone (#219 measured that hand-over), then the 2.38–2.44 GiB `cm1_ext` the
-  running prove computes, with the placement room above the live set
-  throughout — a range whose tight end is a few hundred MiB rather than the
-  flat 1.2 GiB this paragraph used to carry, re-measured under "The room
-  above the data is a range" above (#220). Not from the fixed-section
-  read-ahead, which the table above measures as not binding, and not from
-  pil2, which the two bullets above close off. An earlier version of this
-  paragraph led with `const_ext` on the strength of its being the largest
-  single allocation; the bullets below are why that is an argument about
-  ordering rather than about size.
-
-  **The `const_ext` step is not filed and nobody is working it.** #219
-  closed on the trace release alone: releasing `const_ext` from stage 1 is
-  worth 0.6–1.2 GiB, needs a new export program and a re-export of the 11
-  AIRs, and leaves `Main_n22`'s `cm1_ext` + `cm2_ext` at 8.80–8.87 GiB — so
-  a client would still be above the 8.47 GiB two of them can each have. The
-  order above is what a future attempt at a second client has to work
-  through, not a queue with owners.
-
-  Reproduce a cell, then read the table back out of the runs it made:
-
-  ```bash
-  # one cell: three runs at one arena size, a pass being 11 proofs and a
-  # verified final proof. Distinct tags -- run.sh clears the tag it is given.
-  export ZZ_RUNS=./zz-runs            # run.sh's own default; name it so the
-                                      # read line below can find the logs
-  for r in 1 2 3; do
-    ZZ_CLIENTS=1 ZZ_GPU_HEADROOM_GB=3 ZZ_MEMORY_FRACTION=0.37 \
-      ZISK_PROVE_FLAGS= bench/run.sh walk-f0.37-r$r bridge
-  done
-  bench/mem_budget.py "$ZZ_RUNS"/walk-f0.37-r*/run.log
-  ```
-
-- **A lever is sized against the prove that actually fails, and the shape
-  that fails moves when you fix one** (#219). Two levers were in play here
-  and the order between them was the whole result: `const_ext` is the
-  largest block a client holds, and it was not in the binding live set
-  until the smaller lever landed.
-
-  `const_ext`'s readers are in every AIR's manifest — `quotient`, `evals`,
-  `deep` and `open_const` take it as an input, and nothing in stage 1 does.
-  A prove holds it from `set_fixed`, which builds it, to the first opening,
-  so the window it is resident without a reader is the whole of stage 1:
-  `commit1`, `logup`, `commit2`. On `VirtualTableZisk0_n21` that is 2.75 GiB
-  (88 constants × 2²² × 8 B) held across three programs that cannot read it,
-  and it is the largest single allocation BFC reports on a failing run.
-
-  It was still the wrong lever to reach for first. Each failing run prints
-  BFC's in-use chunk list, and the chunk sizes name the sections against the
-  manifests. Grouping #215's 21 one-client aborts (its `w1`/`w2`
-  shipped-walk repeats and the `fa0` arm, which is `ZZ_FIXED_AHEAD=0`; all
-  at one client and headroom 3):
-
-  | the prove that aborted | aborts | at fractions | `MaxInUse` | that AIR's `const_ext` |
-  |---|---|---|---|---|
-  | `Main_n22` | 13 | 0.30–0.35 | 9.11–10.40 GiB | 0.19 GiB |
-  | `VirtualTableZisk0_n21` | 7 | 0.28–0.32 | 7.62–8.83 GiB | 2.75 GiB |
-  | `Binary_n22` | 1 | 0.32 | 9.10 GiB | 0.06 GiB |
-
-  Every abort in the 0.34–0.37 band where a run is a coin flip is a
-  `Main_n22` prove, whose `const_ext` is 0.19 GiB; the shape carrying the
-  2.75 GiB never failed above 0.32, about 1.6 GiB below the shape setting
-  the floor. The bullet below is what the `Main_n22` shape was carrying
-  instead, and what happened to the ordering once it was gone.
-
-  So: read the live set of the prove that fails, not the largest allocation
-  in the run, and read it again after each change — the binding shape is not
-  a property of the workload, it is a property of the current binary.
-
-  ```bash
-  # the last in-use chunk list of a run that died, sections named by size
-  grep -B40 'Sum Total of in-use chunks' "$ZZ_RUNS"/<tag>/run.log | tail -40
-  ```
-
-- **A prove kept the base trace to its last opening, and releasing it makes
-  `const_ext` the binding shape** (#219). `prove` drops the trace from its
-  environment after `logup`, which is its last reader, so that a wide AIR's
-  1.19–1.22 GiB is gone before the quotient's peak. The drop freed nothing:
-  `upload_inputs` runs ahead of the slot and the caller held its result on
-  `InstanceInputs::uploaded` for the whole prove, so the environment's
-  handle was a clone and the device buffer outlived every release.
-
-  It was the one dead buffer in the shape that bound. Of the 14
-  `Main_n22`/`Binary_n22` aborts above, 13 are past `logup` and 10 of those
-  hold a chunk of exactly the proving AIR's base-trace size, at `quotient`,
-  `lev` or `evals` (the other three hold one in a 1.24–1.28 GiB bin, which
-  is a base trace BFC placed in a larger chunk and does not say whose). The
-  clean one is `w1-c1-h3-f0.35-r3`: aborting on `Main_n22` at `lev`, it
-  holds 1.188 and 1.219 GiB at once — Main's own trace, six programs past
-  its last reader, beside the next instance's `Binary_n22` trace, which is
-  uploaded ahead and legitimately live. On an AIR with `witness_calc` two
-  traces were live at once through `commit1` and `logup`, the uploaded one
-  and the one the program computed over it.
-
-  `prove` now takes `InstanceInputs` by value and moves the uploads into its
-  environment, so the environment owns them and a removal frees. What makes
-  that safe is which programs read the section, which the export decides and
-  not the driver, so `RELEASED_EARLY` in `driver.rs` states the release
-  points and every prove checks the manifest against them
-  (`check_release_points`): an export that added a later reader fails the
-  prove instead of binding a buffer that is gone.
-
-  Walked the same fractions as "Memory budget" above, the two binaries
-  interleaved run by run inside one session, three repeats a cell, on the
-  #191 artifacts and wheel `0.10.2.dev20260910150749` (one client, headroom
-  3, hello-world; a pass is all 11 proofs and a verified final proof). Every
-  run here allocates a BFC arena, which is what makes a fraction walk a
-  reading of the working set — each run names it itself, in the `XLA backend
-  allocating N bytes on device 0 for BFCAllocator` line the share is read
-  from:
-
-  | `ZZ_MEMORY_FRACTION` | the client's arena | before | after |
-  |---|---|---|---|
-  | 0.37 | 11.60 GiB | 3/3 | 3/3 |
-  | 0.35 | 10.98 GiB | 3/3 | 3/3 |
-  | 0.34 | 10.66 GiB | 1/3 | 3/3 |
-  | 0.33 | 10.35 GiB | 0/3 | 3/3 |
-  | 0.32 | 10.03 GiB | 0/3 | 1/3 |
-  | 0.30 | 9.41 GiB | 0/3 | 0/3 |
-
-  **The lowest arena every run survives goes from 10.98 to 10.35 GiB**, and
-  that is a bracket rather than a figure: the ladder's rungs are 0.31–0.63
-  GiB apart, so the before arm's floor is somewhere in (10.66, 10.98] and
-  the after arm's in (10.03, 10.35], which puts the shift between 0.31 and
-  0.95 GiB. The before column reproduces #215's walk at three repeats rather
-  than six — that walk put the floor at 0.37 off 6/6 with 0.35 at 5/6, and
-  three repeats here cannot tell 0.35 from 0.37 — so read the arms against
-  each other in this table, not against #215's.
-
-  Wherever it falls in that bracket, the shift is well under the 1.19–1.22
-  GiB of data the release takes out of the shape that was binding, which is
-  the direction #191 found for the same reason: what is freed is data, and
-  what a run needs is placement on top of it. **Do not subtract the two and
-  call the remainder placement.** Two things changed between these arms, not
-  one — the data is gone, *and* the shape that sets the floor is no longer
-  the same shape (below). The release frees 1.19 GiB on `Main_n22` but only
-  0.36 GiB on the `VirtualTableZisk0_n21` shape that now co-binds, so part
-  of what did not convert is the hand-over rather than placement. Placement
-  is a real term and #220 is measuring it; it is not this subtraction.
-  `MaxAllocSize` is unchanged at 2.75 GiB, since `const_setup` still
-  allocates `const_ext` whether or not the prove keeps it.
-
-  **What binds now is `const_ext`.** The arms' aborts, same runs:
-
-  | the prove that aborted | before | after |
-  |---|---|---|
-  | `Main_n22` | 7, `MaxInUse` 9.16–10.35 GiB | 2, 8.80–8.87 GiB |
-  | `VirtualTableZisk0_n21` | 3, 7.91–8.77 GiB | 3, 7.20–8.79 GiB |
-  | `Binary_n22` | 1, 9.10 GiB | — |
-
-  Before, the `Main_n22` shape stood 1.6 GiB above the `const_ext` one and
-  set the floor alone. After, the two are level — 8.80–8.87 against
-  7.20–8.79 — and the `const_ext` shape is the majority of what is left.
-  `after-f0.32-r1` is the mechanism in one dump: aborting on `Main_n22` at
-  `quotient`, it holds the next instance's `Binary_n22` trace at 1.219 GiB
-  and no trace of its own, where the same shape before held both.
-
-  The leg pays nothing for it: 5.235 s [5.234–5.668] before against 5.130 s
-  [5.074–5.337] after, three passes an arm interleaved at the bench's own
-  `ZZ_MEMORY_FRACTION=0.45`, read with `bench/leg_phases.py` — inside the
-  ~0.2 s floor, so the arms are not told apart. Both byte-gates are green on
-  the changed binary: 11 of 11 basic proofs identical to native's dumps
-  (`bench/compare_dumps.py`) and a clean `ZZ_AB=1` run.
-
-  So #219's own lever is now worth what the issue claimed for it, and was
-  not before: taking `const_ext` out of stage 1 would drop the
-  `VirtualTableZisk0_n21` shape by 2.75 GiB of data and leave `Main_n22`'s
-  `cm1_ext` + `cm2_ext` as the next wall. A client still needs 10.35 GiB
-  against the 8.47 GiB two of them can have, so this is one step of three,
-  not the step.
-
-- **The resident-set trim does not reach a second client** (#188). Scoped
-  as "re-upload the base constants per prove, drop the digest layers once
-  the openings are done", built in full, and walked down the same fraction
-  (one client, headroom 3, hello-world; a pass is all 11 proofs and a
-  verified final proof):
-
-  | `ZZ_MEMORY_FRACTION` | the client's arena | before | the trim in full | shipped |
-  |---|---|---|---|---|
-  | 0.45 | 14.11 GiB | 4/4 | 5/5 | 6/6 |
-  | 0.39 | 12.23 GiB | 7/7 | 7/10 | 5/7 |
-  | 0.38 | 11.92 GiB | 0/4 | 4/7 | 2/3 |
-  | 0.37 | 11.60 GiB | 0/4 | 2/4 | — |
-  | 0.36 | 11.29 GiB | 0/1 | 0/1 | — |
-
-  Before the change the floor is a cliff: every run at 0.39 and above, none
-  below. With the trim there is no cliff, only a band from 0.39 down to 0.37
-  where the outcome is a coin flip, and no fraction a run can be counted on
-  at is lower than before. Read the columns as "not told apart at these
-  counts" rather than as a gain — a fraction at the boundary is a race
-  between the read-ahead's upload and the running prove's peak, which is
-  what the before column revises the floor above for. Run repeats and quote
-  the counts. The bench's 0.45 is unaffected in every arm.
-
-  With the trim in full, `ZZ_CLIENTS=2` still fails 0/3 at fraction 0.45
-  (headroom 3) and 0/3 at 0.54 (headroom 0). That arm frees strictly more
-  than what shipped, so the verdict is the conservative one.
-
-  What binds is the same allocation before and after, and the resident set
-  never held it: one block twice the size of an extended section — an
-  extend's input and output alive at once inside a single program. 5.50 GiB
-  for `const_setup` on `VirtualTableZisk0_n21` (2 × its 2.75 GiB
-  `const_ext`), 4.56 GiB for `VirtualTableZisk1_n21`, 4.88 GiB for `commit1`
-  on `Binary_n22` (2 × its 2.44 GiB `cm1_ext`). `const_base` is the *input*
-  to the largest of them, so releasing it after `logup` cannot reach it.
-  That block is now gone (#191 below) and two clients still do not fit: it
-  was the largest single allocation a client made, which is not the same
-  thing as the floor.
-
-  Half the trim shipped: a stage tree is released as its openings reach the
-  wire, which costs nothing since nothing re-reads or recomputes it. The
-  base sections stay resident. Making them per prove leaves residency with
-  nothing to reuse, so two consecutive instances of one AIR would carry a
-  second `const_base` beside the running prove's — invisible to the
-  hello-world guest every number here comes from, whose 11 AIRs are
-  distinct, and paid by the block-shaped mix above, which is 13 Main and
-  6 Binary.
-- **The extend transforms a column block at a time** (#191). `extend` turned
-  a section into its LDE in one transform, which is what put two extended
-  copies of it on the device beside the result. It now splits the columns
-  into blocks of at most `LDE_BLOCK_BYTES` (256 MiB) of the extended domain
-  and writes each into the result, the blocks ordered against each other so
-  XLA does not schedule several of their transforms at once. Each column's
-  LDE is independent of every other's, so the codeword does not move: only
-  the four LDE-bearing programs re-export (21 of the 380 behind the
-  hello-world set), every golden is unchanged, and all 11 basic proofs stay
-  byte-identical to native's. From the compiled executables' own accounting
-  (`memory_analysis`), on the LDE at the two shapes above:
-
-  | RTX 5090 | VirtualTableZisk0_n21's constants | Binary_n22's `cm1` |
-  |---|---|---|
-  | the section, extended | 88 columns, 2.75 GiB | 39 columns, 2.44 GiB |
-  | columns a block | 8 | 4 |
-  | temporaries | 5.50 → **0.75 GiB** | 4.88 → **0.75 GiB** |
-  | argument + result + temporaries | 9.63 → **4.88 GiB** | 8.53 → **4.41 GiB** |
-  | the LDE's own device time | 31.9 → 39.5 ms | 34.0 → 54.5 ms |
-
-  Whole programs move less than their LDEs do, because the Merkle half
-  has temporaries of its own: `const_setup` on VirtualTableZisk0_n21 goes
-  from 9.79 to **6.42 GiB** (1.38 argument + 2.92 results, scratch 5.50 →
-  2.13), and what is left of the scratch is the tree's. Compiling it is
-  unaffected, 262.8 s against 266.4 s — the blocks multiply the NTT
-  passes and the Poseidon kernels are what the minutes go to. A program
-  cannot go below its own argument and results, 4.13 GiB there, and both
-  are fixed sections the client holds either way.
-
-  The time lands where the per-LDE figures predict. A whole hello-world
-  leg is 5.64–5.86 s before and 5.74–6.14 s after, three runs each at
-  fraction 0.39 on the same binary; `zz_prove` on the dumped Main case
-  proves it in 0.501 s against 0.519 s, which over 11 instances is the
-  0.2 s the leg moves.
-
-  **The blocking did not cover the input's re-layout** (#237). The
-  transform reads a column, the section is stored by row, so each block is
-  transposed on the way in. Those per-block transposes are what the
-  exporter emits, and XLA did not keep them: with the field view taken
-  over the whole section before the blocks are sliced off it, the slices
-  sink below the bitcast and the blocks' transposes merge into a single
-  transpose of the entire section, live from the first block to the last.
-  `extend_words` takes the view a block at a time instead, which leaves
-  the transposes where they were emitted. The section's declared layout
-  does not move and neither does the manifest — `raw_boundary` reports
-  field inputs as `uint64` either way, so the entry is the same bytes and
-  the bridge is unchanged; only the four LDE-bearing programs re-export.
-  On `VirtualTableZisk0_n21`, from the compiles' buffer assignments
-  (`bench/buffer_assignment.py`), before against after:
-
-  | RTX 5090 | `const_setup` | `commit2` |
-  |---|---|---|
-  | temp arena | 2,176 → **768 MiB** | 1,600 → **1,024 MiB** |
-  | the merged transpose | 1,408 MiB, live 25–182 of 267 | 576 MiB |
-
-  Each arena falls by its own transpose's size exactly. What is left is the
-  stage buffers the NTT passes ping-pong between, which alias, so the floor
-  is the block size and not the section's width. The codeword is pinned
-  either way — `extend_words` carries the `extendPol` goldens at three
-  block sizes — and the manifest is byte-identical, `uint64` entries of the
-  same dims, so the bridge uploads the same bytes to the same specs. The
-  basic proofs' byte-gate was **not** re-run for this change, unlike #191
-  above: the goldens and that manifest are the whole of what pins it here,
-  and the gate belongs in whatever re-exports the artifacts next.
-
-  The loop's `optimization_barrier` still does its job, but not by
-  surviving: no `opt-barrier` is left in the optimized module either way,
-  so nothing in the final program enforces the order. It constrains the
-  passes that run before it is dropped, and taking it out of the source
-  grows the arena by a block set. What it does not constrain is the
-  input's re-layout, which is settled against the whole section before the
-  blocks exist — so putting a barrier on the slice does not move it, and
-  the field view has to be taken per block instead.
-
-  **Freeing memory inside a program is not the same as lowering the
-  floor.** 3.4 GiB out of the biggest one buys 0.6 GiB of the client
-  floor above, because that block was the arena's largest single
-  allocation rather than most of its high-water; the largest a failing
-  run at fraction 0.28 now *asks* for is 1.56 GiB, inside `commit2` on
-  `VirtualTableZisk0_n21` — which is the request that found the arena dry,
-  not the largest allocation, and BFC still reports 2.75 GiB for that
-  ("Memory budget"). So the extend is not what
-  stands between this card and a second client, and the next lever is
-  what a client keeps rather than what one program computes.
 - **Exports carry no debug info and no folded power tables.** XLA
   re-formats every op's source location on load (half of a 5.6 s load
   once), so the exporter strips them; and it constant-folds the coset
@@ -2015,789 +555,80 @@ is unmeasured here for that reason, not overlooked.
   first transcript wait (the stage-2 challenges do not depend on root1 in
   this schedule).
 
-### Where a prove's device memory goes, against pil2's own buffer (2026-09-12, #226)
+### The fixed sections stay only while the plan proves the AIR again
 
-Every memory unit before this one sized allocations. None asked which
-buffers are alive at each stage of one prove and why, so the ~3 GiB a
-second client is short by (#215) had no owner. This is that inventory, and
-the answer is that **it is not in the prove's sections**: section for
-section the bridge holds what pil2 holds, and on one of the two binding
-shapes it holds less.
+Sections held past their last reader are not a leak; they are what residency
+costs. The key's sections stay on the client so the *next* prove of the same
+AIR skips re-reading and re-uploading them, and the bet pays only when that
+next prove comes. On the block-shaped mix it does — "Family switches" puts
+what it saves at seconds per run — and on hello-world it never does, since
+its eleven instances are eleven distinct AIRs.
 
-That is the same conclusion #220 reached from the other side. Its ladder found
-the allocator kind was not a lever — the room above the data is small — and
-this comparison says the data was never the outlier either. Three units of
-this family sized an excess that, per prove, is not there.
+proofman knows which it is before the first prove, so it sends its instance
+list with duplicates intact (`Bridge::set_plan`). **That half lives in the
+proofman fork**, whose `gen_proof` call site pushes every instance's key.
+An AIR the list names once hands its sections to the prove that uploads them
+rather than lending them — `driver::prove` *takes* the fixed env off the
+driver instead of cloning it, which is what makes the removes inside the
+prove free — and each section goes at its own last reader. An AIR named more
+than once keeps everything, exactly as before.
 
-Read with `bridge/bench/mem_stages.py` over a `ZZ_MEM_STAGES=2` run and
-`bridge/bench/pil2_layout.py` over the proving key — not with
-`bench/mem_budget.py`, which answers a different question (what a whole run
-asked the card for, and which allocation a dead run died on) and cannot
-produce these tables. Twelve runs, four arms of three, go hello-world,
-`ZZ_CLIENTS=1`, fraction 0.45, headroom 3, shipped wheel
-`0.10.2.dev20260910150749`, artifacts `zz-artifacts-191`, page cache warmed
-by `run.sh`. All 11 basic proofs byte-identical to a same-session native arm
-on every one of the twelve. Host carried a full swap (7/7) throughout, as
-#220's walk did.
+Three properties, each a way it could have been got wrong:
 
-**pil2's per-AIR need is printed by pil2 and is far below the 7.85 GiB
-ceiling.** The `-vv` line `TOTAL PROVER MEMORY USAGE` gives it per AIR;
-it is `prover_buffer_size * 8`, and `prover_buffer_size` is
-`get_map_totaln_c`, i.e. `mapTotalN`
-([`utils.rs:127`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/proofman/src/utils.rs#L127),
-[`setup.rs:212`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/setup.rs#L212)).
-For hello-world: Main 6.03, VirtualTableZisk0 7.35, Rom 4.52, Arith 4.40,
-MemAlign 2.74. The 7.85 GiB is `max(basic, recursion)` over the whole
-proving key and is the compressor's, so it bounds nothing about a basic AIR.
-
-**Every "GB" pil2 prints is a GiB**, by two independent routes:
-`format_bytes` divides by 1024 and labels the units KB/MB/GB
-([`utils.rs:184-197`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/common/src/utils.rs#L184-L197)),
-and the `Insufficient memory. Need X GB` line does not come from it at all —
-it divides by `1024.0 * 1024.0 * 1024.0` inline
-([`starks_api.cu:344`](https://github.com/fractalyze/pil2-proofman/blob/daf3a598/pil2-stark/src/api/starks_api.cu#L344)).
-Both figures are already comparable to ours; "converting" either shrinks the
-bridge's excess by 7 %.
-
-**Where pil2's buffer differs from ours in kind.** pil2 takes one buffer per
-stream and places sections at offsets inside it, so sections dead by the time
-a later one is written share their bytes: `cm1` base sits where `cm2_ext` is
-written, `cm2` base where the quotient section and its tree go. It does not
-release them — it never allocated them apart. The bridge reaches the same
-place by releasing (`driver::prove` drops `trace` after `logup` and `cm2`
-after `commit2`; `release_tree` drops each stage tree as its openings reach
-the wire), and the two come out level. Whether an AIR's constant tree is in
-that per-stream buffer or preloaded once per GPU is decided **per AIR**:
-Main's is shared, VirtualTableZisk0's is not.
-
-#### The live sets, section for section
-
-Bridge rows are the largest boundary of one prove under `ZZ_PENDING=1`
-(nothing of another instance on the client); pil2's are its buffer, which is
-allocated whole for the stream's life. MiB.
-
-| section | Main: bridge | pil2 | diff | VirtualTableZisk0: bridge | pil2 | diff |
-|---|---|---|---|---|---|---|
-| `cm1_ext` | 2,432 | 2,432 | 0 | 736 | 736 | 0 |
-| `cm2_ext` | 1,536 | 1,536 | 0 | 1,152 | 1,152 | 0 |
-| `cm3_ext` (qsec) | 384 | 384 | 0 | 192 | 192 | 0 |
-| `mt1` / `mt2` / `mt3` | 341 each | 341 each | 0 | 171 each | 171 each | 0 |
-| const (base) | 96 | 96 | 0 | 1,408 | 1,408 | 0 |
-| constant tree | 533 | 0 | **+533** | 2,987 | 2,987 | 0 |
-| FRI layers + trees | 268 | 268 | 0 | 134 | 134 | 0 |
-| `q/f` + codeword | 0 | 384 | −384 | 0 | 192 | −192 |
-| `zi` / domain | 128 | 0 | +128 | 64 | 0 | +64 |
-| quotient row windows | 32 | 0 | +32 | 16 | 0 | +16 |
-| itemised above | 6,434 | 6,127 | +307 | 7,201 | 7,316 | −115 |
-| **buffer pil2 allocates** | **6,434** | **6,170** | **+264** | **7,201** | **7,530** | **−329** |
-
-Two totals because they answer different questions. The itemised row is
-section against section. `mapTotalN` is larger than the sections placed in it:
-it is the maximum of the placed layout and the scratch terms pil2 sizes the
-buffer against but does not place in the table (`lev`, `mem_exps`, the
-`tmp1`/`tmp3` expression memory) — 43 MiB of it on Main and 214 MiB on
-VirtualTableZisk0. The second row is the comparison that matters, since pil2
-holds the whole buffer for the stream's life whether a section is in it or
-not.
-
-**Before believing that parity, check the instrument could have seen a
-difference** — this page's own rule, from "So run a positive control before
-believing a null on this leg". Two things say it can. The table itself
-resolves a per-section difference where one is known to exist and reports zero
-where it is not: the constant-tree row is +533 MiB on Main and exactly 0 on
-VirtualTableZisk0, which is pil2's own per-AIR branch (shared per GPU against
-carried per stream) recovered independently from the live set. And turning a
-knob moves it — `ZZ_PENDING=1` takes co-residency from 1,504–2,704 MiB to 0 and
-the client high-water from 10,263 to 8,933 MiB. An inventory blind to a
-gigabyte would have done neither.
-
-The bridge's own live set is within 0.26 GiB of pil2's on Main and 0.32 GiB
-*below* it on VirtualTableZisk0. The three rows that differ:
-
-- **The constant tree, +533 MiB on Main and 0 on VirtualTableZisk0.** pil2
-  preloads Main's once per GPU and shares it across streams; the bridge holds
-  one per client. This is worth `533 MiB x (clients - 1)` and nothing at one
-  client. On VirtualTableZisk0 pil2 did not preload — its 2,987 MiB tree is
-  inside *every* stream's buffer — so the claim "we hold 2.75 GiB pil2 does
-  not" was never true for that shape. That does not make our residency free;
-  it means the comparison cannot size it.
-- **`zi` / domain, +128 MiB.** pil2 places `zi`/`x` at the offset its
-  expression scratch starts from, so they fall inside its maximum instead of
-  adding to it; the bridge materialises them as buffers from `constants`.
-- **`q/f` + codeword, −384 MiB.** pil2 reserves `q/f` and `buff_helper` for
-  the buffer's life; the bridge has released the codeword by `openings`.
-
-#### What the excess actually is
-
-Two terms, neither of them a section.
-
-**(b) Co-residency — the next instance's `trace`, 32–1,248 MiB, and 0 under
-`ZZ_PENDING=1`.** The per-client admission (`ZZ_PENDING`, default 2) puts the
-next instance's `trace` on the device during the running prove. Which AIR that
-is moves run to run, and the eleven traces span 32 MiB (Rom) to 1,248 MiB
-(Binary), so this is a bimodal jump rather than scatter. At Main's `openings`
-boundary, per run:
-
-| arm | r1 | r2 | r3 |
-|---|---|---|---|
-| default | Rom, 32 MiB | Binary, 1,248 MiB | BinaryExtension, 928 MiB |
-| `ZZ_FIXED_AHEAD=0` | Mem, 416 MiB | Mem, 416 MiB | none |
-| `ZZ_PENDING=1` | none | none | none |
-
-`ZZ_FIXED_AHEAD` does not control it — that depth governs `const_base` /
-`custom_base` only, while `trace` / `publics` / `airvalues` ride the
-admission (`lib.rs:966-971`). This explains the null recorded above under
-"Nor does the read-ahead reach it": the knob was never on the largest
-co-resident buffer. `ZZ_PENDING=1` removes it in all three runs and takes the
-client high-water from 9,007–10,263 MiB to **8,933–8,993 MiB**. That band is
-one binary's: a run's high-water is whichever prove raised it last, so another
-build reproduces the composition below and not the level — a later one puts
-the same arm at 8,981–9,068. Read the composition, not the band, when
-comparing across builds.
-
-The trace is the largest of the next instance's uploads but not the only one;
-counting its `const_base` and scalars too, everything on the client that is
-not the running prove's comes to 32–1,376 MiB on Main and 1,504–2,704 MiB on
-VirtualTableZisk0 at the boundaries above, and to zero under `ZZ_PENDING=1`.
-One admission slot holds one next instance either way.
-
-**(c) Transients inside one program, +838 to +1,957 MiB.** Under
-`ZZ_PENDING=1` the client high-water is 8,933–8,993 MiB against a largest
-boundary live set, over all eleven proves, of 7,201 MiB — 1.7 GiB that no
-boundary ever sees, because it is reached *inside* an execution. The binding
-one is `commit2` on VirtualTableZisk0, which raises the allocator's peak by
-1,957 MiB while it runs; Main's own largest is `evals`, +838 MiB. (Main's
-9,007-MiB-era gap is not Main's transient: the peak is the client's, and by
-the time Main proves, VirtualTableZisk0 has already set it.) This is XLA's
-own allocation
-while a program runs — an extend's output beside its input, fusion scratch —
-and it is on top of our live set, where pil2's equivalent (`mem_exps`,
-`tmp1`/`tmp3`, `buff_helper`) is already inside `mapTotalN`.
-
-**This term is the one an arena figure cannot be decomposed into.** It is
-inside the client-lifetime peak that "Memory budget" above quotes, and it
-belongs to no section — so anyone who reads that arena and tries to account
-for it section by section is left with a gigabyte and a half that has no row,
-whatever inventory they take. It is visible only between two programs, which
-is what `ZZ_MEM_STAGES=2` exists for. Size a memory lever against the live set
-plus this term, never against the live set alone.
-
-**(a) Held past their last reader: 256 MiB on Main, 1,488 MiB on
-VirtualTableZisk0**, dominated by `const_base` (96 / 1,408 MiB), whose last
-reader is `logup` in stage 1 and which stays for the life of the prove. Both
-figures are from the `ZZ_PENDING=1` arm and are identical across its three
-runs. That arm is the one to read them from: the registry is per client rather
-than per prove, so on a default-admission log the next instance's `trace` is
-alive with no reader yet run, and counting it here would charge the largest
-buffer in the workload to this category. `mem_stages.py` excludes it by size —
-the eleven AIRs declare eleven different trace widths — but a figure quoted
-from an arm where nothing is co-resident needs no such rule to be believed.
-`ZZ_RESIDENT_AIRS=1` keeps it for the next prove of the same AIR — **which on
-hello-world never comes**, because its 11 AIRs are all distinct. On the
-block-shaped `sha-hasher` workload (38 instances over 16 AIRs) AIRs do
-repeat, and that is the case the policy exists for. Read as a defect it
-argues for dropping residency, which would regress the workload nobody in
-this family is measuring.
-
-**(d) Per-client copies of what pil2 shares:** the constant tree above, 533
-MiB per extra client on Main-shaped AIRs, 0 on VirtualTableZisk0. **(e)** the
-`zi`/domain and row-window rows, 160 MiB and 80 MiB.
-
-The categories do not sum to a single "~3 GiB excess" because that figure was
-a client-lifetime high-water compared against a per-stream ceiling. Per
-prove, against pil2's own per-AIR need, the bridge is at parity; the client
-peak sits above it by (b) and (c).
-
-#### Fix candidates, sized from the table
-
-Not filed here — one change each, for the supervisor.
-
-1. **Bound the instance read-ahead by bytes, not by count** — (b), 0–1.2 GiB
-   of client peak, and it makes the peak reproducible. `ZZ_PENDING=1` costs
-   ~0.32 s of the 5.6 s leg (medians 5,953 vs 5,635 ms), but these arms were
-   run in blocks rather than interleaved, so that figure is provisional and a
-   fix unit must re-measure it interleaved (Decision 84 on #170). A byte cap
-   would admit Rom's 32 MiB trace and hold back Binary's 1,248 MiB.
-   **Done (#228)** — see "The instance read-ahead, bounded by bytes" below.
-   The interleaved re-measure puts `ZZ_PENDING=1` at 476 ms rather than
-   ~0.32 s, and the cap turns out to buy its peak by holding back the next
-   AIR's *key* rather than its trace.
-2. **Share the constant tree across clients** — (d), 533 MiB per extra client
-   on const-light AIRs. Worth nothing at `ZZ_CLIENTS=1`, which is why it has
-   to be sized against the two-client configuration it exists for.
-3. **Make the fixed-section residency conditional on the plan** — (a), up to
-   1,408 MiB on VirtualTableZisk0. proofman knows the instance list before
-   proving, so an AIR that appears once need not keep `const_base` past
-   `logup`. Must be measured on `sha-hasher`, not hello-world. *Done, #229:
-   the section below it. 1,408 MiB off that prove, and the run's high-water is
-   not where it lands.*
-4. **The `commit2` / `evals` transient** — (c), the largest single term at
-   1.0–1.6 GiB above the live set. Not reachable from the bridge: it is
-   XLA's allocation inside one executable, so the lever is export-side
-   (chunk the extend the way #191 chunked its predecessor) or plugin-side
-   (donate the input buffer).
-
-### The fixed sections stay only while the plan proves the AIR again (2026-09-12, #229)
-
-#226's category (a) — sections held past their last reader, 1,488 MiB on
-`VirtualTableZisk0_n21` and 256 MiB on `Main_n22` — is not a leak. It is what
-residency costs: the key's sections stay on the client so the *next* prove of
-the same AIR skips re-reading and re-uploading them, and the eviction that
-ends that stay happens at the start of the next prove of a different AIR,
-after that prove's own sections have already gone up. The bet pays whenever
-that next prove comes. On the block-shaped `sha-hasher` mix (38 instances over
-16 AIRs) it does — "Family switches" above puts the fixed sections this saves
-rebuilding at ~4.7 s per run — and on hello-world it never does: its eleven
-instances are eleven distinct AIRs, so every section held is held for nobody.
-
-proofman knows which it is before the first prove. Its instance list reaches
-the bridge already — it is what the preload works from — so the change is to
-send it with its duplicates intact (`Bridge::set_plan`) instead of one entry
-per AIR. **That half lives in the proofman fork**, whose `gen_proof` call site
-pushes every instance's key and pins a `zisk-zorch-bridge` rev carrying
-`set_plan` — `371a058`
-([`proofman.rs:2047-2065`](https://github.com/fractalyze/pil2-proofman/blob/8ca7133a/proofman/src/proofman.rs#L2047-L2065),
-[`proofman/Cargo.toml:17`](https://github.com/fractalyze/pil2-proofman/blob/8ca7133a/proofman/Cargo.toml#L17)).
-The set of AIRs it preloads is unchanged, because `set_plan` dedups for the
-preload itself. A build pinned behind that rev sends no plan and so keeps
-every AIR's sections, which is why the two halves did not have to land
-together. (`ZZ_FIXED_RESIDENT=0` reaches the same releases with no plan at
-all, which is how such a build can exercise this path — but the `plan` arms
-below were taken through a real plan, not through that variable.) An AIR the
-list names once then hands its sections to the prove that uploads them rather
-than lending them: `driver::prove` **takes** the fixed env off the driver
-instead of cloning it, which is what makes the removes inside the prove
-actually free, and each section goes at its own last reader — `const_base`
-after `logup` (stage 1), the constant tree and its digest layers after
-`open_const`, the rest when the prove ends. An AIR the list names more than
-once is untouched: it keeps everything, exactly as before.
-
-Three properties of the decision are worth stating because each is a way it
-could have been got wrong:
-
-- **An AIR the plan does not name keeps its sections.** The plan comes from the
-  proofman fork; a caller that sends none — a build pinned behind the rev above,
-  and `zz_prove` in every build — leaves every AIR behaving as it did before
-  there was a plan. This is what let the unit land ahead of the fork rather
-  than having to arrive with it.
+- **An AIR the plan does not name keeps its sections.** A caller that sends
+  no plan — a build pinned behind the fork rev, and `zz_prove` in every
+  build — leaves every AIR behaving as it did before there was a plan. That
+  is what let this land ahead of the fork; it is also why a figure taken on
+  such a build is not a figure for this policy.
 - **The count is a run's, not a client's.** Two instances of one AIR can land
-  on two clients and each prove it once, but a count taken before the slots are
-  assigned cannot know that. It keeps on both — the conservative way round.
+  on two clients and each prove it once, but a count taken before the slots
+  are assigned cannot know that, so it keeps on both — the conservative way.
 - **The releases are read off the manifest, not off the two names.**
   `base_dead_after_logup` asks which programs after `logup` list `const_base`
-  or a `custom_base_<id>` as an input and releases only what none of them does.
-  An export that gave one a later reader keeps it, rather than proving against
-  a buffer that is gone.
+  or a `custom_base_<id>` as an input, and releases only what none of them
+  does, so an export that gives one a later reader keeps it rather than
+  proving against a buffer that is gone.
 
 `ZZ_FIXED_RESIDENT` pins the policy for measurement: `1` keeps every AIR's
-sections (what every prove did before this unit), `0` keeps none whatever the
-plan says, unset lets the plan decide.
-
-#### What it moves, and what it does not
-
-Hello-world, `ZZ_CLIENTS=1` at the bench's 0.45 fraction on the `-191`
-artifacts, arms interleaved. Two admission settings, because they answer
-different questions. MiB.
-
-**Default admission, eleven runs per arm.** The boundary carries two keys and
-the co-resident one is whichever AIR was admitted beside VT0, so its size
-changes run to run. "Default" here is the **count-only** admission these runs
-were taken under — `ZZ_PENDING=2` with no byte budget. `ZZ_PENDING_BYTES` now
-bounds the admitted set at 192 MiB (see "The instance read-ahead, bounded by
-bytes"), so which instance can sit beside VT0 is a different question on the
-current default and these rows do not answer it. What they do answer is
-unaffected by that: the release is VT0's own `const_base`, and the neighbour
-is the reason the *subtraction* is unsafe here rather than part of the lever.
-The `ZZ_PENDING=1` table below is unaffected outright — a count of one admits
-nothing beside the running prove under either rule.
-
-| | `keep` | `plan` |
-|---|---|---|
-| `const_base` live entering `stage2` | **2 buffers, always** | **1 buffer, always** |
-| — VT0's own, 1,408 MiB | present 11 of 11 | **absent 11 of 11** |
-| — the neighbour's | 1,168 (9 runs), 32, 16 | 1,168 (11 runs) |
-| VT0 live entering `stage1` | 6,138 | 6,138 |
-| VT0 live entering `stage2` | 8,000 (9 runs), 7,152, 6,800 | **6,592 in 11 of 11** |
-| that prove's allocator peak | 10,176 (9 runs), 9,328, 9,024 | **8,768 in 11 of 11** |
-| the run's client high-water | 9,087–10,208 | 8,876–10,273 |
-| the AIR that set it | VT0 8 of 11, Main 3 | **Main 11 of 11** |
-
-**Read the first three rows, not the subtraction.** What this unit does is
-exact and run-invariant: VT0's own `const_base` is live at that boundary in
-every `keep` run and in none of the `plan` runs, and it is 1,408 MiB. What the
-*live set* does is that minus whatever the neighbour contributed, and the
-neighbour is not the same AIR every run — which is why `keep`'s boundary is
-8,000 in nine runs and 7,152 or 6,800 in the other two, while `plan`'s is 6,592
-in all eleven. Subtracting one arm's live set from the other's is only worth
-1,408 when both runs happened to draw the same neighbour; the composition rows
-hold whatever it drew.
-
-**`ZZ_PENDING=1`, three runs per arm — the lever with no neighbour at all.**
-
-| | `keep` | `plan` |
-|---|---|---|
-| `const_base` live entering `stage2` | 1 x 1,408 (its own) | **none** |
-| VT0 live entering `stage2` | 6,704 | 5,296 |
-| the run's client high-water | 8,981 | 8,821 |
-| the AIR that set it | Main 3 of 3 | Main 3 of 3 |
-
-Here the subtraction is safe, because neither arm has a neighbour to vary:
-6,704 − 5,296 = 1,408. `stage1` is identical in every arm and run, because the
-release is *after* `logup`.
-
-**Under `ZZ_PENDING=1` there is no per-prove peak to quote for VT0.** The
-allocator's `peak` at a prove's boundaries is the client's monotonic
-high-water, so it is that prove's own only when that prove raised it, and here
-the prove order decides whether VT0 did — it lands anywhere from 2nd to 11th
-of 11 across the runs behind this section, raising the high-water in one of
-six on the path-patched binary and four of six on the rev-pinned one. A row
-for it would also duplicate the high-water row beneath it, which
-is the tell. The default-admission table does carry that column, because there
-VT0 proves 1st or 2nd and raises the high-water in every run: 11 of 11 per arm
-on the path-patched binary, 3 of 3 per arm on the rev-pinned one. Rows measured
-*at* a boundary are unaffected either way — they are read there, not
-inherited.
-
-**Two binaries produced these figures and the page does not pool them.** The
-tables above are the *path-patched* binary — the bridge patched in from a
-worktree, the fork's call site edited locally. A second set, 3 runs per arm,
-comes from the *rev-pinned* binary: the bridge at the rev the fork pins
-(`371a058`) and the call site as the fork carries it. Every row measured at a
-boundary agrees between them, 3 of 3 — `const_base` absent from the
-`ZZ_PENDING=1` boundary, VT0 live entering `stage2` 6,704 against 5,296.
-
-The run-level high-water does not agree, and it is not expected to. Rev-pinned
-`keep` reads 9,041 / 8,981 / 9,068 against the path-patched arm's flat 8,981;
-`plan` is 8,821 on both. The spread is which prove raised the high-water last,
-not a difference in what the policy holds: two of the three rev-pinned runs are
-`Main_n22`'s number, and the third is VT0's, 65 MiB above the `Main` run
-beneath it, because VT0 happened to prove 11th of 11 there. So the fall is 160
-MiB on the path-patched binary and 160–247 MiB on the rev-pinned one, quoted
-apart rather than as one range.
-
-**The run's client high-water is not this lever's to move, and the unit does
-not claim it.** A run's high-water is the largest peak any of its eleven
-proves reached, so it can fall only to the second largest. Under `ZZ_PENDING=1`
-`Main_n22` sets it in six of six runs on the path-patched binary and five of
-six on the rev-pinned one, the exception being the run where VT0 proved 11th,
-and the run figure moves 160 MiB or 160–247 MiB by binary while the boundary
-moves 1,408 on both. Under the default admission, taking VT0's
-peak away promotes Main in 11 runs of 11, and Main's peak is the `deep`/`evals`
-transient — #226's category (c), which that inventory already recorded as not
-reachable from the bridge.
-
-So the two figures belong to different arms and different run counts, and this
-is the sentence to quote rather than either alone. **VT0's own `const_base` is
-gone from that boundary in every `plan` run carrying an inventory, on both
-binaries — 11 + 3 per admission on the path-patched one, 3 + 3 on the
-rev-pinned one. The run's client high-water falls 160 MiB under `ZZ_PENDING=1`
-on the path-patched binary and 160–247 MiB on the rev-pinned one, the two
-quoted apart. At the default admission it
-does not fall at all: `keep` spans 9,087–10,208 over 11 runs and `plan`
-8,876–10,273 over 11, because both are then reporting `Main_n22`'s transient
-rather than any key.**
-
-**The leg does not notice.** Eight passes per arm in one session, default
-admission, interleaved; medians over passes 2-8 as this page quotes them:
-5,206 ms `keep` against 5,169 ms `plan`, a 37 ms difference the wrong way for
-a regression, with the two arms' ranges (5,142-5,346 and 5,120-5,227)
-overlapping across most of their width. The setup programs run exactly as
-often either way on this workload — eleven distinct AIRs means eleven
-`set_fixed` calls under both policies — so there was no leg effect to find
-here, and the arms say so rather than the reasoning alone. The rev-pinned
-binary is a second null, on its own arms and its own estimator: 5 passes per
-arm interleaved, medians over passes 2–5 as this page quotes them, `keep`
-5,134 ms [5,039–5,207] against `plan` 5,218 ms [5,162–5,445]. The two binaries
-put the difference in opposite directions — 37 ms toward `plan` on one, 84 ms
-against it on the other — with every range overlapping, which is the whole
-content of a null here; the two are not subtracted from each other. `plan`'s
-5,445 ms is pass 5, not the discarded warm-up pass — that arm's spread is
-simply wider. What would cost a leg is an AIR the plan
-undercounts, which re-runs its setup programs; the `sha-hasher` arms below are
-where that is measured.
-
-The run counts, by binary, because no figure here pools them. Path-patched:
-44 hello-world runs, 28 carrying a `ZZ_MEM_STAGES=2` inventory (11 + 3 per
-arm) and 16 leg runs (8 per arm) that do not. Rev-pinned: 22, of which 12
-carry an inventory (3 per arm at each admission) and 10 are leg runs (5 per
-arm). All 66 are 11/11 byte-identical to native.
-
-**Two keys sit at that boundary, and this unit removes one of them.** The
-`keep` arm's 2,576 MiB of `const_base` at VT0's `stage2` is two buffers: VT0's
-own 1,408, and `VirtualTableZisk1_n21`'s 1,168, read ahead because that
-instance was admitted beside it. The release takes the first; the second
-belongs to an instance that has not started, so nothing inside this prove can
-reach it — that half is what a byte-capped admission is for. Neither lever
-removes both, and each is measured against a baseline the other has not
-changed, so their published gains are not additive.
-
-Two AIRs move the other way, and the reason is worth recording because it is
-another lever's: `Main_n22` carries 464 MiB more at `stage1` in the `plan` arm
-and `Mem_n22` 496 MiB more. Releasing the fixed sections inside the prove frees
-room on the card, and the instance read-ahead spends it — the next instance's
-uploads now land where before they gave way. So part of what this unit frees is
-re-spent by the admission policy, and the two units are complements rather than
-alternatives: a byte-capped admission is what would stop the re-spend.
-
-#### The workload residency exists for is untouched
-
-`sha-hasher` at n=14,000 is the check hello-world cannot be: 38 instances over
-16 AIRs, and the bridge's own plan line reports **12 of them proved once**, so
-four AIRs repeat — `Main_n22` 13 times, `Binary_n22` 6, `BinaryExtension_n22`
-5, `BinaryAdd_n22` 2. Six passes per arm, interleaved, on the `-168` artifacts
-(the only export carrying these sixteen AIRs) and the plugin build that
-directory's compile cache is warm for, probed with a one-AIR `--warm` rather
-than assumed.
-
-The quantity to watch is how often the setup programs run, which is one
-`set_fixed` per AIR that is not resident when its turn comes:
-
-| arm | `set_fixed` calls per run | leg median, 6 passes | byte-identity |
-|---|---|---|---|
-| `keep` (`ZZ_FIXED_RESIDENT=1`) | 31–34, median 32 | 19,502 ms | 38/38 |
-| `plan` (shipped) | 31–35, median 32 | 19,678 ms | 38/38 |
-| `release` (`ZZ_FIXED_RESIDENT=0`) | **38 in 6 runs of 6** | 19,918 ms | 38/38 |
-
-`plan` sits on `keep`: the four repeating AIRs keep their sections and the
-twelve proved once release sections that `ZZ_RESIDENT_AIRS=1` would have
-evicted at the next AIR anyway, so no setup program runs that did not run
-before. The `release` arm is why that null is believable rather than merely
-hoped for — it is the positive control this page's own rule asks for. 38 is
-one `set_fixed` per instance, so it really does rebuild the repeating AIRs,
-and its leg is 416 ms above `keep` for the six extra runs of the setup
-programs. That arm is also the only one that exercises a second prove of an
-AIR whose sections are gone — the path a plan that undercounted would take —
-and it is 38/38 byte-identical, which is what says the re-setup is correct and
-not merely survivable.
-
-These medians are over all six passes, none dropped — unlike the hello-world
-leg above, which follows this page's pass-2-onwards convention because its
-first pass carries the run's own warm-up. Six is the minimum that works here:
-at three, `plan` read as a 500 ms leg regression that the next three erased
-(its fastest run, 19,359 ms, is below every `keep` run).
-
-**One `keep` run aborted on each binary, and no `plan` or `release` run did.**
-`sha-keep-r6` on the path-patched binary and `sha-keep-r1` on the rev-pinned
-one (#233) both died on the 5.50 GiB `VirtualTableZisk0_n21` allocation this
-page records under "Family switches" — each with the card clear before it
-started, each with `LargestFreeBlock: 0B` and GiB still in the arena, so
-placement rather than exhaustion. Independent sessions, different binaries,
-different prove orders, the same allocation. Counted per binary, because a
-survival count pools no better than a timing one:
-
-| | path-patched | rev-pinned |
-|---|---|---|
-| `keep` | 5 of 6 | 5 of 6 |
-| `plan` | 6 of 6 | 6 of 6 |
-| `release` | 6 of 6 | 2 of 2 |
-| pre-bump (keep-policy: it cannot be sent a plan) | — | 4 of 4 |
-
-One abort per binary in the arm that holds the most is an observation with a
-denominator, not a rate, and the two binaries agree rather than being summed
-into one. Neither establishes that releasing helps: both candidate mechanisms
-predict `plan` and `release` surviving where `keep` does not, so nothing here
-separates "holding sections fragments the arena" from something specific to
-what the plan releases. What separates them is a fraction walk with `release`
-as a third cell — it gives up more than `plan`, so the two mechanisms order
-that cell differently — with repeats per cell. That is filed, not done.
-
-### The instance read-ahead, bounded by bytes (2026-09-12, #228)
-
-#226's fix candidate 1, measured and shipped as `ZZ_PENDING_BYTES` (192 MiB).
-The per-client admission puts the next instance's uploads on the device while
-the current prove runs, and a count says nothing about how large they are: the
-term it adds is whatever instance came next, which on hello-world is 32 MiB
-(`Rom_n22`) to 1,248 MiB (`Binary_n22`). The budget weighs that term instead.
-
-Runs: go hello-world, `ZZ_CLIENTS=1`, fraction 0.45, headroom 3, shipped wheel
-`0.10.2.dev20260910150749`, artifacts `zz-artifacts-191`, page cache warmed by
-`run.sh` before every run (9.081/9.081 GiB, 100%, on every one). Six arms,
-interleaved and rotated one place per pass (Decision 84): 18 runs with
-`ZZ_MEM_STAGES=2` for the memory figures, 48 more without it for the leg. All
-66 byte-identical to **both** same-session native arms, 11/11 dumps each.
-
-Three of the arms were then re-run twice on each later head — once after the
-diff was tidied and again after a review round — because the head that ships is
-not the head a sweep was taken with. Twelve more runs, byte-identical too,
-reproducing the peaks and the co-residency exactly: 10,176 MiB and 1,248 MiB
-co-resident for the count-only arm, 8,960 MiB and 0 for `ZZ_PENDING=1`,
-8,975-9,005 MiB and 32 MiB for the default. Their **legs** are not quotable and
-are not quoted: two passes cannot separate arms whose medians are 200 ms apart,
-and the second round ran beside another session's work. Every leg figure below
-comes from the eight-pass interleaved set.
-
-The arms are budgets read against the workload's eleven uploads — 32, 80, 128,
-144, 368, 416, 464, 704, 928, 1216, 1248 MiB. The `count only` arm is a budget
-of 99,999,999,999 bytes, which is the count-only admission exactly because
-every run here is at `ZZ_PENDING=2`: with two admitted, the set's uploads less
-its smallest is the larger of the two, so a budget over the largest upload
-refuses nothing. That equivalence is a property of this cap, not of the rule —
-see the variable's row in "Running". **`b48` is not an independent
-point:** at that budget only `Rom_n22` can pair, `Rom_n22` appears once, and
-the arm is `ZZ_PENDING=1` by another route. It is carried as a control and it
-lands there, 8,960 MiB and within 3 ms of it.
-
-#### The predicate has to weigh the admitted set, not the joiner
-
-The first rule tried was the literal one — admit a second instance if *its*
-uploads are under the budget — and it does not bound anything. Admission does
-not settle which instance takes the slot: they all upload before they queue for
-it, and a large one loses that race precisely because its upload takes longer.
-So a large instance admitted into an empty client, overtaken by a small one
-admitted beside it, is co-resident for the whole of the small one's prove. At a
-512 MiB budget that arm carried a 704 MiB trace, three runs of three, and its
-client high-water (10,176 MiB) was identical to the unbounded default's.
-
-Two arms at the same number is the shape that reads as "the knob does nothing",
-and the true statement was that the predicate was on the wrong question. The
-shipped rule bounds the whole admitted set: everything but its smallest member
-must fit the budget, which holds whichever member ends up proving. An empty
-client still admits any size — every workload has instances over every budget
-worth setting, and a gate they could never pass would deadlock the run.
-
-The admission is therefore an ordered queue. An instance over the budget waits
-for a client with nothing else on it, and without an order a run of smaller
-ones would keep the client occupied and starve it.
-
-#### What each budget bounds, and what it costs
-
-Co-resident `trace` is the largest upload the client holds that the running
-prove does not own, over every stage boundary of the run. Client high-water is
-the allocator's own monotonic peak, the largest any `mem stage` line printed.
-
-| arm | co-resident trace, 3 runs | client high-water, 3 runs |
-|---|---|---|
-| count only (today) | 1,248 / 1,248 / 1,248 | 9,690 / 10,176 / 10,176 |
-| `ZZ_PENDING_BYTES` 1024 MiB | 928 / 928 / 928 | 9,007 / 10,176 / 10,176 |
-| 512 MiB | 464 / 464 / 416 | 10,176 / 10,176 / 10,176 |
-| **192 MiB (default)** | 32 / 32 / 32 | 8,975 / 8,975 / 8,960 |
-| 48 MiB (control) | 0 / 0 / 0 | 8,960 / 8,960 / 8,960 |
-| `ZZ_PENDING=1` | 0 / 0 / 0 | 8,960 / 8,960 / 8,960 |
-
-Leg, medians over passes 2–8 of eight interleaved passes:
-
-| arm | leg | range | sd | against today's |
-|---|---|---|---|---|
-| count only (today) | 5,126 ms | 5,075–5,221 | 55 | — |
-| 1024 MiB | 5,191 ms | 5,064–5,244 | 69 | +65 ms |
-| **192 MiB (default)** | 5,319 ms | 5,202–5,506 | 113 | +193 ms |
-| 512 MiB | 5,381 ms | 5,191–5,429 | 111 | +255 ms |
-| 48 MiB (control) | 5,599 ms | 5,570–5,640 | 24 | +473 ms |
-| `ZZ_PENDING=1` | 5,602 ms | 5,584–5,623 | 16 | +476 ms |
-
-The interleaved re-measure #226 asked for: **`ZZ_PENDING=1` costs 476 ms**, not
-the ~0.32 s its blocked arms suggested. The default budget gives 283 ms of that
-back and keeps the peak where `ZZ_PENDING=1` puts it. 192 and 512 are not
-resolvable from each other (sd ~110 ms, ranges overlapping); what is resolvable
-is the three groups — today's and 1024, the two middle budgets, and the two
-that admit nothing.
-
-#### The peak is a step, and the step is a key rather than a trace
-
-The budget bounds the co-resident trace exactly — 3/3 in every arm, every time.
-The client high-water does not follow it linearly, and the reason is worth
-carrying: **it is not the trace that moves the peak.**
-
-The high-water is reached at `VirtualTableZisk0_n21`'s `stage2` in 15 of the 18
-runs; in the other three `Main_n22`'s `fri` boundary is higher — 8,975 MiB
-twice under the 192 MiB budget and 9,690 MiB once under the count-only arm.
-That `stage2` boundary is `VirtualTableZisk0_n21`'s own 6,704 MiB plus whatever
-the next instance brought with it, so it takes as many values as the workload
-has possible neighbours; these 18 runs landed on three of them, and the
-section above adds a fourth from its own `keep` arm. Read the composition
-column, not the live figure:
-
-| arm | `stage2` live, 3 runs | what else is on the client |
-|---|---|---|
-| count only (today) | 6,800 / 8,000 / 8,000 | `RomData_n21`'s key once, `VirtualTableZisk1_n21`'s twice |
-| 1024 MiB | 6,800 / 8,000 / 8,000 | the same |
-| 512 MiB | 8,000 / 8,000 / 8,000 | `VirtualTableZisk1_n21`'s key, 3/3 |
-| **192 MiB (default)** | 6,704 / 6,704 / 6,704 | nothing |
-| 48 MiB (control) | 6,704 / 6,704 / 6,704 | nothing |
-| `ZZ_PENDING=1` | 6,704 / 6,704 / 6,704 | nothing |
-
-6,704 MiB is `VirtualTableZisk0_n21` proving alone, holding one key — its own
-1,408 MiB `const_base`. 8,000 MiB is that plus a second `upload/const_base`
-buffer of 1,168 MiB, which is `VirtualTableZisk1_n21`'s to the byte, read ahead
-because that instance was admitted; its trace is 128 MiB and would pass every
-budget here, and what rides in behind it is nine times its size. (6,800 MiB is
-the same shape with `RomData_n21` next instead: a 16 MiB key and an 80 MiB
-trace.) `ZZ_FIXED_AHEAD`'s permit is taken *inside* this admission, so refusing
-an instance holds its key back too — but admitting one puts no cap on it.
-
-**That is the whole of why 192 MiB works and 512 does not.**
-`VirtualTableZisk0_n21`'s own uploads are 368 MiB, so a budget under 368 means
-nothing joins the prove that sets the high-water, whatever that neighbour's own
-size would have been; a budget over 368 lets it acquire one. Which makes the
-default's justification workload-shaped, and it should be re-read rather than
-assumed on a workload whose binding AIR is a different size. The rule is
-general; 192 MiB is not.
-
-Two things this bounds. The key the budget holds back is
-`VirtualTableZisk1_n21`'s; the *other* key at that boundary is
-`VirtualTableZisk0_n21`'s own 1,408 MiB, which is what the conditional
-residency above releases — a different change, on the other half of the same
-2,576 MiB. Neither removes both on its own, and the two stacked are not
-measured: the figures here are against a client that keeps every AIR's
-sections, and that section's are against one that admits by count. And there is a floor close underneath: in the arms where
-that boundary is lightest, `Main_n22`'s `fri` sets the run figure instead. Over
-all 30 runs that carry the inventory, Main binds in 7; in the 6 of those where
-a budget kept its boundary clean the boundary live set is *identical* at 6,357
-MiB while the run figure moves 8,975-9,005 MiB, so what varies there is XLA's
-allocation inside that execution, #226's category (c). (The 7th is the
-count-only arm, where Main's boundary carries a neighbour too: 7,077 MiB live
-and 9,690 MiB of peak. A figure from that run belongs in the co-residency story
-above, not in this one.) 8,960 MiB is therefore not a number further work on
-the keys walks down much further without moving Main.
-
-### What the in-program transient is made of (2026-09-14, #232)
-
-Every figure in this section is from the go hello-world guest on build-server-2
-(RTX 5090), against the artifacts in `zz-artifacts-191` exported from proving
-key `v1.0.0-alpha`, compiled by the wheel pinned in `requirements.in`
-(`0.10.2.dev20260910150749`). The compile-side figures are properties of that
-(artifacts, plugin) pair and of nothing else — no arm, no prove order, no
-machine state. The run-side column names its arm where it appears.
-
-#226's category (c) — the part of a prove's peak that belongs to no buffer the
-bridge registered, because it exists only while a program runs — is XLA's own
-allocation inside one execution, and neither the registry nor the allocator can
-name it: both report totals. XLA itemises it at compile time. Compiling with
-`--xla_dump_to` leaves three reports per executable (every allocation with its
-size and the HLO values that own it, each value's live range over the printed
-instruction sequence, and XLA's own totals), and `bench/buffer_assignment.py`
-reads them.
-
-**The dump is written while compiling, so a warm cache produces none.** A prove
-against `$ZZ_ARTIFACTS/.pjrt-cache` loads serialized executables and never
-reaches the code that writes these files — the obvious mechanism, a prove with
-the dump flags set, silently dumps nothing. Point `ZZ_COMPILE_CACHE` at an
-empty directory and compile with `zz_prove --warm <artifacts> <AIR> --only
-<program>`: no prove, no proofman, and the client grows on demand rather than
-preallocating an arena, so it needs no card of its own. One program per
-directory, because XLA numbers modules per process and every exported module is
-named `jit_fn` — the directory is what says which program it is, and
-`--manifest` checks that against the shapes the AIR declares.
-
-#### The arena is measurable from a run, but only where the peak rose
-
-While a program runs the client holds what it already held, plus that program's
-outputs, plus its temp arena; when the program ends the arena goes and the
-outputs stay. So
-
-```
-arena = peak_during - in_use_after
-```
-
-with both readings on one side of the program, from a `ZZ_MEM_STAGES=2` log.
-Inputs and outputs cancel, so the figure does not move with the AIR's section
-sizes, and there is nothing for an analyst to supply. Measuring instead from
-the reading *before* a program needs a term for whatever the driver released in
-between, and that term is a free parameter: tune it and any residual vanishes.
-It is also wrong in a specific way — a section is dropped at its last reader,
-so every stage-2 program starts below the stage-1 reading, and the entry-based
-form understates its arena by exactly the released buffer. On
-`VirtualTableZisk0_n21` that is the instance's 368 MiB `trace` and on
-`VirtualTableZisk1_n21` its 128 MiB one.
-
-Two conditions. The high-water must have risen across the program —
-`mem_stages.py`'s "peak rose across" names where it did; everywhere else `peak`
-is an older client-lifetime figure and differencing it means nothing. And
-nothing else may allocate in the window, which is `ZZ_PENDING=1`. Where both
-hold, the compile and the run agree to **0–504 bytes** on arenas of one to two
-gigabytes:
-
-| AIR | program | arena (compile) | arena (run) |
-|---|---|---|---|
-| `VirtualTableZisk0_n21` | `const_setup` | 2,176 | 2,176 |
-| `VirtualTableZisk0_n21` | `commit2` | 1,600 | 1,600 |
-| `VirtualTableZisk1_n21` | `const_setup` | 1,936 | 1,936 |
-| `VirtualTableZisk1_n21` | `deep` | 1,632 | 1,632 |
-| `VirtualTableZisk1_n21` | `commit2` | 1,008 | 1,008 |
-
-MiB. Run side from the `cfm-p1` arm (`ZZ_PENDING=1`) of #228's confirmation
-runs, identical across its two; compile side from the dump described above.
-**`Main_n22` has no row in
-that table and cannot have one**: its prove never raises the client high-water
-in that arm, so no allocator reading anywhere bounds its arenas from above.
-Main's figures below are from the compile alone, which is the case for taking
-them that way.
-
-#### Two shapes, and what each would cost to remove
-
-Every arena over 32 MiB in the eleven-AIR workload is one of two shapes.
-
-**The extend (`const_setup`, `commit2`): a full transpose of the input, plus
-the NTT's stage buffers.** The arena is one region exactly the size of the
-program's input, owned by a `wrapped_transpose` whose shape is the input's
-transposed — `u64[88,2097152]` where the section is `[2097152,88]` — plus two to
-four 256 MiB `ntt_pass_fusion` / `loop_reshape_fusion` buffers the passes
-ping-pong between. On these five the two account for the arena exactly:
-
-| AIR | program | arena | transpose (= inputs) | stage buffers |
-|---|---|---|---|---|
-| `VirtualTableZisk0_n21` | `const_setup` | 2,176 | 1,408 | 3 x 256 |
-| `VirtualTableZisk1_n21` | `const_setup` | 1,936 | 1,168 | 3 x 256 |
-| `VirtualTableZisk0_n21` | `commit2` | 1,600 | 576 | 4 x 256 |
-| `Main_n22` | `commit2` | 1,280 | 768 | 2 x 256 |
-| `VirtualTableZisk1_n21` | `commit2` | 1,008 | 240 | 3 x 256 |
-
-`Main_n22`'s `const_setup` is the exception at 256 MiB, because its input is 96
-MiB: with no section worth transposing the stage buffer is the whole arena.
-
-That the parts add up is a fact about these five programs, not a rule. An
-arena is the worst *simultaneous* overlap of its regions, and XLA reuses one
-offset for values whose live ranges do not meet — `fri_fold_0`'s regions have
-maxima summing to 697 MiB inside a 360 MiB arena. Read a region table as a
-layout, and the arena total as the only figure that bounds the device.
-
-**The openings (`deep`, `evals`): N extended-domain columns at once.** The arena
-is a multiple of one cubic column over the extended domain — 192 MiB on the
-n22 AIRs, 96 MiB on the n21s — with N from 7 to 17 of them alive together.
-What indexes N is not established here; it tracks the AIR rather than the
-domain size, since the two n21 AIRs differ. `VirtualTableZisk1_n21`'s `deep` is 17 x 96,
-`VirtualTableZisk0_n21`'s 16 x 96, `Main_n22`'s `evals` 10 x 192.
-`Main_n22`'s `deep` is 2,560 MiB, of which ten columns are 1,920 and the rest
-is smaller regions.
-
-The levers differ. The transpose is one region and one change: whether the NTT
-can read the section in its original layout, or the re-layout can be fused into
-its first pass, is an exporter question, and it is worth the input's size on
-each of the five programs above. The stage buffers are what #191 chunked for
-its predecessor. The openings are not a copy at all — they are N independent
-results held simultaneously, so the lever there is computing them in chunks,
-and it scales with the chunk count rather than removing a fixed region.
-
-#### Main's `fri` cannot give up half a gigabyte, because it does not have it
-
-The unit was framed as sizing a one-change exporter edit at `Main_n22`'s `fri`
-peak. It cannot be: `fri` is not an executable but a stage of fourteen, and the
-largest arena among them is `fri_fold_0`'s **360 MiB** — laid out as a 192 MiB
-`wrapped_transpose`, a 192 MiB `loop_transpose_fusion` and thirteen 24 MiB
-slices, whose partial overlap is what makes 360 rather than their sum — with
-`fri_fold_1` next at 45 MiB and the remaining twelve at or under 32 MiB. They run
-sequentially, so the stage's transient is that maximum and not the 456 MiB sum.
-There is less than half a gigabyte of in-program transient at Main's `fri` to
-recover, whatever the change — which is consistent with the section above,
-where Main's boundary is identical at 6,357 MiB while the run figure moves over
-a 30 MiB range: 30 MiB fits inside a 360 MiB arena, 2.6 GiB does not.
-
-Where half a gigabyte is, and more: the input transpose. It is ≥ 0.5 GiB on
-four of the five extend programs, and on `VirtualTableZisk0_n21`'s `commit2`
-(576 MiB) it sits inside the program the client high-water actually rose across
-in every arm measured so far. `const_setup` on the same AIR has the larger
-transpose at 1,408 MiB, in a 2,176 MiB arena.
-
-Which of the two a fix moves off the *client* peak is a separate question this
-unit does not settle, and the arms on disk cannot: the `plan` arms of #229
-admit by count, so the rise across `const_setup` there has the next instance's
-uploads inside the same window, and the byte cap of #228 was measured on a
-client that keeps every AIR's sections. The stacked configuration is still
-unmeasured — the caution the section above states about its own rows applies
-here too. What is arm-independent is the arena, which is why these figures are
-quoted from the compile.
-
-A fix unit is sized from those two rows. The feasibility question it has to
-answer first is whether the extend can consume the section in its declared
-layout, or fuse the re-layout into the NTT's first pass; this unit did not
-attempt that.
+sections, `0` keeps none whatever the plan says, unset lets the plan decide.
+
+### The instance read-ahead, bounded by bytes
+
+The admission is bounded by bytes rather than by a count: `ZZ_PENDING_BYTES`
+caps the `trace`, `publics`, `airvalues` and `proofvalues` an instance may
+upload while another prove still holds the client, because those uploads stay
+live for the whole of the running prove. `ZZ_PENDING` remains the ceiling on
+how many. It bounds the uploads it weighs and no more — the next AIR's
+`const_base` rides `ZZ_FIXED_AHEAD`'s permit, taken inside this admission, so
+a refusal holds that back too but an admission puts no cap on it. A client
+with nothing on it admits any size, so the largest AIR is never refused
+outright. Any figure quoted against "the default admission" from before this
+is a different configuration.
+
+### What the in-program transient is made of
+
+What a client holds beyond its registered buffers is what XLA allocated
+inside an execution — the difference between the bridge's own registry and the
+allocator's `in_use`, which `bench/buffer_assignment.py` itemises per
+executable out of XLA's buffer assignment. On the LDE-bearing programs it is
+dominated by the extend's transposed copy of its input rather than by anything
+the driver keeps. `extend` splits the columns into blocks of at most `LDE_BLOCK_BYTES`
+of the extended domain and writes each into the result, ordered so XLA does
+not schedule several transforms at once; each column's LDE is independent, so
+the codeword does not move and only the LDE-bearing programs re-export.
+
+The blocking does not by itself cover the input's re-layout: the transform
+reads a column and the section is stored by row, so each block is transposed
+on the way in, and taking the field view over the whole section before
+slicing lets those per-block transposes merge into one transpose of the
+entire section, live from the first block to the last. `extend_words` takes
+the view a block at a time, which leaves them where the exporter emitted
+them. The section's declared layout does not move and neither does the
+manifest — `raw_boundary` reports field inputs as `uint64` either way — so
+the bridge uploads the same bytes to the same specs and the goldens pin the
+codeword at three block sizes.
+
+The loop's `optimization_barrier` does its job without surviving: no
+`opt-barrier` is left in the optimized module, so nothing in the final
+program enforces the order. It constrains the passes that run before it is
+dropped, and taking it out of the source grows the arena by a block set.

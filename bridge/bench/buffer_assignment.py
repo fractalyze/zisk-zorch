@@ -7,8 +7,8 @@ at `ZZ_MEM_STAGES=2`, the allocator's totals after every program. What neither
 it nor the allocator can name is the part of the peak that exists only while a
 program runs -- a fusion's scratch, an extend's output beside its input. That
 term is the difference between the registry and `in_use` in those reports, and
-it belongs to no section (docs/bridge.md, "What the excess actually is",
-category (c)).
+it belongs to no section (docs/bridge.md, "What the in-program transient is
+made of").
 
 XLA already itemises it. Compiling with `--xla_dump_to` leaves, per executable,
 a `-buffer-assignment.txt` (every allocation, its size and the HLO values that
