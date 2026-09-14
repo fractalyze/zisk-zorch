@@ -19,6 +19,8 @@ instance data (publics, the trace, the global challenge) rides the claims in
 from __future__ import annotations
 
 import functools
+import operator
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import frx
@@ -281,6 +283,18 @@ def row_windows(n: int, count: int) -> list[tuple[int, int]]:
     cannot drift apart on the tail."""
     per = -(n // -count)
     return [(k * per, min((k + 1) * per, n)) for k in range(count) if k * per < n]
+
+
+def add_windows(parts: Iterable[Array]) -> Array:
+    """The row windows of a sum-shaped result added back together — what
+    `row_windows` is the decomposition of, for `evals`.
+
+    One definition for the prover and for the `evals_sum` program the export
+    builds, which is what the replay and the bridge run, so no two of them can
+    compose the windows differently. Addition in the field is associative, so
+    the fold's shape is not what makes this equal the whole-domain sum; it is
+    one arbitrary choice made once instead of twice."""
+    return functools.reduce(operator.add, parts)
 
 
 def committed_column(

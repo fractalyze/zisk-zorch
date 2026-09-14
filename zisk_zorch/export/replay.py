@@ -65,6 +65,11 @@ def _opening(flat, last_level, width: int, n_bits: int, arity: int, llv: int):
     )
 
 
+def _start(row: int) -> np.ndarray:
+    """A window's first row as the `start` input the windowed programs take."""
+    return np.array([row], dtype=np.int32)
+
+
 def _layers(out: dict, old_prefix: str, new_prefix: str) -> dict:
     """A commit program's digest layers, renamed to the opening program's
     input names (the setup programs name theirs after themselves)."""
@@ -170,7 +175,15 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
     xi = challenges[_named_id(sc, "std_xi")]
     sections["qsec"] = qc["qsec"]
     lev = art.run("lev", xi=xi)["lev"]
-    evals = words(art.run("evals", **sections, lev=lev)["evals"])
+    parts, start = [], 0
+    for size in sc["evals_chunks"]:
+        parts.append(
+            art.run(f"evals_{size}", **sections, lev=lev, start=_start(start))["evals"]
+        )
+        start += size
+    evals = words(
+        art.run("evals_sum", **{f"evals_{k}": p for k, p in enumerate(parts)})["evals"]
+    )
     absorb_section(transcript, to_field(evals.reshape(-1)), hashed=hashed)
     _squeeze(transcript, challenges, _stage_ids(sc, sc["n_stages"] + 3))
     d_args = dict(
@@ -183,11 +196,7 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
     )
     parts, start = [], 0
     for size in sc["deep_chunks"]:
-        parts.append(
-            art.run(f"deep_{size}", **d_args, start=np.array([start], dtype=np.int32))[
-                "fri_pol"
-            ]
-        )
+        parts.append(art.run(f"deep_{size}", **d_args, start=_start(start))["fri_pol"])
         start += size
     fri_pol = art.run(
         "deep_concat", **{f"fri_pol_{k}": p for k, p in enumerate(parts)}

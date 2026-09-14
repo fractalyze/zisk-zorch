@@ -43,7 +43,7 @@ pub mod transcript;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -708,6 +708,9 @@ pub struct Bridge {
     pending: Vec<Arc<Pending>>,
     /// The fixed sections' read-ahead schedule, per client (see `FixedAhead`).
     fixed_ahead: Vec<FixedAhead>,
+    /// Whether `warn_client_count` has already spoken; the mismatch is a
+    /// property of the run, not of the AIR that noticed it.
+    client_count_warned: AtomicBool,
     log: bool,
 }
 
@@ -768,6 +771,21 @@ pub fn packed_info_for(airgroup_id: usize, air_id: usize) -> Option<(usize, Vec<
     PACKED_INFO.get().and_then(|m| m.get(&(airgroup_id, air_id)).cloned())
 }
 
+/// What to say when a run has more clients than its artifacts were exported
+/// for, and `None` when it has as many or fewer. Fewer is fine: the windows
+/// are then smaller than this run needs, which costs dispatches, not a fit.
+fn client_count_warning(key: &str, exported: usize, running: usize) -> Option<String> {
+    if exported >= running {
+        return None;
+    }
+    Some(format!(
+        "{key}: artifacts exported for {exported} client(s), running with {running}. \
+         Re-export with ZISK_CLIENTS={running} -- the quotient's row windows are \
+         compiled in, so this run evaluates windows sized for a larger share of the \
+         card than each client has."
+    ))
+}
+
 impl Bridge {
     /// The process's bridge, created on first call; `None` when
     /// `ZZ_ARTIFACTS` is unset (pil2's own gen_proof runs). `n_streams` is
@@ -794,6 +812,19 @@ impl Bridge {
                 Some(bridge)
             })
             .clone()
+    }
+
+    /// Say so, once, when this run has more clients than the export was sized
+    /// for. The quotient's window count is compiled into the artifacts, so a
+    /// client that gets a smaller share of the card than the export assumed
+    /// runs the larger windows anyway -- and the way that ends is the arena
+    /// going dry inside `quotient_<size>`, which names no cause by itself.
+    fn warn_client_count(&self, key: &str, m: &manifest::Manifest) {
+        if let Some(msg) = client_count_warning(key, m.clients, self.clients()) {
+            if !self.client_count_warned.swap(true, Ordering::Relaxed) {
+                zzlog!("{msg}");
+            }
+        }
     }
 
     /// The AIRs the previous run on these artifacts proved (`.last-used`).
@@ -894,6 +925,7 @@ impl Bridge {
             next: AtomicUsize::new(0),
             pending: (0..clients).map(|_| Arc::new(Pending::default())).collect(),
             fixed_ahead: (0..clients).map(|_| FixedAhead::new(fixed_ahead)).collect(),
+            client_count_warned: AtomicBool::new(false),
             log,
         }
     }
@@ -1064,6 +1096,7 @@ impl Bridge {
         let t0 = Instant::now();
         let key = format!("{}_n{}", req.air, req.n_bits);
         let m = manifest::Manifest::load(&self.artifacts.join(&key))?;
+        self.warn_client_count(&key, &m);
         let n = 1usize << m.n_bits;
         let p = &req.inputs;
         phase.set("take/trace");
@@ -1455,6 +1488,24 @@ fn read_fixed(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_export_sized_for_fewer_clients_than_the_run_is_named() {
+        // The failure this replaces is the arena going dry inside
+        // `quotient_<size>`, which names no cause by itself.
+        let msg = super::client_count_warning("Main_n22", 1, 2).expect("a warning");
+        assert!(msg.contains("exported for 1 client(s), running with 2"), "{msg}");
+        assert!(msg.contains("ZISK_CLIENTS=2"), "{msg}");
+        assert!(msg.contains("Main_n22"), "{msg}");
+    }
+
+    #[test]
+    fn matching_or_larger_export_says_nothing() {
+        assert!(super::client_count_warning("Main_n22", 2, 2).is_none());
+        // Exported for more: the windows are smaller than this run needs,
+        // which costs dispatches rather than a fit, so it is not a warning.
+        assert!(super::client_count_warning("Main_n22", 4, 2).is_none());
+    }
+
     use super::*;
 
     /// A small deterministic generator (xorshift), so the tests need no crate.
