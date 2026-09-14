@@ -455,11 +455,29 @@ impl AirDriver {
         transcript.absorb_section(&evals, m.hash_commits);
         squeeze(transcript, &mut challenges, m.n_stages + 3);
         phase.set("deep");
+        let dprog0 = format!("deep_{}", m.deep_chunks.first().ok_or("manifest: no deep_chunks")?);
         let vf1 = m.challenge_id("std_vf1")?;
         let vf2 = m.challenge_id("std_vf2")?;
-        env.insert("vf1".into(), art.upload_words(&challenges[vf1 * 3..vf1 * 3 + 3], &in_spec("deep", "vf1")?)?);
-        env.insert("vf2".into(), art.upload_words(&challenges[vf2 * 3..vf2 * 3 + 3], &in_spec("deep", "vf2")?)?);
-        let mut codeword = art.run("deep", &env)?.remove(0);
+        env.insert("vf1".into(), art.upload_words(&challenges[vf1 * 3..vf1 * 3 + 3], &in_spec(&dprog0, "vf1")?)?);
+        env.insert("vf2".into(), art.upload_words(&challenges[vf2 * 3..vf2 * 3 + 3], &in_spec(&dprog0, "vf2")?)?);
+        // The batch holds N cubic columns over the rows it is given, so one
+        // dispatch per row window is what bounds them: windowing inside one
+        // program leaves the windows independent and XLA computes them
+        // together, which holds them together. `deep_concat` puts the
+        // codeword back in domain order, and the chunks go with `denv`.
+        let mut codeword = {
+            let mut denv = Env::new();
+            let mut start = 0i32;
+            for (k, size) in m.deep_chunks.iter().enumerate() {
+                let prog = format!("deep_{size}");
+                let spec = m.program(&prog)?.input("start").cloned().ok_or("deep: no start input")?;
+                env.insert("start".into(), art.upload_i32(&[start], &spec)?);
+                denv.insert(format!("fri_pol_{k}"), art.run(&prog, &env)?.remove(0));
+                start += *size as i32;
+            }
+            env.remove("start");
+            art.run("deep_concat", &denv)?.remove(0)
+        };
 
         phase.set("fri");
         let rounds = m.steps.len() - 1;

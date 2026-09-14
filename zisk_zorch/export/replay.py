@@ -173,14 +173,24 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
     evals = words(art.run("evals", **sections, lev=lev)["evals"])
     absorb_section(transcript, to_field(evals.reshape(-1)), hashed=hashed)
     _squeeze(transcript, challenges, _stage_ids(sc, sc["n_stages"] + 3))
-    fri_pol = art.run(
-        "deep",
-        **sections,
+    d_args = dict(
+        sections,
         evals=evals,
         domain=consts["domain"],
         xi=xi,
         vf1=challenges[_named_id(sc, "std_vf1")],
         vf2=challenges[_named_id(sc, "std_vf2")],
+    )
+    parts, start = [], 0
+    for size in sc["deep_chunks"]:
+        parts.append(
+            art.run(f"deep_{size}", **d_args, start=np.array([start], dtype=np.int32))[
+                "fri_pol"
+            ]
+        )
+        start += size
+    fri_pol = art.run(
+        "deep_concat", **{f"fri_pol_{k}": p for k, p in enumerate(parts)}
     )["fri_pol"]
 
     codeword, fri_layers, fri_roots = fri_pol, [], []
