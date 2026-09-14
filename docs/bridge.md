@@ -46,8 +46,13 @@ byte-gates (`docs/development.md`).
 ## Running
 
 ```bash
-# once per proving key: export every basic AIR (~5 min on an RTX 5090)
-FRX_PLATFORMS=cuda python -m zisk_zorch.export.export_air \
+# once per proving key AND per client count: export every basic AIR (~5 min
+# on an RTX 5090). ZISK_CLIENTS is how many clients will share the card; it
+# raises the quotient's window ceiling, because N clients each get 1/N of the
+# card and so can afford 1/N of a transient. One client (the default) keeps
+# the eight windows the cache curve picked, so a one-client run pays none of
+# the dispatch cost of the higher count. Two client counts are two exports.
+FRX_PLATFORMS=cuda ZISK_CLIENTS=1 python -m zisk_zorch.export.export_air \
     --proving_key=$PK --air=all --out=$ARTIFACTS
 
 # once per export and plugin build: compile the AIRs a guest needs into the
@@ -90,7 +95,7 @@ drop-in cargo-zisk with the bridge dormant.
 |---|---|---|
 | `ZZ_ARTIFACTS` | directory of `<Air>_n<nBits>/` exports | unset: bridge off |
 | `XLA_PJRT_PLUGIN` | the frx CUDA PJRT plugin `.so` (read by xla-pjrt) | required |
-| `ZZ_CLIENTS` | PJRT clients; proofman spawns this many basic-proof workers | 3 — more than this card fits, see "Memory budget" |
+| `ZZ_CLIENTS` | PJRT clients; proofman spawns this many basic-proof workers. The EXPORT is told the same number as `ZISK_CLIENTS`, because the quotient's window count is compiled in rather than read at run time | 3 — more than this card fits, see "Memory budget" |
 | `ZZ_MEMORY_FRACTION` | share of the card the clients claim up front, split evenly, before pil2 sizes its buffers | unset: allocate on demand |
 | `ZZ_GPU_HEADROOM_GB` | (fork) GPU memory pil2 leaves out of its stream sizing | 0 |
 | `ZZ_PRELOAD` | executables loaded at bridge creation: the previous run's AIRs (`.last-used`), `all`, or `0` | last used |
@@ -238,27 +243,35 @@ The per-run tables are on the issue each reading names; what follows is what
 stays true of the tree.
 
 - **The byte-gate holds on the current export.** Re-exported into
-  `zz-artifacts-241`, all 11 basic proofs are byte-identical to native's dumps
-  on every interleaved pass (#241; #239 is the same gate one export earlier).
-  Two of each AIR's programs re-lower, `deep_<size>` and `deep_concat`, and
-  every other program's manifest entry is byte-identical to the previous
-  export's, so the re-lowering moved no interface the bridge binds to. The
-  schedule gains `deep_chunks`, which is the one manifest key that is new.
-- **What sets a client's high-water is `Main_n22`'s `evals`.** It reaches
-  8,278 MiB there (#241), against 8,821 MiB at `deep` before that program was
-  dispatched per row window (#239) and 8,960-9,005 MiB at #228's shipped
-  admission.
+  `zz-artifacts-243-c1`, all 11 basic proofs are byte-identical to native's
+  dumps on every interleaved pass (#243; #241 and #239 are the same gate one
+  and two exports earlier). Two of each AIR's programs re-lower, `evals_<size>`
+  and `evals_sum`, and every other program's manifest entry is byte-identical
+  to the previous export's, so the re-lowering moved no interface the bridge
+  binds to. The schedule gains `evals_chunks`, which is the one manifest key
+  that is new.
+- **What sets a client's high-water is `Main_n22`'s quotient.** The client
+  reaches 7,440 MiB (#243), against 8,278 MiB when `evals` was one dispatch
+  (#241), 8,821 MiB at `deep` before that program was windowed (#239) and
+  8,960-9,005 MiB at #228's shipped admission. The 838 MiB between 8,278 and
+  7,440 is `evals`' own rise leaving and nothing else moving: in the same session the
+  pre-change arm's high-water rose across `evals` by 838 MiB and the post-change
+  arm's rose across `quotient_1048576` by 24 MiB.
   Each is one `art.run`, so one program is what to aim a trim at. Read the
   stage from `mem_stages.py`'s `peak stage` and never off a boundary label:
   `Stage::set` reports a boundary under the *incoming* stage's name, so the
   row carrying a peak is headed with the stage after the one that made it.
 - **Two clients still fit at no fraction**, and the two ends are 0.076 GB and
-  one allocation apart (#241, headroom 0). Above `ZZ_MEMORY_FRACTION=0.53`
-  pil2 will not start — it needs 12.904 GB and 0.54 leaves it 12.828. At 0.53
-  each client gets an 8.31 GiB arena and goes dry on a 1,904 MiB request,
-  which is `quotient_1048576`'s own temp arena, so what closes the window now
-  is the largest in-program transient left rather than anything resident.
-  #215's and #239's grids ended the same way.
+  one allocation apart (#243, headroom 0, three repeats each). Above
+  `ZZ_MEMORY_FRACTION=0.53` pil2 will not start — it needs 12.904 GB and 0.54
+  leaves it 12.828. At 0.53 each client gets an 8.31 GiB arena and goes dry on
+  a 1,566 MiB request, which is `quotient_524288`'s own temp arena at the
+  sixteen windows two clients export, so what closes the window is still the
+  largest in-program transient left rather than anything resident. #215's,
+  #239's and #241's grids ended the same way.
+  A single run at 0.54 that gets past pil2's check has read the card before the
+  clients claimed their share: quote that fraction only from repeats, and take
+  a free-memory figure that breaks the monotone walk as the race it is.
 
 ## What the measurements settled
 
@@ -645,6 +658,34 @@ division has to be **one dispatch per row window**, the shape the quotient's
 chunks already use. Windowing inside one program leaves the windows
 independent, and XLA is then free to compute them together, which holds them
 together; a barrier chaining one window to the next does not recover it
-either (#241 has both dumps). `pil2_prover._DEEP_ROW_CHUNKS` sets the count,
-the schedule declares the windows as `deep_chunks`, and `deep_concat` puts
-the codeword back together.
+either (#241 has both dumps). `pil2_prover._OPENING_ROW_CHUNKS` sets the count
+for both, the schedule declares the windows as `deep_chunks` and
+`evals_chunks`, and `deep_concat` and `evals_sum` compose them.
+
+The two compose differently because the two reduce differently: `deep` is
+elementwise over the extended domain, so its windows concatenate, while an
+`evals` opening is a sum over the base domain, so its windows add. Addition in
+the field is exactly associative, so adding the window partials is the same
+value as the whole-domain sum rather than an approximation of it — which is
+what lets the byte-gate check the composition. `evals`' window is therefore
+counted in BASE rows, the domain `lev` and the sum are indexed by, and carries
+the `stride`-times-longer extended window of the section under it.
+
+`evals_sum` is its own program rather than folded into a consumer the way the
+quotient's concatenation is folded into `quotient_commit`. It has to be: the
+host downloads the openings and absorbs them into the transcript before the
+DEEP challenges are squeezed, so the composition falls between the windows and
+their only device-side reader and must materialise a result the host can read.
+
+**A row window does not divide the quotient the way it divides the openings.**
+Eight of `quotient_<size>`'s temporaries are whole extended cubic columns
+(192 MiB each at Main's width, 1,536 MiB together) no matter how many windows
+the cExp is evaluated in, because the quotient takes its window as an index
+vector gathered *after* the columns are joined — which is what pil2's row-offset
+operands need, a plain slice would read past the window's edge. Those 1,536 MiB
+are the floor the count cannot reach under; the arena measured around it is
+1,904 MiB at eight windows and 1,566 MiB at sixteen (#243). Read the floor and
+the two totals, not a split: the 338 MiB between them is not the per-window
+part halving, and what else moved is not established here. Raising the count
+alone cannot halve the arena; what would is the shape `committed_column`'s
+`rows` already fixes for the openings.
