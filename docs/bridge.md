@@ -1314,6 +1314,69 @@ no prove before it uploaded. On a mix where an AIR repeats, most proves find
 their sections resident and never plan a read-ahead at all. The block-shaped mix
 is unmeasured here for that reason, not overlooked.
 
+## Status (2026-09-14, RTX 5090, go hello-world guest)
+
+The byte-gate #238 shipped without, and the first reading of #228, #229 and
+#238 stacked. On `main` at 44ed8ea, frx quad pinned to
+`0.10.2.dev20260910150749`, proving key v1.0.0-alpha, artifacts
+`zz-artifacts-239` re-exported from that tree: 34 of the 380 programs re-lower
+(`const_setup`, `commit1` and `commit2` on every AIR, plus `Rom_n22`'s
+`custom_setup_0`), and every AIR's `manifest.json` is byte-identical to
+`zz-artifacts-191`'s, so the bridge uploads the same bytes to the same specs.
+That directory's cache was seeded from `-191` and warmed for the pinned plugin
+before the sweep (`zz_prove --warm`: those 34 compiled, the other 346 read
+from the cache).
+
+**The proofman fork half is part of this configuration.** These runs pin the
+fork at `6909e166` rather than `daf3a598`, because a build behind that rev
+sends no plan and #229's residency then never fires — the client would keep
+every AIR's fixed sections and the stacked figure would be a #228 figure.
+Every bridged run here logs `plan: 11 instances over 11 AIRs, 11 of them
+proved once`, which is the control that it did.
+
+| | the figure | where it comes from |
+|---|---|---|
+| basic proofs byte-identical to native's | 11 of 11, on each of three passes | `bench/compare_dumps.py`, each bridged pass against the native pass interleaved beside it |
+| client high-water, one client | **8,821 MiB**, the same figure in all three passes | `ZZ_MEM_STAGES=1` under the shipped admission (`ZZ_PENDING_BYTES` 192 MiB) and plan residency |
+| the prove that raises it | `Main_n22`, in its `deep` stage — the last of three steps, after `VirtualTableZisk1_n21` (5,845 MiB) and `VirtualTableZisk0_n21` (7,328 MiB) | `mem_stages.py`'s `peak stage`. Read it from there, not off the boundary label: `Stage::set` reports a boundary under the *incoming* stage's name, so the row that carries this peak is headed `fri` and the stage that made it is `deep` — one `art.run("deep", …)`, so what raises the high-water here is a single program |
+| inner-proof leg | bridge **5.49 s** and **5.54 s**, native **3.54 s** and **3.50 s** (1.55–1.58x) | three passes interleaved on one binary, passes 2 and 3 quoted; pass 1 is 5.52 s against 3.74 s |
+| proofman init | bridge 3.14 s and 3.16 s, native 2.90 s and 3.00 s | the same runs, each on a page cache warmed to the set init reads |
+| `ZZ_CLIENTS=2` beside pil2 | survives at no fraction | the table below |
+
+Against #228's shipped 192 MiB admission, published above as 8,960–8,975 MiB
+and 8,975–9,005 over its re-runs, the client high-water falls to 8,821 MiB —
+by roughly 139–184 MiB, with #229's residency and #238's blocking both in and
+the plan live. Take that baseline from the table this page already carries and
+not from a run directory's name: the `mem-b192-*` directories of #228's sweep
+admit a 368 MiB instance beside an 80 MiB one ten milliseconds apart, which
+`Pending::admits` refuses at a 192 MiB budget, so they are not that arm.
+
+**Two clients still do not fit**, and the window is closed from both sides:
+
+| `ZZ_CLIENTS=2` | fraction | what happens |
+|---|---|---|
+| `ZZ_GPU_HEADROOM_GB=3`, run.sh's default | 0.48–0.58 | pil2 refuses before any prove: `Invalid configuration: Not enough GPU memory to run the proof` |
+| | 0.47 | pil2 starts and the client's arena goes dry; the request that finds it dry is 2.19 GiB |
+| `ZZ_GPU_HEADROOM_GB=0`, the setting #215 measured two clients at | 0.48, 0.50, 0.52, 0.53 | every one aborts dry, at 7.53–8.31 GiB of arena each, all four on a 1.86 GiB request — taken while `quotient_1048576` is enqueuing, though XLA names no op on the warning |
+
+That is not a regression against #215, whose two-client grid had no surviving
+arm either — dry at 0.52 and below, pil2 refusing at 0.54 and above. Neither
+does it size how far the per-client floor moved. At the one setting both
+sessions took, headroom 0 and fraction 0.52, each client gets the same
+8.15 GiB and both go dry: #215 on a 1.50 GiB request and this one on 1.86 GiB.
+That is a differently shaped run of allocations, not a measured shortfall, and
+the quantity these runs do settle is the one-client high-water above. So there
+is no two-client leg to read, and the serialization term #170 named stays
+unmeasured.
+
+Reproduce with [`../bridge/bench/`](../bridge/bench/): the arms are
+`run.sh <tag> native` and `run.sh <tag> bridge ZZ_MEM_STAGES=1` interleaved
+pass by pass, with `ZZ_CLIENTS` and `ZZ_MEMORY_FRACTION` set per run for the
+two-client table; then `compare_dumps.py` for the byte-gate, `summarize.py`
+for the leg and init rows, and `mem_stages.py` for the high-water and the
+prove it rises in. The guest takes no input and this host builds no ASM
+emulator for it, so `ZISK_PROVE_FLAGS=` is empty.
+
 ## Design notes
 
 - **Asynchronous, as pil2's GPU path is.** The bridge copies the
