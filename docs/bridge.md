@@ -1896,6 +1896,45 @@ is unmeasured here for that reason, not overlooked.
   proves it in 0.501 s against 0.519 s, which over 11 instances is the
   0.2 s the leg moves.
 
+  **The blocking did not cover the input's re-layout** (#237). The
+  transform reads a column, the section is stored by row, so each block is
+  transposed on the way in. Those per-block transposes are what the
+  exporter emits, and XLA did not keep them: with the field view taken
+  over the whole section before the blocks are sliced off it, the slices
+  sink below the bitcast and the blocks' transposes merge into a single
+  transpose of the entire section, live from the first block to the last.
+  `extend_words` takes the view a block at a time instead, which leaves
+  the transposes where they were emitted. The section's declared layout
+  does not move and neither does the manifest — `raw_boundary` reports
+  field inputs as `uint64` either way, so the entry is the same bytes and
+  the bridge is unchanged; only the four LDE-bearing programs re-export.
+  On `VirtualTableZisk0_n21`, from the compiles' buffer assignments
+  (`bench/buffer_assignment.py`), before against after:
+
+  | RTX 5090 | `const_setup` | `commit2` |
+  |---|---|---|
+  | temp arena | 2,176 → **768 MiB** | 1,600 → **1,024 MiB** |
+  | the merged transpose | 1,408 MiB, live 25–182 of 267 | 576 MiB |
+
+  Each arena falls by its own transpose's size exactly. What is left is the
+  stage buffers the NTT passes ping-pong between, which alias, so the floor
+  is the block size and not the section's width. The codeword is pinned
+  either way — `extend_words` carries the `extendPol` goldens at three
+  block sizes — and the manifest is byte-identical, `uint64` entries of the
+  same dims, so the bridge uploads the same bytes to the same specs. The
+  basic proofs' byte-gate was **not** re-run for this change, unlike #191
+  above: the goldens and that manifest are the whole of what pins it here,
+  and the gate belongs in whatever re-exports the artifacts next.
+
+  The loop's `optimization_barrier` still does its job, but not by
+  surviving: no `opt-barrier` is left in the optimized module either way,
+  so nothing in the final program enforces the order. It constrains the
+  passes that run before it is dropped, and taking it out of the source
+  grows the arena by a block set. What it does not constrain is the
+  input's re-layout, which is settled against the whole section before the
+  blocks exist — so putting a barrier on the slice does not move it, and
+  the field view has to be taken per block instead.
+
   **Freeing memory inside a program is not the same as lowering the
   floor.** 3.4 GiB out of the biggest one buys 0.6 GiB of the client
   floor above, because that block was the arena's largest single

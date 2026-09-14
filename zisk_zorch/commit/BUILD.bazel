@@ -93,6 +93,28 @@ py_test(
 )
 
 py_test(
+    name = "lde_arena_test",
+    # Two compiles of a 16-column LDE; the NTT passes are what the seconds go
+    # to, and neither shape grows with the section.
+    size = "medium",
+    srcs = ["lde_arena_test.py"],
+    # GPU-only: the merge this pins is what the pinned plugin's GPU backend
+    # does with the graph.
+    tags = ["gpu"],
+    deps = [
+        ":trace_commit",
+        requirement("absl_py"),
+        requirement("frx"),
+        # The card this test needs an answer from; without the plugin in the
+        # closure frx knows only cpu/tpu.
+        requirement("frx_cuda12_pjrt"),
+        requirement("frx_cuda12_plugin"),
+        requirement("numpy"),
+        requirement("zk_dtypes"),
+    ],
+)
+
+py_test(
     name = "openings_test",
     # ~135 s warm, but a dependency bump invalidates the cache and the cold run
     # under CI's parallel load lands at ~300 s — right on the cap `medium` would

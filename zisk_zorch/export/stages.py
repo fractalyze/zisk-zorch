@@ -32,7 +32,7 @@ from zorch.poly.univariate import powers
 from zorch.utils.field import join_coeffs, split_coeffs
 
 from zisk_zorch.commit.openings import batched_group_proof
-from zisk_zorch.commit.trace_commit import extend, merkle_tree
+from zisk_zorch.commit.trace_commit import extend_words, merkle_tree
 from zisk_zorch.evals.lev import build_lev_constants, compute_lev
 from zisk_zorch.fri.queries import _grind_search_jit
 from zisk_zorch.fri.seam import Pil2FriCode
@@ -319,16 +319,23 @@ class AirPrograms:
 
     def _commit_program(self, name: str, spec: Spec, root: str, ext: str) -> Program:
         """Extend-and-merkelize of one base-domain section — the stage
-        commits and the key-side constant/custom setups alike."""
+        commits and the key-side constant/custom setups alike.
+
+        The section is declared in the ``uint64`` words it is carried in
+        rather than as field elements, so the LDE views a column block at a
+        time (`extend_words`). `raw_boundary` reports the same manifest entry
+        either way; what changes is where the bitcast sits.
+        """
         blowup = 1 << (self.nbe - self.nb)
 
-        def fn(matrix):
-            extended = extend(matrix, blowup)
+        def fn(words):
+            extended = extend_words(words, blowup)
             r, layers = self.tree.commit(extended)
             return (r, extended, *layers)
 
         layers = _layer_specs(self.tree, f"{name}_layers", self.ne, spec.dims[1])
-        return Program(name, fn, [spec], [root, ext, *(s.name for s in layers)])
+        words = Spec(spec.name, "uint64", spec.dims)
+        return Program(name, fn, [words], [root, ext, *(s.name for s in layers)])
 
     def constants(self) -> Program:
         """The key-static coset points and inverse zerofier, computed in the
@@ -402,15 +409,15 @@ class AirPrograms:
     def commit1(self) -> Program:
         role = self.prover.opening
 
-        def fn(trace):
-            root, layers, extended = role.commit_components(trace)
+        def fn(words):
+            root, layers, extended = role.commit_components(words, words=True)
             return (root, extended, *layers)
 
         layers = _layer_specs(self.tree, "cm1_layers", self.ne, self.w1)
         return Program(
             "commit1",
             fn,
-            [Spec("trace", "goldilocks", (self.n, self.w1))],
+            [Spec("trace", "uint64", (self.n, self.w1))],
             ["root1", "cm1_ext", *(s.name for s in layers)],
         )
 
@@ -454,15 +461,15 @@ class AirPrograms:
     def commit2(self) -> Program:
         role = self.prover.logup
 
-        def fn(matrix):
-            root, layers, extended = role.commit_components(matrix)
+        def fn(words):
+            root, layers, extended = role.commit_components(words, words=True)
             return (root, extended, *layers)
 
         layers = _layer_specs(self.tree, "cm2_layers", self.ne, self.w2)
         return Program(
             "commit2",
             fn,
-            [Spec("cm2", "goldilocks", (self.n, self.w2))],
+            [Spec("cm2", "uint64", (self.n, self.w2))],
             ["root2", "cm2_ext", *(s.name for s in layers)],
         )
 
