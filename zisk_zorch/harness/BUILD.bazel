@@ -309,6 +309,21 @@ py_test(
     ],
 )
 
+# The DEEP batch's row blocking — no key, no capture, no device.
+py_test(
+    name = "pil2_prover_test",
+    srcs = ["pil2_prover_test.py"],
+    deps = [
+        ":pil2",
+        ":pil2_prover",
+        requirement("absl_py"),
+        requirement("frx"),
+        requirement("numpy"),
+        requirement("pyzorch"),
+        requirement("zk_dtypes"),
+    ],
+)
+
 py_test(
     name = "gates_test",
     size = "large",

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import frx
 import frx.numpy as fnp
 import numpy as np
-from frx import Array
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zorch.stage import ProveResult, ProverStage, TrivialClaim
 from zorch.utils.field import split_coeffs
@@ -56,6 +56,7 @@ from zisk_zorch.harness.pil2 import (
     expand_scalars,
     hint_value,
     open_evmap_columns,
+    row_windows,
     scalar_env,
     squeeze_stage_challenges,
 )
@@ -687,14 +688,10 @@ class Pil2QuotientProver(
         )
         if self.q_chunks > 1:
             ne = 1 << (self._nb + self._blowup_bits)
-            # Ceil-divide with a clipped tail: a chunk count that does not
-            # divide `ne` must not drop the remainder rows.
-            per = -(ne // -self.q_chunks)
             quotient = fnp.concatenate(
                 [
-                    self.q_chunk_jit(*args, fnp.arange(k * per, min((k + 1) * per, ne)))
-                    for k in range(self.q_chunks)
-                    if k * per < ne
+                    self.q_chunk_jit(*args, fnp.arange(lo, hi))
+                    for lo, hi in row_windows(ne, self.q_chunks)
                 ]
             )
         else:
@@ -736,6 +733,21 @@ class Pil2OpeningProof(OpeningProof):
     query-sized work per tree, so they are opt-in)."""
 
     wire: WireOpenings | None = None
+
+
+# How many row windows the DEEP batch is evaluated in. `deep_two_challenge`
+# is elementwise over the extended domain, so a window is a pure restriction
+# and the traffic is the same either way; what the count buys is the peak.
+# The batch's temporary set is N of the evMap's cubic columns alive at once,
+# a whole extended column each, and a window divides exactly that set.
+#
+# One window per DISPATCH, like the quotient's chunks and unlike a loop
+# inside one program: windowing in the trace leaves the windows independent,
+# and XLA is then free to compute them together, which holds them together.
+# The program boundary is what makes the division hold; see docs/bridge.md,
+# "What the in-program transient is made of". Eight matches the split every
+# basic AIR already uses for the quotient.
+_DEEP_ROW_CHUNKS = 8
 
 
 class Pil2OpeningProver(
@@ -790,7 +802,8 @@ class Pil2OpeningProver(
         # at ZisK Main width (183 entries x 2^23) — inside the jit they are
         # fused slices that never exist whole.
         self.evals_jit = frx.jit(self.evals_fn)
-        self.deep_jit = frx.jit(self.deep_fn)
+        self.deep_row_chunks = _DEEP_ROW_CHUNKS
+        self.deep_chunk_jit = frx.jit(self.deep_fn, static_argnames=("size",))
         # The commit is jitted for the same reason, plus two of its own. A
         # dedicated hash fusion only exists INSIDE a jit region, so an eager
         # commit silently gives up the fused Poseidon kernel; and the eager
@@ -801,9 +814,10 @@ class Pil2OpeningProver(
         # error at ZisK Main width on sm_120.
         self.commit_jit = frx.jit(self.commit_components)
 
-    def _columns(self, bufs: dict) -> list:
+    def _columns(self, bufs: dict, rows: tuple[int, int] | None = None) -> list:
         return [
-            committed_column(e, self._si["cmPolsMap"], bufs) for e in self._si["evMap"]
+            committed_column(e, self._si["cmPolsMap"], bufs, rows=rows)
+            for e in self._si["evMap"]
         ]
 
     def evals_fn(self, bufs: dict, lev):
@@ -816,11 +830,31 @@ class Pil2OpeningProver(
             stride=1 << (self._nbe - self._nb),
         )
 
-    def deep_fn(self, bufs: dict, evals, domain, xi, vf1, vf2):
+    def deep_fn(
+        self, bufs: dict, evals, domain, xi, vf1, vf2, start=None, *, size=None
+    ):
         """The DEEP batch (`deep_two_challenge`) as a traced function; the
-        coset `domain` enters as an argument (#67)."""
+        coset `domain` enters as an argument (#67).
+
+        Over the `size` rows at `start`, or -- `size` None -- over every
+        row, which is the whole-domain batch the windows are checked
+        against and is not a path any export takes.
+        Every operand is indexed by row, so a chunk computes its own rows of
+        the result from its own rows of the sections and nothing crosses a
+        boundary; concatenating the chunks is the whole composition. The
+        window goes to `committed_column`, not around it: slicing columns
+        that were joined whole would leave the chunk reading pieces of
+        arrays that still exist in full.
+
+        `start` traces and `size` does not -- a slice's width has to be
+        known at trace time, and keeping it out of the traced arguments is
+        what lets one compiled chunk serve every window of that width."""
+        rows = None
+        if size is not None:
+            rows = (start, size)
+            domain = lax.dynamic_slice_in_dim(domain, start, size, axis=0)
         return deep_two_challenge(
-            self._columns(bufs),
+            self._columns(bufs, rows=rows),
             evals,
             domain,
             xi,
@@ -891,7 +925,12 @@ class Pil2OpeningProver(
         vf2 = challenges[challenge_id(si["challengesMap"], "std_vf2")]
 
         domain = _coset_points(self._nb, self._nbe - self._nb)
-        fri_pol = self.deep_jit(bufs, evals, domain, xi, vf1, vf2)
+        fri_pol = fnp.concatenate(
+            [
+                self.deep_chunk_jit(bufs, evals, domain, xi, vf1, vf2, lo, size=hi - lo)
+                for lo, hi in row_windows(1 << self._nbe, self.deep_row_chunks)
+            ]
+        )
 
         fri, fri_layers = prove(
             fri_pol,

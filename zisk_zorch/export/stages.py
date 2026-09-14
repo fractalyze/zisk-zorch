@@ -36,7 +36,7 @@ from zisk_zorch.commit.trace_commit import extend_words, merkle_tree
 from zisk_zorch.evals.lev import build_lev_constants, compute_lev
 from zisk_zorch.fri.queries import _grind_search_jit
 from zisk_zorch.fri.seam import Pil2FriCode
-from zisk_zorch.harness.pil2 import Pil2Key, hint_value, value_offsets
+from zisk_zorch.harness.pil2 import Pil2Key, hint_value, row_windows, value_offsets
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.quotient.zerofier import _SHIFT, _root
 from zisk_zorch.transcript.transcript import DIGEST
@@ -249,12 +249,10 @@ class AirPrograms:
         self.n_ev = len(si["evMap"])
         self.tree = merkle_tree(self.arity, self.family)
         self.code = Pil2FriCode(tuple(self.steps))
-        q = prover.quotient
-        per = -(self.ne // -q.q_chunks)
-        self.chunk_sizes = [
-            min((k + 1) * per, self.ne) - k * per
-            for k in range(q.q_chunks)
-            if k * per < self.ne
+        ne, q_chunks = self.ne, prover.quotient.q_chunks
+        self.chunk_sizes = [hi - lo for lo, hi in row_windows(ne, q_chunks)]
+        self.deep_sizes = [
+            hi - lo for lo, hi in row_windows(ne, prover.opening.deep_row_chunks)
         ]
         run = prover.logup._run_hint
         self.airgroupvalue_index = (
@@ -558,13 +556,17 @@ class AirPrograms:
             ["evals"],
         )
 
-    def deep(self) -> Program:
+    def deep(self, size: int) -> Program:
+        """The DEEP batch over the `size`-long row window at `start`. Always
+        windowed: the batch's temporaries are one whole extended column per
+        evMap entry, and only a dispatch boundary divides them
+        (`pil2_prover._DEEP_ROW_CHUNKS`)."""
         role = self.prover.opening
         nc = len(self.custom_ids)
 
         def fn(cm1, cm2, qsec, const, *rest):
             customs = list(rest[:nc])
-            evals, domain, xi, vf1, vf2 = rest[nc:]
+            evals, domain, xi, vf1, vf2, start = rest[nc : nc + 6]
             return (
                 role.deep_fn(
                     self._bufs(cm1, cm2, qsec, const, customs),
@@ -573,11 +575,13 @@ class AirPrograms:
                     _cubic(xi),
                     _cubic(vf1),
                     _cubic(vf2),
+                    start[0],
+                    size=size,
                 ),
             )
 
         return Program(
-            "deep",
+            f"deep_{size}",
             fn,
             [
                 *self._section_specs(),
@@ -586,6 +590,24 @@ class AirPrograms:
                 Spec("xi", "goldilocks", (3,)),
                 Spec("vf1", "goldilocks", (3,)),
                 Spec("vf2", "goldilocks", (3,)),
+                Spec("start", "int32", (1,)),
+            ],
+            ["fri_pol"],
+        )
+
+    def deep_concat(self) -> Program:
+        """The DEEP chunks back into the codeword, in domain order — the
+        composition the windows are a decomposition of."""
+
+        def fn(*chunks):
+            return (fnp.concatenate(chunks),)
+
+        return Program(
+            "deep_concat",
+            fn,
+            [
+                Spec(f"fri_pol_{k}", "goldilocksx3", (size,))
+                for k, size in enumerate(self.deep_sizes)
             ],
             ["fri_pol"],
         )
@@ -680,7 +702,9 @@ class AirPrograms:
         else:
             for size in sorted(set(self.chunk_sizes)):
                 out.append(self.quotient(size))
-        out += [self.quotient_commit(), self.lev(), self.evals(), self.deep()]
+        out += [self.quotient_commit(), self.lev(), self.evals()]
+        out += [self.deep(size) for size in sorted(set(self.deep_sizes))]
+        out.append(self.deep_concat())
         for i in range(len(self.steps) - 1):
             out += [self.fri_commit(i), self.fri_fold(i)]
         out += [self.fri_final(), self.grind()]
@@ -754,5 +778,6 @@ class AirPrograms:
             ],
             "airgroupvalue_index": self.airgroupvalue_index,
             "quotient_chunks": self.chunk_sizes,
+            "deep_chunks": self.deep_sizes,
             "witness_calc": self.prover.witness.active,
         }

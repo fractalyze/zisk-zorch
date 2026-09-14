@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import frx
 import frx.numpy as fnp
 import numpy as np
-from frx import Array
+from frx import Array, lax
 from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zk_dtypes import pfinfo
@@ -272,13 +272,43 @@ def challenge_id(challenges_map: list, name: str) -> int:
     return idx
 
 
-def committed_column(entry: dict, cmp_map: list, bufs: dict) -> Array:
+def row_windows(n: int, count: int) -> list[tuple[int, int]]:
+    """The `count` row windows covering `n` rows, as ``(lo, hi)`` pairs.
+
+    Ceil-divide with a clipped tail: a count that does not divide `n` must
+    not drop the remainder rows. One definition for the quotient's chunks,
+    the DEEP batch's windows and the schedule that declares both, so they
+    cannot drift apart on the tail."""
+    per = -(n // -count)
+    return [(k * per, min((k + 1) * per, n)) for k in range(count) if k * per < n]
+
+
+def committed_column(
+    entry: dict,
+    cmp_map: list,
+    bufs: dict,
+    *,
+    rows: tuple[Array | int, int] | None = None,
+) -> Array:
     """An ``evMap``-shaped entry's committed column, cubic entries joined
     from their 3 contiguous lanes. `bufs` maps ``(kind, stage-or-commitId)``
-    to the section matrix (device or host; host slices copy on convert)."""
+    to the section matrix (device or host; host slices copy on convert).
+
+    `rows` restricts the column to a ``(start, size)`` row window, `start`
+    traced or not. The window is taken on the section matrix, before the
+    cubic join, so the column is never named over the whole domain: joining
+    first and slicing after leaves the join reading a column that exists in
+    full anyway."""
+
+    def section(key) -> Array:
+        buf = bufs[key]
+        if rows is None:
+            return buf
+        return lax.dynamic_slice_in_dim(buf, rows[0], rows[1], axis=0)
+
     if entry["type"] == "cm":
         pm = cmp_map[entry["id"]]
-        buf = bufs[("cm", pm["stage"])]
+        buf = section(("cm", pm["stage"]))
         if pm["dim"] == 1:
             return fnp.asarray(buf[:, pm["stagePos"]])
         lanes = buf[:, pm["stagePos"] : pm["stagePos"] + 3]
@@ -286,8 +316,8 @@ def committed_column(entry: dict, cmp_map: list, bufs: dict) -> Array:
             lanes = np.ascontiguousarray(lanes)
         return join_coeffs(fnp.asarray(lanes), F3)
     if entry["type"] == "const":
-        return fnp.asarray(bufs[("const", 0)][:, entry["id"]])
-    return fnp.asarray(bufs[("custom", entry["commitId"])][:, entry["id"]])
+        return fnp.asarray(section(("const", 0))[:, entry["id"]])
+    return fnp.asarray(section(("custom", entry["commitId"]))[:, entry["id"]])
 
 
 def cm_env(cmp_map: list, bufs: dict) -> dict[int, Array]:

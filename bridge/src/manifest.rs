@@ -121,6 +121,11 @@ pub struct Manifest {
     pub proofvalues: Vec<StageOnly>,
     pub airgroupvalue_index: Option<usize>,
     pub quotient_chunks: Vec<usize>,
+    /// The row windows `deep` is dispatched over, in domain order. Unlike
+    /// `quotient_chunks` there is no whole-domain program behind it: the
+    /// batch is always windowed, because a dispatch boundary is the only
+    /// thing that divides its temporaries.
+    pub deep_chunks: Vec<usize>,
     pub witness_calc: bool,
     pub programs: BTreeMap<String, ProgramInfo>,
 }
