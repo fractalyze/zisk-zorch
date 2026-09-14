@@ -234,27 +234,31 @@ both workloads' legs and drop graph instantiation substantially.
 
 ## Status
 
-The sweep's per-run tables are on #239; what follows is what stays true of the
-tree.
+The per-run tables are on the issue each reading names; what follows is what
+stays true of the tree.
 
-- **The byte-gate #238 merged without now holds.** Re-exported from `main`
-  into `zz-artifacts-239`, all 11 basic proofs are byte-identical to native's
-  dumps on three interleaved passes. 34 of the 380 programs re-lower —
-  `const_setup`, `commit1` and `commit2` on every AIR, plus `Rom_n22`'s
-  `custom_setup_0` — and every AIR's `manifest.json` is byte-identical to the
-  previous export's, so the re-lowering moved no interface the bridge binds to.
-- **What sets a client's high-water is `Main_n22`'s `deep`.** It reaches
-  8,821 MiB there, against the 8,960-9,005 MiB #228 measured for the shipped
-  192 MiB admission (#239 has both runs). `deep` is a single `art.run("deep", ...)`, so one
-  program is what to aim a trim at. Read the stage from `mem_stages.py`'s
-  `peak stage` and never off a boundary label: `Stage::set` reports a boundary
-  under the *incoming* stage's name, so the row carrying this peak is headed
-  `fri` while the stage that made it is `deep`.
-- **Two clients still fit at no fraction**, and they fail from both ends:
-  give the pair enough of the card and pil2 will not start (`Not enough GPU
-  memory to run the proof`), give it less and a client's arena goes dry
-  mid-prove. #215's own grid ended the same way, so nothing since has opened
-  that window and the serialization term #170 named stays unmeasured.
+- **The byte-gate holds on the current export.** Re-exported into
+  `zz-artifacts-241`, all 11 basic proofs are byte-identical to native's dumps
+  on every interleaved pass (#241; #239 is the same gate one export earlier).
+  Two of each AIR's programs re-lower, `deep_<size>` and `deep_concat`, and
+  every other program's manifest entry is byte-identical to the previous
+  export's, so the re-lowering moved no interface the bridge binds to. The
+  schedule gains `deep_chunks`, which is the one manifest key that is new.
+- **What sets a client's high-water is `Main_n22`'s `evals`.** It reaches
+  8,278 MiB there (#241), against 8,821 MiB at `deep` before that program was
+  dispatched per row window (#239) and 8,960-9,005 MiB at #228's shipped
+  admission.
+  Each is one `art.run`, so one program is what to aim a trim at. Read the
+  stage from `mem_stages.py`'s `peak stage` and never off a boundary label:
+  `Stage::set` reports a boundary under the *incoming* stage's name, so the
+  row carrying a peak is headed with the stage after the one that made it.
+- **Two clients still fit at no fraction**, and the two ends are 0.076 GB and
+  one allocation apart (#241, headroom 0). Above `ZZ_MEMORY_FRACTION=0.53`
+  pil2 will not start — it needs 12.904 GB and 0.54 leaves it 12.828. At 0.53
+  each client gets an 8.31 GiB arena and goes dry on a 1,904 MiB request,
+  which is `quotient_1048576`'s own temp arena, so what closes the window now
+  is the largest in-program transient left rather than anything resident.
+  #215's and #239's grids ended the same way.
 
 ## What the measurements settled
 
@@ -632,3 +636,15 @@ The loop's `optimization_barrier` does its job without surviving: no
 `opt-barrier` is left in the optimized module, so nothing in the final
 program enforces the order. It constrains the passes that run before it is
 dropped, and taking it out of the source grows the arena by a block set.
+
+The openings programs (`deep`, `evals`) hold a different shape: N of the
+evMap's cubic columns over the extended domain, alive at once, one whole
+column each. They are N independent results rather than a copy, so the only
+thing that shrinks them is evaluating fewer rows at a time — and there the
+division has to be **one dispatch per row window**, the shape the quotient's
+chunks already use. Windowing inside one program leaves the windows
+independent, and XLA is then free to compute them together, which holds them
+together; a barrier chaining one window to the next does not recover it
+either (#241 has both dumps). `pil2_prover._DEEP_ROW_CHUNKS` sets the count,
+the schedule declares the windows as `deep_chunks`, and `deep_concat` puts
+the codeword back together.
