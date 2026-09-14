@@ -269,7 +269,9 @@ class StageOneWitness:
             ref = hint_value(hint, "reference")
             pm = self._cmp[ref["id"]]
             assert pm["stage"] == 1 and pm["dim"] == 1, f"witness_calc into {pm}"
-            col = _hint_column(hint_value(hint, "expression"), env, self._exps, trace.shape[0])
+            col = _hint_column(
+                hint_value(hint, "expression"), env, self._exps, trace.shape[0]
+            )
             if col.dtype != F:
                 # A base-field destination; the interpreter may hand the
                 # value back cubic-typed when an operand was (the higher
@@ -340,7 +342,7 @@ class LogUpWitnessProver(
         # shared-memory cap at ZisK Main width.
         self.commit_jit = frx.jit(self.commit_components)
 
-    def commit_components(self, matrix):
+    def commit_components(self, matrix, *, words: bool = False):
         """`commit_trace` as a traced function: ``(root, digest_layers,
         extended)`` — components, not the dataclass, which is not a pytree."""
         c = commit_trace(
@@ -348,6 +350,7 @@ class LogUpWitnessProver(
             blowup=self._blowup,
             arity=self._arity,
             hash_family=self._family,
+            words=words,
         )
         return c.root, c.digest_layers, c.extended
 
@@ -689,9 +692,7 @@ class Pil2QuotientProver(
             per = -(ne // -self.q_chunks)
             quotient = fnp.concatenate(
                 [
-                    self.q_chunk_jit(
-                        *args, fnp.arange(k * per, min((k + 1) * per, ne))
-                    )
+                    self.q_chunk_jit(*args, fnp.arange(k * per, min((k + 1) * per, ne)))
                     for k in range(self.q_chunks)
                     if k * per < ne
                 ]
@@ -830,7 +831,7 @@ class Pil2OpeningProver(
             n_bits=self._nb,
         )
 
-    def commit_components(self, trace):
+    def commit_components(self, trace, *, words: bool = False):
         """`commit_trace` as ``(root, digest_layers, extended)`` — the
         dataclass is not a pytree, so `commit` rebuilds it outside."""
         c = commit_trace(
@@ -838,6 +839,7 @@ class Pil2OpeningProver(
             blowup=1 << (self._nbe - self._nb),
             arity=self._arity,
             hash_family=self._family,
+            words=words,
         )
         return c.root, c.digest_layers, c.extended
 

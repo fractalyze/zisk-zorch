@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import pathlib
 
+import frx
 import frx.numpy as fnp
 from absl.testing import absltest, parameterized
+from frx import lax
 
 from zisk_zorch.commit.trace_commit import (
     _block_cols,
     commit_trace,
     extend,
+    extend_words,
     merkle_tree,
     unextend,
 )
@@ -60,6 +63,36 @@ class LdeTest(absltest.TestCase):
             self.assertTrue(
                 bool(fnp.array_equal(extended, expected)),
                 msg=f"n_bits {case['n_bits']}, blowup_bits {case['blowup_bits']}",
+            )
+
+
+class ExtendWordsTest(parameterized.TestCase):
+    """`extend_words` is `extend` over the same section carried as the raw
+    words the export boundary hands it in: same codeword, whole or blocked.
+
+    Traced under x64, as the export lowers (`raw_boundary`): with it off a
+    ``uint64`` aval is 32 bits, and the bitcast splits each element in two
+    rather than viewing it whole.
+    """
+
+    @parameterized.named_parameters(
+        ("whole_section", 1 << 30),
+        ("one_column_a_block", 1),
+        ("ragged_tail", 512),
+    )
+    def test_matches_pil2_extend_pol(self, block_bytes: int) -> None:
+        for case in load(_TESTDATA / "lde.json")["cases"]:
+            n, n_cols = 1 << case["n_bits"], case["n_cols"]
+            evals = u64(case["evals"]).reshape(n, n_cols)
+            with frx.enable_x64():
+                words = lax.bitcast_convert_type(evals, fnp.uint64)
+                extended = extend_words(
+                    words, blowup=1 << case["blowup_bits"], block_bytes=block_bytes
+                )
+            expected = u64(case["extended"]).reshape(-1, n_cols)
+            self.assertTrue(
+                bool(fnp.array_equal(extended, expected)),
+                msg=f"n_bits {case['n_bits']}, n_cols {n_cols}",
             )
 
 

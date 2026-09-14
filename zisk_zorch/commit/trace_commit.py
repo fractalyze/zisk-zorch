@@ -16,6 +16,7 @@ so selecting Poseidon1 or Poseidon2 only swaps the permutation the blocks hold.
 from __future__ import annotations
 
 import functools
+from collections.abc import Callable
 
 import frx.numpy as fnp
 import numpy as np
@@ -128,22 +129,17 @@ def _block_cols(ext_rows: int, n_cols: int, block_bytes: int) -> int:
     return max(1, min(n_cols, block_bytes // per_col))
 
 
-def extend(trace: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES) -> Array:
-    """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
-    rows in pil2's domain order (`extendPol` semantics).
-
-    The permute-cancelling LDE schedule lives in `ReedSolomon.extend`, which
-    transforms the last axis; the trace is row-major here, so it rides in as
-    columns (`trace.T`) and back out as rows. `_PIL2_GENERATOR` keeps the
-    transform in pil2's domain order.
-
-    Columns are transformed a block at a time (`LDE_BLOCK_BYTES`). Each
-    column's LDE is independent of every other's, so the codeword does not
-    depend on how they are split.
-    """
-    if trace.ndim != 2:
-        raise ValueError(f"trace must be 2-D, got ndim={trace.ndim}")
-    n, n_cols = trace.shape
+def _extend_blocked(
+    section: Array,
+    blowup: int,
+    to_field: Callable[[Array], Array],
+    block_bytes: int,
+) -> Array:
+    """The blocked LDE over `section`'s columns; `to_field` views one column
+    block as field elements (identity when the section already is)."""
+    if section.ndim != 2:
+        raise ValueError(f"section must be 2-D, got ndim={section.ndim}")
+    n, n_cols = section.shape
     ne = n * blowup
     # The shift crosses an optimization barrier so XLA cannot fold the coset
     # power series it seeds into a 2^nBitsExt literal: every exported
@@ -158,17 +154,54 @@ def extend(trace: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES) -> 
     )
     cols = _block_cols(ne, n_cols, block_bytes)
     if cols == n_cols:
-        return rs.extend(trace.T).T
+        return rs.extend(to_field(section).T).T
     out = fnp.zeros((ne, n_cols), F)
     for j in range(0, n_cols, cols):
-        # A dependency, not a scheduling hint. The blocks are independent,
-        # so without it XLA runs several transforms at once and their
-        # temporaries are live together; threading `trace` through with the
-        # result makes each block's read wait on the previous block's write.
-        trace, out = lax.optimization_barrier((trace, out))
-        block = rs.extend(trace[:, j : j + cols].T).T
+        # The blocks are independent, so without this their transforms'
+        # temporaries end up live together and the arena grows by a block
+        # set. It acts at compile time, not at run time: no `opt-barrier`
+        # survives into the optimized module, so what it constrains is the
+        # passes that run before it is dropped. The input's re-layout is not
+        # among them — that is settled against the whole section, before
+        # the blocks exist, which is why `extend_words` views per block.
+        section, out = lax.optimization_barrier((section, out))
+        block = rs.extend(to_field(section[:, j : j + cols]).T).T
         out = lax.dynamic_update_slice(out, block, (0, j))
     return out
+
+
+def extend(trace: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES) -> Array:
+    """LDE a (N, n_cols) evaluation matrix to (N*blowup, n_cols) on coset 7,
+    rows in pil2's domain order (`extendPol` semantics).
+
+    The permute-cancelling LDE schedule lives in `ReedSolomon.extend`, which
+    transforms the last axis; the trace is row-major here, so it rides in as
+    columns (`trace.T`) and back out as rows. `_PIL2_GENERATOR` keeps the
+    transform in pil2's domain order.
+
+    Columns are transformed a block at a time (`LDE_BLOCK_BYTES`). Each
+    column's LDE is independent of every other's, so the codeword does not
+    depend on how they are split.
+    """
+    return _extend_blocked(trace, blowup, lambda block: block, block_bytes)
+
+
+def extend_words(
+    words: Array, blowup: int, *, block_bytes: int = LDE_BLOCK_BYTES
+) -> Array:
+    """`extend` for a section that arrives as raw ``uint64`` words — the form
+    every exported program's field inputs are carried in (`raw_boundary`).
+
+    The words are viewed as field elements one column block at a time rather
+    than all at once. Viewing the whole section first and slicing that lets
+    XLA sink the slices below the bitcast and merge the blocks' transposes
+    into one transpose of the entire section — a temporary the size of the
+    input, live from the first block to the last, which is exactly what
+    blocking the transform exists to avoid.
+    """
+    return _extend_blocked(
+        words, blowup, lambda block: lax.bitcast_convert_type(block, F), block_bytes
+    )
 
 
 def merkle_tree(arity: int, hash_family: str = DEFAULT_HASH_FAMILY) -> MerkleTree:
@@ -194,9 +227,14 @@ def commit_trace(
     blowup: int,
     arity: int,
     hash_family: str = DEFAULT_HASH_FAMILY,
+    words: bool = False,
 ) -> TraceCommitment:
     """pil2-stark `extendAndMerkelize`: LDE the trace, merkelize the rows with the
-    `hash_family` permutation."""
-    extended = extend(trace, blowup)
+    `hash_family` permutation.
+
+    `words` says the section arrives as raw ``uint64`` rather than as field
+    elements — the export boundary's form, which LDEs through `extend_words`.
+    """
+    extended = (extend_words if words else extend)(trace, blowup)
     root, digest_layers = merkle_tree(arity, hash_family).commit(extended)
     return TraceCommitment(root=root, digest_layers=digest_layers, extended=extended)
