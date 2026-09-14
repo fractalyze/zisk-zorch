@@ -180,7 +180,7 @@ class SummarizeTest(absltest.TestCase):
 
 
 class ScriptModeTest(absltest.TestCase):
-    """docs/bridge.md "The gap is the basic phase's wall" invokes this file by
+    """docs/bridge.md "What the measurements settled" invokes this file by
     path, which puts its own directory on sys.path rather than the repo root.
     Without the bootstrap the `bridge.bench` imports fail and the documented
     recipe cannot run."""

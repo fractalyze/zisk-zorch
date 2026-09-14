@@ -2,7 +2,7 @@
 """Which device buffers a bridged prove holds at each stage of its schedule,
 read out of a `ZZ_MEM_STAGES=1` run.
 
-This is the reader behind docs/bridge.md "Where a prove's device memory goes";
+This is the reader behind docs/bridge.md "Memory budget";
 `mem_budget.py` is a different tool on a different question (what a whole run
 asked the card for, and which allocation a dead run died on) and cannot
 produce these tables.
