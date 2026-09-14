@@ -1,13 +1,17 @@
-"""The DEEP batch's row windows, on a synthetic AIR.
+"""The openings' row windows, and the quotient's window count, on a
+synthetic AIR.
 
-The batch is evaluated one row window per dispatch so the evMap's cubic
-columns are never alive over the whole extended domain at once (#241). It is
-elementwise over that domain, so the windows concatenated must equal the
-whole-domain result exactly -- these are field elements, not floats, and
-there is no rounding to hide behind. Needs no proving key and no device.
+Both openings programs are evaluated one row window per dispatch so the
+evMap's columns are never alive over the whole extended domain at once
+(#241, #243). Composed back -- the DEEP batch concatenated, `evals` added --
+they must equal the whole-domain result exactly: these are field elements,
+not floats, and there is no rounding to hide behind. Needs no proving key
+and no device.
 """
 
 from __future__ import annotations
+
+import os
 
 import frx
 import frx.numpy as fnp
@@ -17,8 +21,14 @@ from zk_dtypes import goldilocks as F
 from zk_dtypes import goldilocksx3 as F3
 from zorch.utils.field import join_coeffs
 
-from zisk_zorch.harness.pil2 import committed_column, row_windows
-from zisk_zorch.harness.pil2_prover import _DEEP_ROW_CHUNKS, Pil2OpeningProver
+from zisk_zorch.harness import pil2_prover
+from zisk_zorch.harness.pil2 import add_windows, committed_column, row_windows
+from zisk_zorch.harness.pil2_prover import (
+    _OPENING_ROW_CHUNKS,
+    _Q_MAX_CHUNKS,
+    Pil2OpeningProver,
+    _row_chunks,
+)
 
 _NB, _NBE = 4, 5
 _NE = 1 << _NBE
@@ -46,11 +56,12 @@ _SI = {
 
 
 class _Role:
-    """The attribute surface `deep_fn` reads. The real role wants a proving
-    key and a device to construct; the batch itself wants neither."""
+    """The attribute surface the openings read. The real role wants a proving
+    key and a device to construct; the openings themselves want neither."""
 
     _columns = Pil2OpeningProver._columns
     deep_fn = Pil2OpeningProver.deep_fn
+    evals_fn = Pil2OpeningProver.evals_fn
 
     def __init__(self, si: dict, nb: int, nbe: int) -> None:
         self._si, self._nb, self._nbe = si, nb, nbe
@@ -96,7 +107,7 @@ class CommittedColumnWindowTest(parameterized.TestCase):
     def test_a_window_is_the_whole_column_sliced(self, entry: int):
         bufs = _sections(7)
         whole = committed_column(_EV_MAP[entry], _CM_POLS_MAP, bufs)
-        for lo, hi in row_windows(_NE, _DEEP_ROW_CHUNKS):
+        for lo, hi in row_windows(_NE, _OPENING_ROW_CHUNKS):
             window = committed_column(
                 _EV_MAP[entry], _CM_POLS_MAP, bufs, rows=(lo, hi - lo)
             )
@@ -123,13 +134,81 @@ class DeepRowWindowTest(absltest.TestCase):
         windowed = fnp.concatenate(
             [
                 chunk(bufs, evals, domain, xi, vf1, vf2, lo, size=hi - lo)
-                for lo, hi in row_windows(_NE, _DEEP_ROW_CHUNKS)
+                for lo, hi in row_windows(_NE, _OPENING_ROW_CHUNKS)
             ]
         )
         whole = frx.jit(role.deep_fn)(bufs, evals, domain, xi, vf1, vf2)
 
         self.assertEqual(windowed.shape, whole.shape)
         np.testing.assert_array_equal(np.asarray(windowed), np.asarray(whole))
+
+
+class EvalsRowWindowTest(absltest.TestCase):
+    def test_the_windows_added_equal_the_whole_domain_openings(self):
+        bufs = _sections(23)
+        lev = join_coeffs(
+            fnp.asarray(
+                np.random.default_rng(29)
+                .integers(0, 1 << 32, size=(1 << _NB, len(_SI["openingPoints"]), 3))
+                .astype(F)
+            ),
+            F3,
+        )
+        role = _Role(_SI, _NB, _NBE)
+
+        # The same argument split `Pil2OpeningProver` jits with: a traced
+        # `start` and a static `size`.
+        chunk = frx.jit(role.evals_fn, static_argnames=("size",))
+        # The composition `Pil2OpeningProver.prove`, `evals_sum` and
+        # `driver::prove` all perform: one dispatch per window, added.
+        windowed = add_windows(
+            chunk(bufs, lev, lo, size=hi - lo)
+            for lo, hi in row_windows(1 << _NB, _OPENING_ROW_CHUNKS)
+        )
+        whole = frx.jit(role.evals_fn)(bufs, lev)
+
+        self.assertEqual(windowed.shape, whole.shape)
+        np.testing.assert_array_equal(np.asarray(windowed), np.asarray(whole))
+
+
+class QuotientRowChunkTest(parameterized.TestCase):
+    """The cExp's window count against the clients sharing the card. The
+    ceiling prices dispatch against cache with one client owning it, so N
+    clients -- each with 1/N of the card -- relax it N-fold."""
+
+    def _chunks(self, clients: str | None, per_row: int) -> int:
+        env = {k: v for k, v in os.environ.items() if not k.startswith("ZISK_")}
+        if clients is not None:
+            env["ZISK_CLIENTS"] = clients
+        with (
+            absltest.mock.patch.dict(os.environ, env, clear=True),
+            absltest.mock.patch.object(
+                pil2_prover, "live_bytes_per_row", return_value=per_row
+            ),
+        ):
+            return _row_chunks([], [], 1 << 20)
+
+    @parameterized.named_parameters(
+        ("one_client", "1", _Q_MAX_CHUNKS),
+        ("two_clients", "2", 2 * _Q_MAX_CHUNKS),
+        ("four_clients", "4", 4 * _Q_MAX_CHUNKS),
+    )
+    def test_a_hungry_air_takes_the_ceiling_its_clients_allow(self, clients, want):
+        # A per-row cost whose whole-domain set wants far more windows than
+        # any of these ceilings, so the ceiling is what answers.
+        self.assertEqual(self._chunks(clients, 1 << 20), want)
+
+    def test_one_client_is_the_default(self):
+        self.assertEqual(self._chunks(None, 1 << 20), _Q_MAX_CHUNKS)
+
+    def test_a_cheap_air_is_not_moved_by_the_client_count(self):
+        # Under the live-set target at one window, so no ceiling applies.
+        for clients in ("1", "2", "4"):
+            self.assertEqual(self._chunks(clients, 1), 1)
+
+    def test_a_client_count_below_one_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "ZISK_CLIENTS"):
+            self._chunks("0", 1 << 20)
 
 
 if __name__ == "__main__":

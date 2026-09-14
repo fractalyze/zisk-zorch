@@ -36,7 +36,14 @@ from zisk_zorch.commit.trace_commit import extend_words, merkle_tree
 from zisk_zorch.evals.lev import build_lev_constants, compute_lev
 from zisk_zorch.fri.queries import _grind_search_jit
 from zisk_zorch.fri.seam import Pil2FriCode
-from zisk_zorch.harness.pil2 import Pil2Key, hint_value, row_windows, value_offsets
+from zisk_zorch.harness import pil2_prover
+from zisk_zorch.harness.pil2 import (
+    Pil2Key,
+    add_windows,
+    hint_value,
+    row_windows,
+    value_offsets,
+)
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.quotient.zerofier import _SHIFT, _root
 from zisk_zorch.transcript.transcript import DIGEST
@@ -251,9 +258,12 @@ class AirPrograms:
         self.code = Pil2FriCode(tuple(self.steps))
         ne, q_chunks = self.ne, prover.quotient.q_chunks
         self.chunk_sizes = [hi - lo for lo, hi in row_windows(ne, q_chunks)]
-        self.deep_sizes = [
-            hi - lo for lo, hi in row_windows(ne, prover.opening.deep_row_chunks)
-        ]
+        self.clients = pil2_prover._clients()
+        chunks = prover.opening.row_chunks
+        self.deep_sizes = [hi - lo for lo, hi in row_windows(ne, chunks)]
+        # `evals` windows the BASE domain: it reduces over that one, and its
+        # window carries the extended section rows under it (`evals_fn`).
+        self.evals_sizes = [hi - lo for lo, hi in row_windows(self.n, chunks)]
         run = prover.logup._run_hint
         self.airgroupvalue_index = (
             hint_value(run, "result")["id"] if prover.logup._run_is_sum else None
@@ -534,24 +544,54 @@ class AirPrograms:
 
         return Program("lev", fn, [Spec("xi", "goldilocks", (3,))], ["lev"])
 
-    def evals(self) -> Program:
+    def evals(self, size: int) -> Program:
+        """The evMap openings over the `size`-long base-row window at `start`.
+        Always windowed, for `deep`'s reason: the openings' temporaries are
+        one whole extended column per evMap entry, and only a dispatch
+        boundary divides them (`pil2_prover._OPENING_ROW_CHUNKS`)."""
         role = self.prover.opening
         nc = len(self.custom_ids)
 
         def fn(cm1, cm2, qsec, const, *rest):
-            customs, (lev,) = rest[:nc], rest[nc:]
+            customs, (lev, start) = rest[:nc], rest[nc:]
             return (
-                _limbs(
-                    role.evals_fn(self._bufs(cm1, cm2, qsec, const, list(customs)), lev)
+                role.evals_fn(
+                    self._bufs(cm1, cm2, qsec, const, list(customs)),
+                    lev,
+                    start[0],
+                    size=size,
                 ),
             )
 
         return Program(
-            "evals",
+            f"evals_{size}",
             fn,
             [
                 *self._section_specs(),
                 Spec("lev", "goldilocksx3", (self.n, len(self.si["openingPoints"]))),
+                Spec("start", "int32", (1,)),
+            ],
+            ["evals"],
+        )
+
+    def evals_sum(self) -> Program:
+        """The window openings added into the whole one — the composition the
+        windows are a decomposition of.
+
+        Its own program rather than folded into a consumer, unlike the
+        quotient's chunks: `evals` crosses to the host between the windows
+        and their only device-side reader, because the transcript absorbs it
+        before `deep`'s challenges are squeezed."""
+
+        def fn(*parts):
+            return (_limbs(add_windows(parts)),)
+
+        return Program(
+            "evals_sum",
+            fn,
+            [
+                Spec(f"evals_{k}", "goldilocksx3", (self.n_ev,))
+                for k in range(len(self.evals_sizes))
             ],
             ["evals"],
         )
@@ -560,7 +600,7 @@ class AirPrograms:
         """The DEEP batch over the `size`-long row window at `start`. Always
         windowed: the batch's temporaries are one whole extended column per
         evMap entry, and only a dispatch boundary divides them
-        (`pil2_prover._DEEP_ROW_CHUNKS`)."""
+        (`pil2_prover._OPENING_ROW_CHUNKS`)."""
         role = self.prover.opening
         nc = len(self.custom_ids)
 
@@ -702,7 +742,9 @@ class AirPrograms:
         else:
             for size in sorted(set(self.chunk_sizes)):
                 out.append(self.quotient(size))
-        out += [self.quotient_commit(), self.lev(), self.evals()]
+        out += [self.quotient_commit(), self.lev()]
+        out += [self.evals(size) for size in sorted(set(self.evals_sizes))]
+        out.append(self.evals_sum())
         out += [self.deep(size) for size in sorted(set(self.deep_sizes))]
         out.append(self.deep_concat())
         for i in range(len(self.steps) - 1):
@@ -779,5 +821,7 @@ class AirPrograms:
             "airgroupvalue_index": self.airgroupvalue_index,
             "quotient_chunks": self.chunk_sizes,
             "deep_chunks": self.deep_sizes,
+            "evals_chunks": self.evals_sizes,
+            "clients": self.clients,
             "witness_calc": self.prover.witness.active,
         }

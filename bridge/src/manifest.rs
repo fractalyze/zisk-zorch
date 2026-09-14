@@ -126,6 +126,14 @@ pub struct Manifest {
     /// batch is always windowed, because a dispatch boundary is the only
     /// thing that divides its temporaries.
     pub deep_chunks: Vec<usize>,
+    /// The row windows `evals` is dispatched over, in domain order, counted
+    /// in BASE rows — the domain its sum reduces over. Always windowed, for
+    /// `deep_chunks`' reason.
+    pub evals_chunks: Vec<usize>,
+    /// Clients the export was sized for (`ZISK_CLIENTS`): the quotient's
+    /// window count is compiled in, so an artifact is sized for a client
+    /// count rather than adapting to one.
+    pub clients: usize,
     pub witness_calc: bool,
     pub programs: BTreeMap<String, ProgramInfo>,
 }

@@ -46,6 +46,7 @@ from zisk_zorch.harness.pil2 import (
     Pil2Key,
     absorb_stage2_airvalues,
     absorb_words,
+    add_windows,
     challenge_id,
     cm_env,
     committed_column,
@@ -537,12 +538,34 @@ _Q_LIVE_SET_TARGET = 48 << 20
 # recursion sweep bottoms out at exactly 8 (1:85 2:73 4:84 8:35 16:40 32:48
 # 64:80 ms), so one ceiling serves both shapes.
 _Q_MAX_CHUNKS = 8
+# Clients sharing the card, which is what the ceiling above is relaxed by:
+# it prices dispatch against cache, and both of those measurements were taken
+# with one client owning the card. N clients each get 1/N of it, so the
+# largest transient each can afford is 1/N as big, and the ceiling rises to
+# match -- a window count that costs dispatch time is still the cheaper side
+# of a run that otherwise goes dry (zz#241: two clients die on the quotient's
+# arena to the byte). One client keeps 8, so the block workload's curve is
+# not paid by a configuration that does not need it.
+#
+# Read here, at EXPORT, because the count is compiled into the programs and
+# named in the manifest; the run's own client count is the bridge's
+# `ZZ_CLIENTS` (docs/bridge.md, "Memory budget"), and this is the export
+# being told the same number.
+_CLIENTS_ENV = "ZISK_CLIENTS"
+
+
+def _clients() -> int:
+    n = int(os.environ.get(_CLIENTS_ENV, "1"))
+    if n < 1:
+        raise ValueError(f"{_CLIENTS_ENV}={n}: at least one client")
+    return n
 
 
 def _row_chunks(code: list[dict], cmp_map: list, n_ext: int) -> int:
     """How many row windows to evaluate the cExp in — the count whose live
     temporary set fits `_Q_LIVE_SET_TARGET`, rounded up to a power of two,
-    capped at `_Q_MAX_CHUNKS`, and clamped to the domain.
+    capped at `_Q_MAX_CHUNKS` per client sharing the card, and clamped to the
+    domain.
 
     Derived per AIR rather than configured, because the two things it has to
     serve pull the same way: a wide AIR's whole-domain working set does not
@@ -556,7 +579,7 @@ def _row_chunks(code: list[dict], cmp_map: list, n_ext: int) -> int:
     if override is not None:
         return int(override)
     per_row = live_bytes_per_row(code, lambda s: cmp_map[s["id"]]["dim"])
-    want = min(-(per_row * n_ext // -_Q_LIVE_SET_TARGET), _Q_MAX_CHUNKS)  # ceil, capped
+    want = min(-(per_row * n_ext // -_Q_LIVE_SET_TARGET), _Q_MAX_CHUNKS * _clients())
     chunks = 1
     while chunks < want and chunks < n_ext:
         chunks *= 2
@@ -735,11 +758,12 @@ class Pil2OpeningProof(OpeningProof):
     wire: WireOpenings | None = None
 
 
-# How many row windows the DEEP batch is evaluated in. `deep_two_challenge`
-# is elementwise over the extended domain, so a window is a pure restriction
-# and the traffic is the same either way; what the count buys is the peak.
-# The batch's temporary set is N of the evMap's cubic columns alive at once,
-# a whole extended column each, and a window divides exactly that set.
+# How many row windows each openings program is evaluated in. Both hold the
+# same shape -- N of the evMap's columns, a whole extended column each, alive
+# at once -- so both are divided by the same thing. The DEEP batch is
+# elementwise over the extended domain and `evals` reduces over the base one;
+# either way a window is a pure restriction, the traffic is the same, and what
+# the count buys is the peak.
 #
 # One window per DISPATCH, like the quotient's chunks and unlike a loop
 # inside one program: windowing in the trace leaves the windows independent,
@@ -747,7 +771,7 @@ class Pil2OpeningProof(OpeningProof):
 # The program boundary is what makes the division hold; see docs/bridge.md,
 # "What the in-program transient is made of". Eight matches the split every
 # basic AIR already uses for the quotient.
-_DEEP_ROW_CHUNKS = 8
+_OPENING_ROW_CHUNKS = 8
 
 
 class Pil2OpeningProver(
@@ -801,8 +825,8 @@ class Pil2OpeningProver(
         # |evMap| full cubic columns on device, which exceeds device memory
         # at ZisK Main width (183 entries x 2^23) — inside the jit they are
         # fused slices that never exist whole.
-        self.evals_jit = frx.jit(self.evals_fn)
-        self.deep_row_chunks = _DEEP_ROW_CHUNKS
+        self.row_chunks = _OPENING_ROW_CHUNKS
+        self.evals_chunk_jit = frx.jit(self.evals_fn, static_argnames=("size",))
         self.deep_chunk_jit = frx.jit(self.deep_fn, static_argnames=("size",))
         # The commit is jitted for the same reason, plus two of its own. A
         # dedicated hash fusion only exists INSIDE a jit region, so an eager
@@ -820,14 +844,36 @@ class Pil2OpeningProver(
             for e in self._si["evMap"]
         ]
 
-    def evals_fn(self, bufs: dict, lev):
+    def evals_fn(self, bufs: dict, lev, start=None, *, size=None):
         """STEP_EVALS' evMap openings as a traced function of the section
-        buffers and the LEv weights (evMap order, cubic)."""
+        buffers and the LEv weights (evMap order, cubic).
+
+        Over the `size` rows at `start`, or -- `size` None -- over every row,
+        which is the whole-domain opening the windows are checked against and
+        is not a path any export takes.
+
+        An opening is a sum over the domain of weight times column, so a
+        window contributes its own rows' term and nothing else and the
+        windows added together are the whole opening. Addition in the field
+        is exactly associative, so the composition is not an approximation of
+        the whole-domain sum -- it is the same value, which is what lets the
+        byte-gate check it.
+
+        The window is counted in BASE rows, because that is the domain `lev`
+        and the sum are indexed by; the section window under it is the
+        `stride`-times-longer extended one, so `open_columns`' own `[::stride]`
+        still lands on exactly this window's base rows. As in `deep_fn`,
+        `start` traces and `size` does not."""
+        stride = 1 << (self._nbe - self._nb)
+        rows = None
+        if size is not None:
+            rows = (start * stride, size * stride)
+            lev = lax.dynamic_slice_in_dim(lev, start, size, axis=0)
         return open_evmap_columns(
-            self._columns(bufs),
+            self._columns(bufs, rows=rows),
             self._si["evMap"],
             lev,
-            stride=1 << (self._nbe - self._nb),
+            stride=stride,
         )
 
     def deep_fn(
@@ -913,7 +959,10 @@ class Pil2OpeningProver(
         # zone regresses the openings' fusion — see
         # zisk-zorch@lev-must-be-materialized).
         lev = compute_lev_jit(xi, opening_points, self._nb)
-        evals = self.evals_jit(bufs, lev)
+        evals = add_windows(
+            self.evals_chunk_jit(bufs, lev, lo, size=hi - lo)
+            for lo, hi in row_windows(1 << self._nb, self.row_chunks)
+        )
         absorb_section(
             transcript, split_coeffs(evals).reshape(-1), hashed=self._hash_commits
         )
@@ -928,7 +977,7 @@ class Pil2OpeningProver(
         fri_pol = fnp.concatenate(
             [
                 self.deep_chunk_jit(bufs, evals, domain, xi, vf1, vf2, lo, size=hi - lo)
-                for lo, hi in row_windows(1 << self._nbe, self.deep_row_chunks)
+                for lo, hi in row_windows(1 << self._nbe, self.row_chunks)
             ]
         )
 

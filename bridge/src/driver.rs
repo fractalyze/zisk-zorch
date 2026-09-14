@@ -448,10 +448,28 @@ impl AirDriver {
         env.insert("xi".into(), art.upload_words(&challenges[xi_id * 3..xi_id * 3 + 3], &in_spec("lev", "xi")?)?);
         let lev = art.run("lev", &env)?.remove(0);
         env.insert("lev".into(), lev);
-        let evals_buf = art.run("evals", &env)?.remove(0);
+        // Windowed for `deep`'s reason below. The openings sum over the base
+        // domain, so the windows are added rather than concatenated, and
+        // `evals_sum` does it in a program of its own: the host absorbs the
+        // result into the transcript before `deep`'s challenges exist, so
+        // the composition cannot ride inside the consumer the way the
+        // quotient's concatenation rides inside `quotient_commit`.
+        let evals_buf = {
+            let mut eenv = Env::new();
+            let mut start = 0i32;
+            for (k, size) in m.evals_chunks.iter().enumerate() {
+                let prog = format!("evals_{size}");
+                let spec = m.program(&prog)?.input("start").cloned().ok_or("evals: no start input")?;
+                env.insert("start".into(), art.upload_i32(&[start], &spec)?);
+                eenv.insert(format!("evals_{k}"), art.run(&prog, &env)?.remove(0));
+                start += *size as i32;
+            }
+            env.remove("start");
+            art.run("evals_sum", &eenv)?.remove(0)
+        };
         env.remove("lev");
         env.insert("evals".into(), evals_buf);
-        let evals = art.download_words(&env["evals"], &out_spec("evals", "evals")?)?;
+        let evals = art.download_words(&env["evals"], &out_spec("evals_sum", "evals")?)?;
         transcript.absorb_section(&evals, m.hash_commits);
         squeeze(transcript, &mut challenges, m.n_stages + 3);
         phase.set("deep");
