@@ -145,9 +145,8 @@ pub struct Manifest {
     pub witness_calc: bool,
     /// The aggregation schedule (`gen_proof.hpp`'s `recursive`): the
     /// transcript seeds from the circuit's verkey, the publics and root1
-    /// instead of the contributions phase's global challenge. Absent from
-    /// an artifact exported before the families were, which is a basic AIR
-    /// and so not recursive.
+    /// instead of the contributions phase's global challenge. A manifest
+    /// without the field is a basic AIR, which is not recursive.
     #[serde(default)]
     pub recursive: bool,
     pub programs: BTreeMap<String, ProgramInfo>,

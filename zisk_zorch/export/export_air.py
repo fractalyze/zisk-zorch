@@ -57,16 +57,24 @@ from zisk_zorch.harness.zisk_key import zisk_air_base, zisk_hash_family
 RECURSION_FAMILIES = ("compressor", "recursive1", "recursive2")
 
 
+def unservable_family(family: str) -> str | None:
+    """Why the family cannot be exported as one artifact, or None when it
+    can. A `compressor` is the one that cannot: it carries a starkinfo per
+    AIR, so the AIRs that feed it do not share a shape the way `recursive1`'s
+    do, and serving it would mean an artifact per AIR."""
+    if family == "compressor":
+        return "its starkinfo is per AIR, so the family is not one shape"
+    return None
+
+
 def export_recursion_key(proving_key: pathlib.Path, family: str) -> Pil2Key:
     """The aggregation family's `Pil2Key` for export. The constants are one
     AIR's: every AIR's `recursive1` has the same shape, and only the shape
     traces into the programs — the AIR's own ``.const`` arrives at runtime."""
+    why = unservable_family(family)
+    if why:
+        raise NotImplementedError(f"{family}: {why}")
     gi = json.loads((proving_key / "pilout.globalInfo.json").read_text())
-    if family == "compressor":
-        raise NotImplementedError(
-            "compressor: its starkinfo is per AIR, so the family is not one "
-            "shape and the exporter would owe one artifact per AIR"
-        )
     key, _ = recursion_pil2_key(circuit_base(proving_key, gi, family, 0), zisk_hash_family(gi))
     return key
 
@@ -116,13 +124,22 @@ def air_key(proving_key: pathlib.Path, air: str) -> Pil2Key:
 
 
 def recursion_families(proving_key: pathlib.Path) -> list[str]:
-    """The aggregation families the key actually ships, in tower order."""
+    """The aggregation families this exporter can serve from the key, in
+    tower order. A family the key ships but the exporter cannot shape as one
+    artifact is reported and left out, so ``--air=recursion`` exports what it
+    can instead of aborting with nothing written; asking for it by name still
+    raises and says why."""
     gi = json.loads((proving_key / "pilout.globalInfo.json").read_text())
-    return [
-        family
-        for family in RECURSION_FAMILIES
-        if pathlib.Path(str(circuit_base(proving_key, gi, family, 0)) + ".const").exists()
-    ]
+    families = []
+    for family in RECURSION_FAMILIES:
+        if not pathlib.Path(str(circuit_base(proving_key, gi, family, 0)) + ".const").exists():
+            continue
+        why = unservable_family(family)
+        if why:
+            print(f"skipping {family}: {why}")
+            continue
+        families.append(family)
+    return families
 
 
 def lower(program: Program) -> bytes:

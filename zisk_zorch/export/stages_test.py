@@ -22,7 +22,7 @@ from dataclasses import replace
 import frx
 import frx.numpy as fnp
 import numpy as np
-from absl.testing import absltest
+from absl.testing import absltest, parameterized
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import extend
@@ -45,14 +45,13 @@ class _Source:
         self.instance = "replay"
 
 
-class ArtifactReplayTest(absltest.TestCase):
-    def test_replay_matches_the_python_prover(self):
-        self.check_air(os.environ.get("ZISK_EXPORT_AIR", "RomData"))
-
-    def test_replay_matches_the_python_prover_on_the_aggregation_schedule(self):
-        self.check_air(os.environ.get("ZISK_EXPORT_RECURSION", "recursive2"))
-
-    def check_air(self, air: str) -> None:
+class ArtifactReplayTest(parameterized.TestCase):
+    @parameterized.named_parameters(
+        ("basic", "ZISK_EXPORT_AIR", "RomData"),
+        ("aggregation", "ZISK_EXPORT_RECURSION", "recursive2"),
+    )
+    def test_replay_matches_the_python_prover(self, knob: str, default: str):
+        air = os.environ.get(knob, default)
         key_dir = os.environ.get("ZISK_PROVING_KEY", "")
         if not key_dir or not pathlib.Path(key_dir).is_dir():
             self.skipTest("no proving key: set ZISK_PROVING_KEY")

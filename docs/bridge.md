@@ -28,9 +28,10 @@ Three links, each pinned bit for bit:
 1. **Python prover ↔ artifact replay** — `zisk_zorch/export/stages_test.py`
    proves a random instance with `Pil2InnerProver` and with `replay.prove`
    over the exported artifacts and compares the flat proofs.
-   Needs `ZISK_PROVING_KEY` and a GPU; `ZISK_EXPORT_AIR` picks the AIR
-   (RomData, Rom for a custom commit, Mem for a witness_calc AIR are the
-   ones run), `ZISK_ARTIFACTS` reuses an export.
+   Needs `ZISK_PROVING_KEY` and a GPU; `ZISK_EXPORT_AIR` picks the basic
+   AIR (RomData, Rom for a custom commit, Mem for a witness_calc AIR are
+   the ones run) and `ZISK_EXPORT_RECURSION` the aggregation family
+   (recursive2 by default), `ZISK_ARTIFACTS` reuses an export.
 2. **Artifact replay ↔ Rust bridge** — `python -m zisk_zorch.export.cases`
    dumps the instance, the key sections and the replay's proof;
    `zz_prove <artifacts> <case>` proves it through the crate and
@@ -59,13 +60,16 @@ programs, the same wire layout, the same three gates. Two things differ.
   and each instance brings its own `.const`. That is why residency counts in
   const paths (see "The fixed sections stay only while the plan proves the
   AIR again"). A `compressor` carries a starkinfo per AIR, so it is not one
-  shape; the exporter refuses it rather than exporting the first AIR's shape
-  for all of them. `recursive1` and `recursive2` are in fact the same
-  programs byte for byte, so warming either fills the cache for both — the
-  entry is keyed by the bytecode, not by the directory.
+  shape; the exporter refuses it by name and leaves it out of
+  `--air=recursion`, so a key that ships compressors keeps proving those on
+  pil2 and only the families below them come here. The ZisK v1.0.0-alpha key
+  ships none — `has_compressor` is absent on every one of its AIRs — so
+  nothing of that key's tower is left behind. `recursive1` and `recursive2`
+  are in fact the same programs byte for byte, so warming either fills the
+  cache for both: the entry is keyed by the bytecode, not by the directory.
 
 `gen_recursive_proof_final` (vadcop_final) is not covered here and stays on
-pil2.
+pil2, and so does any `compressor` a future key ships.
 
 ## Running
 
