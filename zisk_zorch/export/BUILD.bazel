@@ -102,6 +102,20 @@ py_binary(
     ],
 )
 
+# `lower`'s closed-over-array guards, read off the lowered module: no
+# proving key, no device.
+py_test(
+    name = "export_air_test",
+    srcs = ["export_air_test.py"],
+    deps = [
+        ":export_air",
+        ":stages",
+        requirement("absl_py"),
+        requirement("frx"),
+        requirement("numpy"),
+    ],
+)
+
 # Needs a proving key (ZISK_PROVING_KEY) and a GPU — skips itself otherwise,
 # like the harness's key-fed tests. ZISK_ARTIFACTS reuses an export.
 py_test(

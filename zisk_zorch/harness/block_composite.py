@@ -160,7 +160,14 @@ def prove_block(
     for i, (fam, src, vk) in enumerate(sources):
         prover = prover_for(fam, src)
         claim = src.pil2_claim()
-        commitment = prover.opening.commit(InnerWitness(staged))
+        # `settle` returns a fresh array for a `witness_calc` AIR, so drop
+        # the name on the unsettled upload before the commit builds its
+        # extended sections — two trace-sized device buffers alongside that
+        # working set is the residency this module exists to bound.
+        witness = prover.settle(claim, InnerWitness(staged))
+        staged = None
+        commitment = prover.opening.commit(witness)
+        del witness
         # The commit consumed this source's staged upload, so its host
         # sections go now — before the lookahead materializes the next
         # trace, or three trace-sized host buffers would coexist. Safe

@@ -1139,6 +1139,32 @@ class Pil2InnerProver:
             )
             self._const_root = root
 
+    def settle(self, claim: Pil2Claim, witness: InnerWitness) -> InnerWitness:
+        """The witness as it must be committed: every ``witness_calc``
+        column filled, or the witness unchanged when the AIR has no hints.
+
+        Both commits of a block go through here — the contributions phase's
+        and `prove_stages`' — because they must fold the same root1 or the
+        verifier re-derives a different seed from the proof and rejects it.
+        The contributions phase cannot hand its settled trace on (it
+        releases each source before the next one stages), so the hints run
+        again in `prove_stages`; they are idempotent, so the second run
+        reproduces the same columns."""
+        if not self.witness.active:
+            return witness
+        const_base, custom_base = device_sections(self.key, "base")
+        scalars = scalar_env(
+            self.key.starkinfo,
+            publics=claim.publics,
+            airvalues=claim.airvalues,
+            proofvalues=claim.proofvalues,
+            challenges={},
+            airgroupvalues={},
+        )
+        return InnerWitness(
+            self.witness.jit(witness.trace, const_base, custom_base, scalars)
+        )
+
     def prove_stages(
         self,
         claim: Pil2Claim,
@@ -1153,19 +1179,7 @@ class Pil2InnerProver:
             1 << claim.n_bits,
             claim.n_cols,
         ), "claim's trace shape does not match the witness"
-        if self.witness.active:
-            const_base, custom_base = device_sections(self.key, "base")
-            scalars = scalar_env(
-                self.key.starkinfo,
-                publics=claim.publics,
-                airvalues=claim.airvalues,
-                proofvalues=claim.proofvalues,
-                challenges={},
-                airgroupvalues={},
-            )
-            witness = InnerWitness(
-                self.witness.jit(witness.trace, const_base, custom_base, scalars)
-            )
+        witness = self.settle(claim, witness)
         commitment = self.opening.commit(witness)
         yield "trace_commit", commitment
         if self.recursive:
