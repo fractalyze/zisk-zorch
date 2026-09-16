@@ -45,6 +45,17 @@ WARM=(--warm); [ "${ZZ_WARM_KEY:-1}" = 0 ] && WARM=()
 python3 "$(dirname "$0")/pagecache.py" "${WARM[@]}" --proofman-init "$ZISK_PK" \
     > "$OUT/pagecache.txt" || { cat "$OUT/pagecache.txt" >&2; exit 1; }
 { uptime; nvidia-smi --query-gpu=memory.used --format=csv,noheader; } > "$OUT/host.txt"
+# Which binaries made the run, on the same terms as the census above: a log
+# that cannot name its prover is not quotable either, and is worse, because it
+# looks exactly like one that can. The bridge is compiled into $ZISK_BIN
+# through a [patch] path, so nothing else in the run says which one it carries.
+#
+# Keyed on $MODE, not on the variable: one shell exports XLA_PJRT_PLUGIN and
+# runs both arms, so a native run that read it back would carry a record of a
+# plugin it never loaded.
+PLUGIN=(); [ "$MODE" = bridge ] && PLUGIN=(--plugin "$XLA_PJRT_PLUGIN")
+python3 "$(dirname "$0")/binaries.py" --prover "$ZISK_BIN" "${PLUGIN[@]}" \
+    >> "$OUT/host.txt" || exit 1
 # shellcheck disable=SC2086
 env "$@" /usr/bin/time -v "$ZISK_BIN" prove -e "$ZISK_ELF" ${ZISK_IN:+-i $ZISK_IN} ${ZISK_PROVE_FLAGS--a -u} \
     -k "$ZISK_PK" -g -y -o "$OUT/proof" -vv > "$OUT/run.log" 2>&1

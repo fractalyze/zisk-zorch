@@ -14,10 +14,13 @@ load("@zisk_zorch_pip//:requirements.bzl", "requirement")
 # kernel belongs to, :run_log owns the bridge's per-instance line and whether
 # a run finished, and :mem_stages owns the stage-block and rise rules
 # :buffer_assignment reads its marks through rather than re-deriving.
-# run.sh drives one prove; see the page's "Running". :pagecache is the odd one
-# out -- it reads the host rather than a run, because proofman's init reads
-# gigabytes of the proving key before it sizes anything and pays disk for what
-# the page cache does not hold, so run.sh warms that set before every run.
+# run.sh drives one prove; see the page's "Running". Two rules here read the
+# host rather than a run: :pagecache, because proofman's init reads gigabytes
+# of the proving key before it sizes anything and pays disk for what the page
+# cache does not hold, so run.sh warms that set before every run; and
+# :binaries, which owns the record of the prover and plugin a run was made
+# with -- written by run.sh, read back by :summarize, and a module for the
+# same reason the shared log rules are.
 
 py_library(
     name = "nsys_trace",
@@ -143,9 +146,27 @@ py_test(
 )
 
 py_library(
+    name = "binaries",
+    srcs = ["binaries.py"],
+)
+
+py_test(
+    name = "binaries_test",
+    size = "small",
+    srcs = ["binaries_test.py"],
+    deps = [
+        ":binaries",
+        requirement("absl_py"),
+    ],
+)
+
+py_library(
     name = "summarize",
     srcs = ["summarize.py"],
-    deps = [":run_log"],
+    deps = [
+        ":binaries",
+        ":run_log",
+    ],
 )
 
 py_test(

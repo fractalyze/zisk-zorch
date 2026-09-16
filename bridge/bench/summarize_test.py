@@ -61,6 +61,14 @@ exit=101
 """
 )
 
+# What run.sh writes into host.txt: the host's own two lines, then the identity
+# of the binaries that made the run.
+HOST = "14:02:11 up 6 days,  load average: 0.31\n1024 MiB\n"
+PROVER = (
+    "prover path=/opt/zisk/cargo-zisk-dev size=184549376"
+    " mtime=2026-09-08T13:49:02Z sha256={sha}\n"
+)
+
 # Died on the first prove: no instance finished, and no exit line was ever
 # written because the harness was killed with it.
 ABORTED_BEFORE_ANY_INSTANCE = (
@@ -71,14 +79,17 @@ INFO: <<< INITIALIZING_PROOFMAN (8712ms)
 )
 
 
-def run(text: str) -> str:
-    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
-        f.write(text)
-        path = pathlib.Path(f.name)
+def run(text: str, host: str | None = None) -> str:
+    """A run directory holding this log, and the host.txt run.sh writes beside
+    it when one is given."""
+    out_dir = pathlib.Path(tempfile.mkdtemp())
+    path = out_dir / "run.log"
+    path.write_text(text)
+    if host is not None:
+        (out_dir / "host.txt").write_text(host)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         summarize.summarize(path)
-    path.unlink()
     return out.getvalue()
 
 
@@ -112,6 +123,23 @@ class SummarizeTest(absltest.TestCase):
         self.assertIn("verified=True", run("Vadcop Final proof was verified\n"))
         self.assertIn("verified=True", run("Proof verified successfully\n"))
         self.assertIn("verified=False", run("something else entirely\n"))
+
+    def test_two_runs_differ_in_their_summaries_when_only_the_prover_did(self):
+        # The acceptance the tool exists for: the logs are the same text, so
+        # the only thing that can tell the runs apart is what built them.
+        log = "Elapsed (wall clock) time (h:mm:ss or m:ss): 0:20.29\n"
+        before, after = (
+            run(log, HOST + PROVER.format(sha=sha))
+            for sha in ("1f2ae3c4b5d6e7f8", "90a1b2c3d4e5f607")
+        )
+        self.assertIn("prover cargo-zisk-dev sha 1f2ae3c4b5d6", before)
+        self.assertIn("prover cargo-zisk-dev sha 90a1b2c3d4e5", after)
+        self.assertNotEqual(before, after)
+
+    def test_a_run_whose_binaries_were_not_recorded_says_so(self):
+        # A summary that cannot name its prover has to look different from one
+        # that can; silence here is what let a stale binary pass as a fix.
+        self.assertIn("prover not recorded", run("exit=0\n"))
 
     def test_a_run_with_neither_says_nothing_about_either(self):
         out = run("Elapsed (wall clock) time (h:mm:ss or m:ss): 0:20.29\n")
