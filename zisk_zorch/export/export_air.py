@@ -25,18 +25,28 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import pathlib
 
+import frx
 import numpy as np
+from frx._src.lib.mlir import ir, passmanager
 from zk_dtypes import goldilocks as F
 
-import frx
-from frx._src.lib.mlir import passmanager
 from zisk_zorch.export.stages import AirPrograms, Program, raw_boundary
 from zisk_zorch.harness.pil2 import Pil2Key
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
 from zisk_zorch.harness.recursion import const_pil2_key
 from zisk_zorch.harness.zisk_key import zisk_air_base, zisk_hash_family
+
+# A dense literal wider than this is a device array the program closed over
+# (an interned constant pack from an earlier prove in this process), not one
+# of the schedule's own: it ships inside every artifact and stays resident
+# for the executable's life, the cost the optimization barriers in `fold.py`,
+# `lev.py` and `trace_commit.py` exist to avoid. The budget sits between the
+# two: the schedule's widest literals are evMap- and query-shaped, while a
+# closed-over pack is domain-sized, and the shortest ZisK AIR is 2^17 rows.
+MAX_CONSTANT_ELEMENTS = 1 << 16
 
 
 def export_key(proving_key: pathlib.Path, air: str) -> Pil2Key:
@@ -81,13 +91,20 @@ def lower(program: Program) -> bytes:
     module = lowered.compiler_ir(dialect="stablehlo")
     n_params = _entry_arity(module)
     if n_params != len(program.inputs):
-        # A device array the program closed over (an interned constant pack
-        # from an earlier prove in this process) lowers as a hoisted entry
-        # parameter; the manifest would then lie to the bridge.
+        # One of the two shapes a closed-over device array lowers to: hoisted
+        # to an entry parameter, which makes the manifest lie to the bridge
+        # (it binds by position). The embedded-literal shape is caught below.
         raise RuntimeError(
             f"{program.name}: lowered entry takes {n_params} parameters, "
             f"manifest lists {len(program.inputs)} — the program closes over "
             "a device array; compute it in-trace instead"
+        )
+    biggest, where = _largest_constant(module)
+    if biggest > MAX_CONSTANT_ELEMENTS:
+        raise RuntimeError(
+            f"{program.name}: lowered with a {biggest}-element {where} "
+            f"literal, over the {MAX_CONSTANT_ELEMENTS}-element budget — the "
+            "program closes over a device array; compute it in-trace instead"
         )
     buf = io.BytesIO()
     _without_locations(module).operation.write_bytecode(buf)
@@ -106,6 +123,31 @@ def _without_locations(module):
             module.operation
         )
     return module
+
+
+def _walk(op):
+    """Every operation of the module, nested regions included."""
+    yield op
+    for region in op.regions:
+        for block in region.blocks:
+            for inner in block.operations:
+                yield from _walk(inner.operation)
+
+
+def _largest_constant(module) -> tuple[int, str]:
+    """The widest ``stablehlo.constant`` in the module by element count,
+    with its result type for the message."""
+    biggest, where = 0, ""
+    for op in _walk(module.operation):
+        if op.name != "stablehlo.constant":
+            continue
+        rt = op.results[0].type.maybe_downcast()
+        if not isinstance(rt, ir.RankedTensorType) or not rt.has_static_shape:
+            continue
+        n = math.prod(rt.shape)
+        if n > biggest:
+            biggest, where = n, str(rt)
+    return biggest, where
 
 
 def _entry_arity(module) -> int:
@@ -150,7 +192,9 @@ def export_air(proving_key: pathlib.Path, air: str, out: pathlib.Path) -> pathli
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--proving_key", type=pathlib.Path, required=True)
-    ap.add_argument("--air", action="append", required=True, help="AIR name; repeatable, or 'all'")
+    ap.add_argument(
+        "--air", action="append", required=True, help="AIR name; repeatable, or 'all'"
+    )
     ap.add_argument("--out", type=pathlib.Path, default=pathlib.Path("artifacts"))
     args = ap.parse_args()
     airs = args.air
