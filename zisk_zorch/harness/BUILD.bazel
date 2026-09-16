@@ -347,6 +347,7 @@ py_test(
     deps = [
         ":block_composite",
         ":capture",
+        ":pil2",
         ":recursion",
         ":verify_proof_layout",
         requirement("absl_py"),

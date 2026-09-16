@@ -22,11 +22,17 @@ from zk_dtypes import goldilocksx3 as F3
 from zorch.utils.field import join_coeffs
 
 from zisk_zorch.harness import pil2_prover
-from zisk_zorch.harness.pil2 import add_windows, committed_column, row_windows
+from zisk_zorch.harness.pil2 import (
+    Pil2Key,
+    add_windows,
+    committed_column,
+    row_windows,
+)
 from zisk_zorch.harness.pil2_prover import (
     _OPENING_ROW_CHUNKS,
     _Q_MAX_CHUNKS,
     Pil2OpeningProver,
+    StageOneWitness,
     _row_chunks,
 )
 
@@ -209,6 +215,83 @@ class QuotientRowChunkTest(parameterized.TestCase):
     def test_a_client_count_below_one_is_refused(self):
         with self.assertRaisesRegex(ValueError, "ZISK_CLIENTS"):
             self._chunks("0", 1 << 20)
+
+
+# `expand_scalars` reads `publics`; these hints read no scalar at all.
+_NO_SCALARS = {"publics": fnp.zeros((0,), F)}
+
+
+def _key(si: dict, ei: dict) -> Pil2Key:
+    """A key carrying only what `StageOneWitness` reads — the hints, the
+    column map, and the section widths."""
+    empty = np.zeros((0, 0), dtype=np.uint64).view(F)
+    return Pil2Key(
+        starkinfo=si,
+        expressionsinfo=ei,
+        const_base=empty,
+        const_ext=empty,
+        custom_ext={},
+    )
+
+
+class StageOneWitnessTest(absltest.TestCase):
+    """The hints are idempotent, which is what lets both commits of a block
+    — the contributions phase's and `prove_stages`' — run them and still
+    fold the same root1 (`Pil2InnerProver.settle`)."""
+
+    def _witness(self) -> StageOneWitness:
+        # Two hints, the second reading the column the first wrote, so a
+        # second run over a settled trace also exercises the chaining.
+        def hint(dst: int, src: int) -> dict:
+            return {
+                "name": "witness_calc",
+                "fields": [
+                    {"name": "reference", "values": [{"op": "cm", "id": dst}]},
+                    {"name": "expression", "values": [{"op": "cm", "id": src}]},
+                ],
+            }
+
+        si = {
+            "cmPolsMap": [{"stage": 1, "stagePos": i, "dim": 1} for i in range(4)],
+            "mapSectionsN": {"cm1": 4},
+            "nConstants": 0,
+        }
+        ei = {"expressionsCode": [], "hintsInfo": [hint(2, 0), hint(3, 2)]}
+        return StageOneWitness(_key(si, ei))
+
+    def test_a_key_without_hints_is_inactive(self):
+        si = {
+            "cmPolsMap": [{"stage": 1, "stagePos": 0, "dim": 1}],
+            "mapSectionsN": {"cm1": 1},
+            "nConstants": 0,
+        }
+        ei = {"expressionsCode": [], "hintsInfo": []}
+        self.assertFalse(StageOneWitness(_key(si, ei)).active)
+
+    def test_the_hinted_columns_are_filled_from_an_unset_trace(self):
+        rng = np.random.default_rng(7)
+        words = rng.integers(0, 1 << 32, size=(8, 4))
+        words[:, 2:] = 0
+        trace = fnp.asarray(words.astype(F))
+
+        settled = self._witness().columns(trace, None, {}, _NO_SCALARS)
+
+        np.testing.assert_array_equal(
+            np.asarray(settled[:, 2]), np.asarray(trace[:, 0])
+        )
+        np.testing.assert_array_equal(
+            np.asarray(settled[:, 3]), np.asarray(trace[:, 0])
+        )
+
+    def test_a_second_run_reproduces_the_same_columns(self):
+        rng = np.random.default_rng(11)
+        trace = fnp.asarray(rng.integers(0, 1 << 32, size=(8, 4)).astype(F))
+        witness = self._witness()
+
+        once = witness.columns(trace, None, {}, _NO_SCALARS)
+        twice = witness.columns(once, None, {}, _NO_SCALARS)
+
+        np.testing.assert_array_equal(np.asarray(twice), np.asarray(once))
 
 
 if __name__ == "__main__":
