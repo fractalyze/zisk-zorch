@@ -20,7 +20,7 @@ programs — the real section arrives at runtime through `StepsParams`, and
 the ``custom_setup`` program extends and commits it on device.
 
 ``--air`` also takes an aggregation family (`recursive1`, `recursive2`, or
-``recursion`` for every family the key carries), which exports the
+``recursion`` for the servable families the key ships), which exports the
 recursive schedule — the same programs under a transcript that seeds from
 the circuit's verkey. `recursive1` and `recursive2` share one starkinfo, so
 each family is ONE artifact and the per-AIR constants arrive at runtime
@@ -50,18 +50,15 @@ from zisk_zorch.harness.recursion import (
 from zisk_zorch.harness.zisk_key import zisk_air_base, zisk_hash_family
 
 
-# The aggregation families a proving key can carry. `recursive1` and
-# `recursive2` share the group's one starkinfo, so a family is one shape
-# however many AIRs feed it; a `compressor` carries its own per AIR and
-# would need an artifact per AIR (`export_recursion_key` says so).
+# The aggregation families a proving key can carry, in tower order.
 RECURSION_FAMILIES = ("compressor", "recursive1", "recursive2")
 
 
 def unservable_family(family: str) -> str | None:
     """Why the family cannot be exported as one artifact, or None when it
-    can. A `compressor` is the one that cannot: it carries a starkinfo per
-    AIR, so the AIRs that feed it do not share a shape the way `recursive1`'s
-    do, and serving it would mean an artifact per AIR."""
+    can. `recursive1` and `recursive2` read the group's one starkinfo, so
+    each is a single shape however many AIRs feed it; a `compressor` carries
+    a starkinfo per AIR and would owe an artifact per AIR."""
     if family == "compressor":
         return "its starkinfo is per AIR, so the family is not one shape"
     return None
@@ -125,10 +122,9 @@ def air_key(proving_key: pathlib.Path, air: str) -> Pil2Key:
 
 def recursion_families(proving_key: pathlib.Path) -> list[str]:
     """The aggregation families this exporter can serve from the key, in
-    tower order. A family the key ships but the exporter cannot shape as one
-    artifact is reported and left out, so ``--air=recursion`` exports what it
-    can instead of aborting with nothing written; asking for it by name still
-    raises and says why."""
+    tower order. A family it cannot shape as one artifact is named on stdout
+    and left out; asking for that one by name raises instead
+    (`export_recursion_key`)."""
     gi = json.loads((proving_key / "pilout.globalInfo.json").read_text())
     families = []
     for family in RECURSION_FAMILIES:
@@ -226,7 +222,7 @@ def main() -> None:
         action="append",
         required=True,
         help="AIR name, an aggregation family, or 'all' (every basic AIR) / "
-        "'recursion' (every family the key carries); repeatable",
+        "'recursion' (the servable families the key ships); repeatable",
     )
     ap.add_argument("--out", type=pathlib.Path, default=pathlib.Path("artifacts"))
     args = ap.parse_args()

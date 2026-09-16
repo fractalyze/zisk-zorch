@@ -62,11 +62,10 @@ programs, the same wire layout, the same three gates. Two things differ.
   AIR again"). A `compressor` carries a starkinfo per AIR, so it is not one
   shape; the exporter refuses it by name and leaves it out of
   `--air=recursion`, so a key that ships compressors keeps proving those on
-  pil2 and only the families below them come here. The ZisK v1.0.0-alpha key
-  ships none — `has_compressor` is absent on every one of its AIRs — so
-  nothing of that key's tower is left behind. `recursive1` and `recursive2`
-  are in fact the same programs byte for byte, so warming either fills the
-  cache for both: the entry is keyed by the bytecode, not by the directory.
+  pil2 and only the families below them come here. `recursive1` and
+  `recursive2` are in fact the same programs byte for byte, so warming
+  either fills the cache for both: the entry is keyed by the bytecode, not
+  by the directory.
 
 `gen_recursive_proof_final` (vadcop_final) is not covered here and stays on
 pil2, and so does any `compressor` a future key ships.
