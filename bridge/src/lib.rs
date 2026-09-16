@@ -52,10 +52,11 @@ pub use driver::{FixedSections, InstanceInputs, ProveOutputs};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
-/// One PJRT client's per-AIR drivers; proves on it run one at a time.
+/// One PJRT client's drivers, one per `fixed_key`; proves on it run one at
+/// a time.
 pub struct Slot {
     drivers: HashMap<String, driver::AirDriver>,
-    /// Last use per AIR, for evicting resident fixed sections.
+    /// Last use per key, for evicting resident fixed sections.
     last_used: HashMap<String, u64>,
     tick: u64,
 }
@@ -452,9 +453,23 @@ fn parse_fixed_resident(v: Option<&str>) -> FixedResidency {
     }
 }
 
-/// proofman's instance list as instances per AIR. The list arrives with one
-/// entry per instance; how many each AIR has is the whole of what the
-/// residency decision reads from it.
+/// What the fixed sections on a client are known by: the AIR's constants on
+/// disk. An artifact is one shape, and an aggregation family's AIRs share
+/// one, so `recursive1_n17` serves every basic AIR's `recursive1` key and
+/// cannot say which is resident; the const file can, and for a basic AIR it
+/// is one-to-one with the artifact. Residency, the read-ahead and proofman's
+/// plan all count in this unit, so none of them needs a mapping between the
+/// two.
+///
+/// `_gpu` and plain spellings of one file are one key (`plain_const_path`):
+/// they are the same constants, and the reader derives one from the other.
+fn fixed_key(const_pols_path: &str) -> String {
+    plain_const_path(const_pols_path)
+}
+
+/// proofman's instance list as instances per fixed key. The list arrives
+/// with one entry per instance; how many each key has is the whole of what
+/// the residency decision reads from it.
 fn plan_counts(keys: &[String]) -> HashMap<String, usize> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for k in keys {
@@ -463,8 +478,8 @@ fn plan_counts(keys: &[String]) -> HashMap<String, usize> {
     counts
 }
 
-/// Whether an AIR's fixed sections stay on the client after the prove that
-/// uploaded them. An AIR the plan proves more than once keeps them: that
+/// Whether a key's fixed sections stay on the client after the prove that
+/// uploaded them. A key the plan proves more than once keeps them: that
 /// next prove is what residency exists for. So does one the plan does not
 /// name — the plan comes from the proofman fork, and a caller that sends
 /// none leaves every AIR behaving as it did before the bridge read one.
@@ -509,9 +524,9 @@ fn fixed_ahead_depth(v: Option<&str>, admitted: usize) -> usize {
     parse_fixed_ahead(v).min(admitted)
 }
 
-/// One client's read-ahead schedule for the fixed sections: which AIRs' are
-/// on the device, and the permit that bounds how far ahead of the running
-/// prove the next AIR's may go.
+/// One client's read-ahead schedule for the fixed sections: which keys' are
+/// on the device (`fixed_key`), and the permit that bounds how far ahead of
+/// the running prove the next key's may go.
 ///
 /// Residency is mirrored here rather than read off the slot because the
 /// slot's lock is held for the whole of the running prove: a `try_lock`
@@ -692,9 +707,9 @@ pub struct Bridge {
     cache: PathBuf,
     resident_airs: usize,
     fixed_resident: FixedResidency,
-    /// Instances per AIR in this run, from proofman's plan (`set_plan`).
-    /// Empty until it arrives, and empty for good on a caller that sends
-    /// none.
+    /// Instances per fixed key in this run, from proofman's plan
+    /// (`set_plan`). Empty until it arrives, and empty for good on a caller
+    /// that sends none.
     plan: Mutex<HashMap<String, usize>>,
     /// One client per slot, reachable without the slot lock so a loader
     /// never waits on a prove's slot while holding the client's gate.
@@ -1034,23 +1049,25 @@ impl Bridge {
     }
 
     /// proofman's instance list, one entry per instance and duplicates
-    /// intact. It says how many times each AIR is proved in this run, which
-    /// is what decides whether its fixed sections are worth keeping past the
-    /// prove that uploads them, and it names the AIRs to load ahead of the
-    /// rest of the key. `preload_with` takes each AIR once, so the count
-    /// lives only here.
-    pub fn set_plan(self: &Arc<Self>, keys: Vec<String>) {
-        let counts = plan_counts(&keys);
-        let mut airs: Vec<String> = Vec::with_capacity(counts.len());
-        for k in keys {
-            if !airs.contains(&k) {
-                airs.push(k);
+    /// intact, each `(artifact key, const_pols_path)` as the instance's
+    /// setup gives them. The const path says how many times a key's fixed
+    /// sections are proved over, which is what decides whether they are
+    /// worth keeping past the prove that uploads them; the artifact key
+    /// names the programs to load ahead of the rest of the proving key.
+    /// Both come off one `Setup`, so the caller reads no mapping to send
+    /// them, and `preload_with` takes each artifact once.
+    pub fn set_plan(self: &Arc<Self>, instances: Vec<(String, String)>) {
+        let counts = plan_counts(&instances.iter().map(|(_, c)| fixed_key(c)).collect::<Vec<_>>());
+        let mut airs: Vec<String> = Vec::new();
+        for (key, _) in instances {
+            if !airs.contains(&key) {
+                airs.push(key);
             }
         }
         if self.log {
             let once = counts.values().filter(|n| **n == 1).count();
             let total: usize = counts.values().sum();
-            zzlog!("plan: {total} instances over {} AIRs, {once} of them proved once", airs.len());
+            zzlog!("plan: {total} instances over {} keys, {once} of them proved once", counts.len());
         }
         *self.plan.lock().unwrap_or_else(|p| p.into_inner()) = counts;
         self.preload_with(airs, true);
@@ -1058,7 +1075,7 @@ impl Bridge {
 
     /// Whether `key`'s fixed sections stay on a client after the prove that
     /// uploaded them, under this run's policy and plan. The plan counts a
-    /// run's instances, not a client's, so an AIR whose two instances land on
+    /// run's instances, not a client's, so a key whose two instances land on
     /// two clients keeps its sections on both — the conservative way round,
     /// and the only one a count taken before the slots are assigned can be.
     fn keeps_fixed(&self, key: &str) -> bool {
@@ -1213,6 +1230,10 @@ impl Bridge {
         let mut phase = nvtx::Phase::start("artifact");
         let t0 = Instant::now();
         let key = req.key.clone();
+        // The artifact is the shape; the constants are what is resident on a
+        // client. They differ only for an aggregation family, whose one
+        // artifact serves every AIR that feeds it (`fixed_key`).
+        let fixed = fixed_key(&req.const_pols_path);
         self.note_used(&key);
         let slot_idx = self.slot_index(req.stream_id, req.instance_id);
         let art = self.artifact(slot_idx, &key)?;
@@ -1251,7 +1272,7 @@ impl Bridge {
         let t = Instant::now();
         phase.set("upload_inputs");
         let uploaded = driver::upload_inputs(&art, &inputs)?;
-        let plan = self.fixed_ahead[slot_idx].plan(&key);
+        let plan = self.fixed_ahead[slot_idx].plan(&fixed);
         phase.set("fixed_ahead");
         let prefetched = self.read_ahead_fixed(plan, &art, req)?;
         let ahead = t.elapsed().as_secs_f64();
@@ -1261,16 +1282,16 @@ impl Bridge {
         let _exclusive = self.clients[slot_idx].enter_prove();
         let waited = t0.elapsed().as_secs_f64();
         phase.set("resident");
-        if !slot.drivers.contains_key(&key) {
-            slot.drivers.insert(key.clone(), driver::AirDriver::new(art.clone()));
+        if !slot.drivers.contains_key(&fixed) {
+            slot.drivers.insert(fixed.clone(), driver::AirDriver::new(art.clone()));
         }
-        // Keep at most `resident_airs` AIRs' fixed sections on this client:
+        // Keep at most `resident_airs` keys' fixed sections on this client:
         // evict the least recently used before this prove needs its own.
         slot.tick += 1;
         let tick = slot.tick;
-        slot.last_used.insert(key.clone(), tick);
+        slot.last_used.insert(fixed.clone(), tick);
         let resident: Vec<String> =
-            slot.drivers.iter().filter(|(k, d)| d.has_fixed() && **k != key).map(|(k, _)| k.clone()).collect();
+            slot.drivers.iter().filter(|(k, d)| d.has_fixed() && **k != fixed).map(|(k, _)| k.clone()).collect();
         if resident.len() + 1 > self.resident_airs {
             let mut by_age: Vec<(u64, String)> =
                 resident.into_iter().map(|k| (slot.last_used.get(&k).copied().unwrap_or(0), k)).collect();
@@ -1285,11 +1306,11 @@ impl Bridge {
             }
         }
         phase.set("fixed_install");
-        let residency = match self.keeps_fixed(&key) {
+        let residency = match self.keeps_fixed(&fixed) {
             true => driver::Residency::Keep,
             false => driver::Residency::Release,
         };
-        let driver = slot.drivers.get_mut(&key).unwrap();
+        let driver = slot.drivers.get_mut(&fixed).unwrap();
         if !driver.has_fixed() {
             let t = Instant::now();
             let looked_resident = prefetched.is_none();
@@ -1299,7 +1320,7 @@ impl Bridge {
             };
             let uploaded_ahead = ahead.uploaded.is_some();
             driver.set_fixed(&ahead.sections())?;
-            self.fixed_ahead[slot_idx].installed(&key, ahead.permit.take());
+            self.fixed_ahead[slot_idx].installed(&fixed, ahead.permit.take());
             let slot_s = t.elapsed().as_secs_f64();
             if self.log {
                 // The two columns are disjoint, so a run can sum them:
@@ -1307,14 +1328,14 @@ impl Bridge {
                 // `read_under_slot` left the ahead timings at zero for the
                 // one arm whose read did.
                 zzlog!(
-                    "fixed sections for {key}: {slot_s:.2} s under the slot, {:.2} s ahead of it",
+                    "fixed sections for {fixed}: {slot_s:.2} s under the slot, {:.2} s ahead of it",
                     ahead.read_s + ahead.upload_s
                 );
             }
             if artifact::trace_enabled() {
                 let why = ahead_trace_note(uploaded_ahead, looked_resident, ahead.gave_way);
                 zzlog!(
-                    "  fixed sections {key} ahead: {:.2} s reading the key, {:.2} s uploading{why}",
+                    "  fixed sections {fixed} ahead: {:.2} s reading the key, {:.2} s uploading{why}",
                     ahead.read_s,
                     ahead.upload_s,
                 );
@@ -1324,7 +1345,7 @@ impl Bridge {
             // prove. Drop the read-ahead's buffers, hand the permit back and
             // re-sync the view.
             drop(prefetched);
-            self.fixed_ahead[slot_idx].installed(&key, None);
+            self.fixed_ahead[slot_idx].installed(&fixed, None);
         }
         inputs.uploaded = Some(uploaded);
         if proof_out.len() != driver.proof_words() {
@@ -1372,7 +1393,7 @@ impl Bridge {
             // read-ahead's mirror, so a next prove of this AIR — a plan that
             // undercounted, or the forced arm — reads its key ahead of the
             // slot instead of finding under it that nothing is resident.
-            self.fixed_ahead[slot_idx].evicted(&key);
+            self.fixed_ahead[slot_idx].evicted(&fixed);
         }
         let out = proved?;
         if self.log {
@@ -1865,6 +1886,27 @@ mod tests {
         // plan and the only safe reading of "not in the list".
         assert!(keeps_fixed(FixedResidency::Plan, &plan, "Mem_n22"), "an AIR the plan does not name let its sections go");
         assert!(keeps_fixed(FixedResidency::Plan, &HashMap::new(), "Rom_n22"), "an empty plan released an AIR's sections");
+    }
+
+    #[test]
+    fn two_airs_of_one_recursion_artifact_are_two_sets_of_fixed_sections() {
+        // `recursive1` is one exported shape for every basic AIR that feeds
+        // it, so the artifact key cannot say whose constants are on a
+        // client. Keyed by the const file, Main's prove and Binary's are two
+        // keys proved once each; keyed by the artifact they would look like
+        // one key proved twice and each would keep sections the other's
+        // prove is about to overwrite.
+        let main = "/pk/zisk/Zisk/airs/Main/recursive1/recursive1.const";
+        let binary = "/pk/zisk/Zisk/airs/Binary/recursive1/recursive1.const";
+        let plan = plan_counts(&[fixed_key(main), fixed_key(binary)]);
+        assert_eq!(plan.len(), 2, "two AIRs' recursive1 constants counted as one key");
+        assert!(!keeps_fixed(FixedResidency::Plan, &plan, &fixed_key(main)), "a key proved once kept its sections");
+
+        // The reader derives the plain file from the `_gpu` one, so the two
+        // spellings are the same constants and must not count twice.
+        let tiled = plan_counts(&[fixed_key(main), fixed_key(&format!("{main}_gpu"))]);
+        assert_eq!(tiled.len(), 1, "the _gpu spelling counted as a second key");
+        assert!(keeps_fixed(FixedResidency::Plan, &tiled, &fixed_key(main)), "a key proved twice let its sections go");
     }
 
     #[test]

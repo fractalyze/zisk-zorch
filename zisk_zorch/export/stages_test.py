@@ -3,10 +3,13 @@ proved by `Pil2InnerProver` and by the artifact replay, must serialize to
 the same flat proof bit-for-bit.
 
 Needs a proving key (`ZISK_PROVING_KEY`) and a GPU; skips otherwise.
-`ZISK_EXPORT_AIR` picks the AIR (default RomData, the smallest basic AIR
-with every stage present: stage-2 air values, an airgroup value, a
-chunked quotient). `ZISK_ARTIFACTS` reuses an existing export directory
-instead of exporting into the test's temp dir.
+`ZISK_EXPORT_AIR` picks the basic AIR (default RomData, the smallest with
+every stage present: stage-2 air values, an airgroup value, a chunked
+quotient) and `ZISK_EXPORT_RECURSION` the aggregation family (default
+recursive2), whose schedule seeds the transcript from the circuit's verkey
+instead of the contributions phase's global challenge.
+`ZISK_ARTIFACTS` reuses an existing export directory instead of exporting
+into the test's temp dir.
 """
 
 from __future__ import annotations
@@ -19,13 +22,13 @@ from dataclasses import replace
 import frx
 import frx.numpy as fnp
 import numpy as np
-from absl.testing import absltest
+from absl.testing import absltest, parameterized
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.commit.trace_commit import extend
 from zisk_zorch.export import replay
 from zisk_zorch.export.cases import random_case
-from zisk_zorch.export.export_air import export_air, export_key
+from zisk_zorch.export.export_air import air_key, export_air, is_recursion
 from zisk_zorch.export.runtime import Artifact
 from zisk_zorch.harness.block_composite import emit_wire_proof
 from zisk_zorch.harness.pil2 import transcript_width
@@ -42,15 +45,19 @@ class _Source:
         self.instance = "replay"
 
 
-class ArtifactReplayTest(absltest.TestCase):
-    def test_replay_matches_the_python_prover(self):
+class ArtifactReplayTest(parameterized.TestCase):
+    @parameterized.named_parameters(
+        ("basic", "ZISK_EXPORT_AIR", "RomData"),
+        ("aggregation", "ZISK_EXPORT_RECURSION", "recursive2"),
+    )
+    def test_replay_matches_the_python_prover(self, knob: str, default: str):
+        air = os.environ.get(knob, default)
         key_dir = os.environ.get("ZISK_PROVING_KEY", "")
         if not key_dir or not pathlib.Path(key_dir).is_dir():
             self.skipTest("no proving key: set ZISK_PROVING_KEY")
         if frx.devices()[0].platform != "gpu":
             self.skipTest("the artifacts are exported for the GPU backend")
-        air = os.environ.get("ZISK_EXPORT_AIR", "RomData")
-        key = export_key(pathlib.Path(key_dir), air)
+        key = air_key(pathlib.Path(key_dir), air)
         si = key.starkinfo
         nb = si["starkStruct"]["nBits"]
 
@@ -82,7 +89,7 @@ class ArtifactReplayTest(absltest.TestCase):
                     for ci, b in custom_base.items()
                 },
             )
-        prover = Pil2InnerProver(prover_key, emit_wire=True)
+        prover = Pil2InnerProver(prover_key, emit_wire=True, recursive=is_recursion(air))
         claim = Pil2Claim(
             n_bits=nb,
             n_cols=w1,

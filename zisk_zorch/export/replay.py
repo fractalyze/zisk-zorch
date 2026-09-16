@@ -119,10 +119,20 @@ def prove(art: Artifact, key: KeySections, inst: Instance) -> tuple[np.ndarray, 
         )["trace"]
 
     c1 = art.run("commit1", trace=trace)
-    # Non-recursive schedule: the seed already binds root1 through the
-    # contributions phase, so root1 itself is never absorbed.
     transcript = Transcript(hash_family=sc["hash_family"])
-    absorb_words(transcript, inst.global_challenge)
+    if sc.get("recursive"):
+        # The aggregation schedule's classic STARK seed: the circuit's
+        # verkey, the hashed publics, then root1 — which is why root1 has to
+        # be in hand before the stage-2 challenges, where the basic schedule
+        # knows them before it commits.
+        absorb_words(transcript, words(const["const_root"]))
+        if sc["n_publics"]:
+            absorb_section(transcript, to_field(inst.publics), hashed=hashed)
+        absorb_words(transcript, words(c1["root1"]))
+    else:
+        # The seed already binds root1 through the contributions phase, so
+        # root1 itself is never absorbed.
+        absorb_words(transcript, inst.global_challenge)
 
     challenges = np.zeros((len(sc["challenges"]), 3), dtype=np.uint64)
     _squeeze(transcript, challenges, _stage_ids(sc, 2))

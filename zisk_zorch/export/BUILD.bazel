@@ -102,6 +102,17 @@ py_binary(
     ],
 )
 
+# Which families --air=recursion resolves to, over a key tree on disk. No
+# proving key and no GPU: nothing is lowered.
+py_test(
+    name = "export_air_test",
+    srcs = ["export_air_test.py"],
+    deps = [
+        ":export_air",
+        requirement("absl_py"),
+    ],
+)
+
 # Needs a proving key (ZISK_PROVING_KEY) and a GPU — skips itself otherwise,
 # like the harness's key-fed tests. ZISK_ARTIFACTS reuses an export.
 py_test(
@@ -112,6 +123,7 @@ py_test(
     env_inherit = [
         "ZISK_ARTIFACTS",
         "ZISK_EXPORT_AIR",
+        "ZISK_EXPORT_RECURSION",
         "ZISK_PROVING_KEY",
     ],
     deps = [
