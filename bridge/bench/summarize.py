@@ -17,7 +17,7 @@ import sys
 if not __package__:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from bridge.bench import run_log  # noqa: E402
+from bridge.bench import binaries, run_log  # noqa: E402
 from bridge.bench.run_log import instances  # noqa: E402
 
 PHASES = (
@@ -50,6 +50,9 @@ def summarize(path: pathlib.Path) -> None:
     if streams := re.search(STREAMS, log):
         line += f"  pil2 streams basic/recursive {streams.group(1)}/{streams.group(2)}"
     print(line)
+    # run.sh writes the prover's and plugin's identity beside the log; without
+    # it a wall time cannot be attributed to the build that produced it.
+    print("   " + binaries.describe(path.parent / "host.txt"))
     print("   " + "  ".join(f"{p.lower()} {v:.2f} s" for p, v in phases.items()))
     inst = instances(log)
     if inst:
