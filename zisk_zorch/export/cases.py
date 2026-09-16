@@ -22,7 +22,7 @@ import numpy as np
 from zk_dtypes import goldilocks as F
 
 from zisk_zorch.export import replay
-from zisk_zorch.export.export_air import export_key
+from zisk_zorch.export.export_air import air_key
 from zisk_zorch.export.runtime import Artifact
 from zisk_zorch.harness.pil2 import Pil2Key, value_offsets
 
@@ -99,7 +99,7 @@ def main() -> None:
     ap.add_argument("--out", required=True, type=pathlib.Path)
     ap.add_argument("--seed", type=int, default=166)
     args = ap.parse_args()
-    key = export_key(args.proving_key, args.air)
+    key = air_key(args.proving_key, args.air)
     case = random_case(key, args.seed)
     nb = key.starkinfo["starkStruct"]["nBits"]
     proof, _ = replay.prove(

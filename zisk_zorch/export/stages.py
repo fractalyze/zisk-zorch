@@ -824,4 +824,5 @@ class AirPrograms:
             "evals_chunks": self.evals_sizes,
             "clients": self.clients,
             "witness_calc": self.prover.witness.active,
+            "recursive": self.prover.recursive,
         }

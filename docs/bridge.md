@@ -7,7 +7,7 @@ our stack. The seam is proofman's `gen_proof` wrapper: with the bridge on
 it hands the instance to `zisk-zorch-bridge` instead of `gen_proof_c`.
 
 ```
-proofman (Rust)  ──gen_proof──▶  zisk-zorch-bridge (Rust)  ──PJRT──▶  StableHLO artifacts (one dir per AIR)
+proofman (Rust)  ──gen_proof──▶  zisk-zorch-bridge (Rust)  ──PJRT──▶  StableHLO artifacts (one dir per AIR or aggregation family)
                                    host half: transcript, challenges,          device half: every stage,
                                    query draw, proof2pointer layout             exported once per proving key
 ```
@@ -43,6 +43,30 @@ Three links, each pinned bit for bit:
 The Python prover itself is pinned against pil2 by the harness's capture
 byte-gates (`docs/development.md`).
 
+## The aggregation families
+
+`gen_recursive_proof` goes through the same path as `gen_proof`: the same
+programs, the same wire layout, the same three gates. Two things differ.
+
+- **The transcript seeds the classic STARK way** — the circuit's verkey (the
+  constant tree's root), the publics, then root1 — where the basic schedule
+  seeds from the contributions phase's global challenge and never absorbs
+  root1. So the stage-2 challenges are not known until root1 is downloaded,
+  and a recursive prove waits on commit1 where a basic one enqueues straight
+  through to commit2. `manifest.recursive` is what selects it.
+- **One artifact serves many keys.** `recursive1` and `recursive2` share the
+  group's one starkinfo, so a family exports once however many AIRs feed it
+  and each instance brings its own `.const`. That is why residency counts in
+  const paths (see "The fixed sections stay only while the plan proves the
+  AIR again"). A `compressor` carries a starkinfo per AIR, so it is not one
+  shape; the exporter refuses it rather than exporting the first AIR's shape
+  for all of them. `recursive1` and `recursive2` are in fact the same
+  programs byte for byte, so warming either fills the cache for both — the
+  entry is keyed by the bytecode, not by the directory.
+
+`gen_recursive_proof_final` (vadcop_final) is not covered here and stays on
+pil2.
+
 ## Running
 
 ```bash
@@ -54,6 +78,12 @@ byte-gates (`docs/development.md`).
 # the dispatch cost of the higher count. Two client counts are two exports.
 FRX_PLATFORMS=cuda ZISK_CLIENTS=1 python -m zisk_zorch.export.export_air \
     --proving_key=$PK --air=all --out=$ARTIFACTS
+
+# the aggregation families the key carries, for gen_recursive_proof. Two
+# artifacts, whatever the AIR count: `--air=recursive1 --air=recursive2`
+# names them one at a time.
+FRX_PLATFORMS=cuda ZISK_CLIENTS=1 python -m zisk_zorch.export.export_air \
+    --proving_key=$PK --air=recursion --out=$ARTIFACTS
 
 # once per export and plugin build: compile the AIRs a guest needs into the
 # cache. The fused Poseidon1 kernels compile slowly (about a minute for a
@@ -105,7 +135,7 @@ drop-in cargo-zisk with the bridge dormant.
 | `ZZ_PENDING` | proves admitted per client on the device (one running, the rest uploaded ahead) | 2 |
 | `ZZ_PENDING_BYTES` | bytes of `trace` + `publics` + `airvalues` + `proofvalues` an instance may upload while another prove still holds the client. The count above is the ceiling; this is what sizes the term the admission adds to the client's peak, because those uploads stay live for the whole of the running prove. It bounds the uploads it weighs and no more — the next AIR's `const_base` rides `ZZ_FIXED_AHEAD`'s permit, taken inside this admission, so a refusal holds that back too but an admission puts no cap on it. A client with nothing on it admits any size, so the largest AIR is never refused outright. What the budget is compared against is the admitted set's uploads **less its smallest member**, which at the default `ZZ_PENDING=2` is simply the larger of the two — so there, and only there, a budget above the workload's largest upload never refuses and is the count-only admission this replaced. Above that cap it can refuse instances that are each individually under it | 192 MiB |
 | `ZZ_FIXED_AHEAD` | AIRs whose fixed sections may be uploaded ahead of the running prove's, per client; `0` sends every upload under the slot, and the value is capped at `ZZ_PENDING` — the permit is taken and given back inside that admission, so no more proves than it admits can hold one | 1 |
-| `ZZ_RESIDENT_AIRS` | AIRs whose fixed sections stay on a client at once, least recently used evicted | 1 |
+| `ZZ_RESIDENT_AIRS` | sets of fixed sections that stay on a client at once, least recently used evicted. One set is one const file, so two AIRs feeding the same recursion artifact count as two | 1 |
 | `ZZ_FIXED_RESIDENT` | whether an AIR's fixed sections stay on the client after the prove that uploaded them: `1` every AIR's, `0` none, unset follows proofman's plan — an AIR the plan proves once lets each section go at its last reader instead (`const_base` after `logup`, the constant tree after its opening). The two forced values are measurement arms; an unreadable one says so and follows the plan | unset: the plan decides |
 | `ZZ_HOST_THREADS` | threads for the host-side copies and key reads | half the cores, at most 8 |
 | `ZZ_COMPILE_CACHE` | directory of serialized executables | `$ZZ_ARTIFACTS/.pjrt-cache` |
@@ -583,7 +613,12 @@ its eleven instances are eleven distinct AIRs.
 
 proofman knows which it is before the first prove, so it sends its instance
 list with duplicates intact (`Bridge::set_plan`). **That half lives in the
-proofman fork**, whose `gen_proof` call site pushes every instance's key.
+proofman fork**, whose call sites push every instance's artifact key and
+const path. The count is per **const path**, not per artifact: an
+aggregation family's AIRs share one starkinfo and so one artifact, and what
+a client holds is one AIR's constants, not the shape they were exported
+from. For a basic AIR the two are the same unit, which is why nothing maps
+between them.
 An AIR the list names once hands its sections to the prove that uploads them
 rather than lending them — `driver::prove` *takes* the fixed env off the
 driver instead of cloning it, which is what makes the removes inside the
@@ -592,7 +627,7 @@ than once keeps everything, exactly as before.
 
 Three properties, each a way it could have been got wrong:
 
-- **An AIR the plan does not name keeps its sections.** A caller that sends
+- **A key the plan does not name keeps its sections.** A caller that sends
   no plan — a build pinned behind the fork rev, and `zz_prove` in every
   build — leaves every AIR behaving as it did before there was a plan. That
   is what let this land ahead of the fork; it is also why a figure taken on

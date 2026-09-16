@@ -2,6 +2,14 @@
 //! the schedule facts and, per program, every input and output by name,
 //! dtype and shape in parameter order. The driver binds buffers by these
 //! names, so a program's signature lives here, not in the Rust.
+//!
+//! An artifact is one SHAPE, not one set of constants. An aggregation
+//! family's AIRs share a starkinfo, so one `recursive1` artifact serves
+//! every basic AIR's `recursive1` key and the manifest says nothing about
+//! which. What is on a client is therefore identified by the const file,
+//! not by the artifact: residency, the read-ahead and proofman's plan all
+//! key on `const_pols_path` (`lib.rs::fixed_key`), which for a basic AIR
+//! is one-to-one with the artifact and needs no mapping either way.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -135,6 +143,13 @@ pub struct Manifest {
     /// count rather than adapting to one.
     pub clients: usize,
     pub witness_calc: bool,
+    /// The aggregation schedule (`gen_proof.hpp`'s `recursive`): the
+    /// transcript seeds from the circuit's verkey, the publics and root1
+    /// instead of the contributions phase's global challenge. Absent from
+    /// an artifact exported before the families were, which is a basic AIR
+    /// and so not recursive.
+    #[serde(default)]
+    pub recursive: bool,
     pub programs: BTreeMap<String, ProgramInfo>,
 }
 

@@ -18,6 +18,13 @@ The key loads through `zisk_key.zisk_pil2_key`'s recipe (constants from
 gets zero-filled custom sections here: only their SHAPES trace into the
 programs — the real section arrives at runtime through `StepsParams`, and
 the ``custom_setup`` program extends and commits it on device.
+
+``--air`` also takes an aggregation family (`recursive1`, `recursive2`, or
+``recursion`` for every family the key carries), which exports the
+recursive schedule — the same programs under a transcript that seeds from
+the circuit's verkey. `recursive1` and `recursive2` share one starkinfo, so
+each family is ONE artifact and the per-AIR constants arrive at runtime
+like any other fixed section.
 """
 
 from __future__ import annotations
@@ -35,8 +42,33 @@ from frx._src.lib.mlir import passmanager
 from zisk_zorch.export.stages import AirPrograms, Program, raw_boundary
 from zisk_zorch.harness.pil2 import Pil2Key
 from zisk_zorch.harness.pil2_prover import Pil2InnerProver
-from zisk_zorch.harness.recursion import const_pil2_key
+from zisk_zorch.harness.recursion import (
+    circuit_base,
+    const_pil2_key,
+    recursion_pil2_key,
+)
 from zisk_zorch.harness.zisk_key import zisk_air_base, zisk_hash_family
+
+
+# The aggregation families a proving key can carry. `recursive1` and
+# `recursive2` share the group's one starkinfo, so a family is one shape
+# however many AIRs feed it; a `compressor` carries its own per AIR and
+# would need an artifact per AIR (`export_recursion_key` says so).
+RECURSION_FAMILIES = ("compressor", "recursive1", "recursive2")
+
+
+def export_recursion_key(proving_key: pathlib.Path, family: str) -> Pil2Key:
+    """The aggregation family's `Pil2Key` for export. The constants are one
+    AIR's: every AIR's `recursive1` has the same shape, and only the shape
+    traces into the programs — the AIR's own ``.const`` arrives at runtime."""
+    gi = json.loads((proving_key / "pilout.globalInfo.json").read_text())
+    if family == "compressor":
+        raise NotImplementedError(
+            "compressor: its starkinfo is per AIR, so the family is not one "
+            "shape and the exporter would owe one artifact per AIR"
+        )
+    key, _ = recursion_pil2_key(circuit_base(proving_key, gi, family, 0), zisk_hash_family(gi))
+    return key
 
 
 def export_key(proving_key: pathlib.Path, air: str) -> Pil2Key:
@@ -69,6 +101,28 @@ def export_key(proving_key: pathlib.Path, air: str) -> Pil2Key:
         hash_family=key.hash_family,
         custom_base=custom_base,
     )
+
+
+def is_recursion(air: str) -> bool:
+    """Whether `air` names an aggregation family rather than a basic AIR."""
+    return air in RECURSION_FAMILIES
+
+
+def air_key(proving_key: pathlib.Path, air: str) -> Pil2Key:
+    """The `Pil2Key` an export of `air` is built over, either kind."""
+    if is_recursion(air):
+        return export_recursion_key(proving_key, air)
+    return export_key(proving_key, air)
+
+
+def recursion_families(proving_key: pathlib.Path) -> list[str]:
+    """The aggregation families the key actually ships, in tower order."""
+    gi = json.loads((proving_key / "pilout.globalInfo.json").read_text())
+    return [
+        family
+        for family in RECURSION_FAMILIES
+        if pathlib.Path(str(circuit_base(proving_key, gi, family, 0)) + ".const").exists()
+    ]
 
 
 def lower(program: Program) -> bytes:
@@ -122,8 +176,8 @@ def spec_json(spec) -> dict:
 
 def export_air(proving_key: pathlib.Path, air: str, out: pathlib.Path) -> pathlib.Path:
     """Lower every program of `air` and write the artifact directory."""
-    key = export_key(proving_key, air)
-    programs = AirPrograms(key, Pil2InnerProver(key))
+    key = air_key(proving_key, air)
+    programs = AirPrograms(key, Pil2InnerProver(key, recursive=is_recursion(air)))
     nb = programs.nb
     art = out / f"{air}_n{nb}"
     art.mkdir(parents=True, exist_ok=True)
@@ -150,13 +204,21 @@ def export_air(proving_key: pathlib.Path, air: str, out: pathlib.Path) -> pathli
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--proving_key", type=pathlib.Path, required=True)
-    ap.add_argument("--air", action="append", required=True, help="AIR name; repeatable, or 'all'")
+    ap.add_argument(
+        "--air",
+        action="append",
+        required=True,
+        help="AIR name, an aggregation family, or 'all' (every basic AIR) / "
+        "'recursion' (every family the key carries); repeatable",
+    )
     ap.add_argument("--out", type=pathlib.Path, default=pathlib.Path("artifacts"))
     args = ap.parse_args()
     airs = args.air
     if airs == ["all"]:
         gi = json.loads((args.proving_key / "pilout.globalInfo.json").read_text())
         airs = [a["name"] for a in gi["airs"][0]]
+    elif airs == ["recursion"]:
+        airs = recursion_families(args.proving_key)
     for air in airs:
         art = export_air(args.proving_key, air, args.out)
         print(f"exported {air} -> {art}")

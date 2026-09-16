@@ -109,6 +109,11 @@ pub struct ProveOutputs {
 pub struct AirDriver {
     artifact: Arc<Artifact>,
     fixed: Option<Env>,
+    /// The constant tree's root, downloaded with the fixed sections on an
+    /// aggregation artifact: it is the circuit's verkey, which seeds every
+    /// recursive prove's transcript. The basic schedule never reads it, so
+    /// it stays `None` there rather than costing a sync per key.
+    const_root: Option<Vec<u64>>,
 }
 
 /// What becomes of the key's fixed sections when the prove that uploaded them
@@ -185,7 +190,7 @@ fn base_dead_after_logup(programs: &BTreeMap<String, ProgramInfo>, customs: &[Cu
 
 impl AirDriver {
     pub fn new(artifact: Arc<Artifact>) -> AirDriver {
-        AirDriver { artifact, fixed: None }
+        AirDriver { artifact, fixed: None, const_root: None }
     }
 
     pub fn manifest(&self) -> &Manifest {
@@ -204,6 +209,7 @@ impl AirDriver {
     /// the next prove runs the setup programs again.
     pub fn drop_fixed(&mut self) {
         self.fixed = None;
+        self.const_root = None;
     }
 
     /// Run the setup programs over the key's fixed sections, uploading them
@@ -219,6 +225,13 @@ impl AirDriver {
         };
         env.insert("const_base".into(), up.const_base);
         art.run_into("const_setup", &mut env, Some(("const_setup_layers_", "const_layers_")))?;
+        let const_root = match m.recursive {
+            true => {
+                let spec = m.program("const_setup")?.output("const_root").cloned().ok_or("const_setup: no const_root output")?;
+                Some(art.download_words(&env["const_root"], &spec)?)
+            }
+            false => None,
+        };
         for cc in &m.custom_commits {
             let buf = up
                 .custom_base
@@ -243,6 +256,7 @@ impl AirDriver {
             }
         }
         self.fixed = Some(env);
+        self.const_root = const_root;
         Ok(())
     }
 
@@ -328,8 +342,11 @@ impl AirDriver {
         // second instance of the AIR — a plan that undercounted — finds no
         // fixed set and runs the setup programs again.
         let fixed = self.fixed.take().ok_or("prove: set_fixed first")?;
+        let const_root = self.const_root.clone();
         if keep_fixed {
             self.fixed = Some(fixed.clone());
+        } else {
+            self.const_root = None;
         }
         let nbe = m.n_bits_ext;
         let in_spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
@@ -363,21 +380,38 @@ impl AirDriver {
         env.insert("airvalues".into(), up.airvalues);
         env.insert("proofvalues".into(), up.proofvalues);
         env.insert("trace".into(), up.trace);
-        // Non-recursive schedule: the seed already binds root1 through the
-        // contributions phase, so root1 itself is never absorbed, and the
+        // The basic schedule's seed already binds root1 through the
+        // contributions phase, so root1 itself is never absorbed and the
         // stage-2 challenges are known before commit1 runs. Everything up to
-        // commit2 is enqueued before the first wait: an upload or download
-        // here would sit behind the queued work, idling the device for one
-        // enqueue latency per stage.
-        transcript.put(inp.global_challenge);
+        // commit2 is then enqueued before the first wait: an upload or
+        // download here would sit behind the queued work, idling the device
+        // for one enqueue latency per stage.
         let mut challenges = vec![0u64; m.challenges.len() * 3];
-        squeeze(transcript, &mut challenges, 2);
-        env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
+        if !m.recursive {
+            transcript.put(inp.global_challenge);
+            squeeze(transcript, &mut challenges, 2);
+            env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
+        }
         if m.witness_calc {
             let trace = art.run("witness_calc", &env)?.remove(0);
             env.insert("trace".into(), trace);
         }
         art.run_into("commit1", &mut env, None)?;
+        if m.recursive {
+            // The aggregation seed is the classic STARK one: the circuit's
+            // verkey, the publics, then root1. root1 has to be in hand before
+            // the stage-2 challenges, so this schedule pays a wait on commit1
+            // where the basic one enqueues straight through to commit2.
+            let verkey = const_root.as_deref().ok_or("prove: the aggregation seed has no constant-tree root")?;
+            transcript.put(verkey);
+            if m.n_publics > 0 {
+                transcript.absorb_section(inp.publics, m.hash_commits);
+            }
+            let root1 = art.download_words(&env["root1"], &out_spec("commit1", "root1")?)?;
+            transcript.put(&root1);
+            squeeze(transcript, &mut challenges, 2);
+            env.insert("challenges".into(), art.upload_words(&challenges, &in_spec("logup", "challenges")?)?);
+        }
         art.run_into("logup", &mut env, None)?;
         // Nothing after logup reads the base trace, and nothing after
         // commit2 the base cm2: a gigabyte or more each on a wide AIR,

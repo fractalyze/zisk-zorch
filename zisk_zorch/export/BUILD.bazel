@@ -112,6 +112,7 @@ py_test(
     env_inherit = [
         "ZISK_ARTIFACTS",
         "ZISK_EXPORT_AIR",
+        "ZISK_EXPORT_RECURSION",
         "ZISK_PROVING_KEY",
     ],
     deps = [
