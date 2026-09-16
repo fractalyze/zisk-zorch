@@ -48,7 +48,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 
-pub use driver::{FixedSections, InstanceInputs, ProveOutputs};
+pub use driver::{FixedSections, HostInputs, InstanceInputs, ProveOutputs};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -95,6 +95,40 @@ impl OwnedRequest {
     pub fn upload_bytes(&self) -> u64 {
         let words = self.trace.len() + self.publics.len() + self.airvalues.len() + self.proofvalues.len();
         words as u64 * 8
+    }
+
+    /// Move the sections `driver::upload_inputs` sends out of the request,
+    /// so that dropping the result is what releases them. The copy exists to
+    /// outlive `gen_proof`, not to outlive its own upload.
+    /// `global_challenge` stays behind: the transcript reads it on the host
+    /// inside the prove.
+    fn take_host_words(&mut self) -> HostWords {
+        HostWords {
+            trace: std::mem::take(&mut self.trace),
+            publics: std::mem::take(&mut self.publics),
+            airvalues: std::mem::take(&mut self.airvalues),
+            proofvalues: std::mem::take(&mut self.proofvalues),
+        }
+    }
+}
+
+/// The words of `OwnedRequest` that only the upload reads, owned apart from
+/// it so their lifetime is the upload's rather than the prove's.
+struct HostWords {
+    trace: Vec<u64>,
+    publics: Vec<u64>,
+    airvalues: Vec<u64>,
+    proofvalues: Vec<u64>,
+}
+
+impl HostWords {
+    fn sections(&self) -> HostInputs<'_> {
+        HostInputs {
+            trace: &self.trace,
+            publics: &self.publics,
+            airvalues: &self.airvalues,
+            proofvalues: &self.proofvalues,
+        }
     }
 }
 
@@ -1146,14 +1180,14 @@ impl Bridge {
     /// `req.inputs` must point at buffers of the lengths the artifact's
     /// manifest implies, valid until this returns.
     pub unsafe fn prove(&self, req: &ProveRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
-        let owned = self.take(req)?;
-        self.prove_owned(&owned, proof_out)
+        let mut owned = self.take(req)?;
+        self.prove_owned(&mut owned, proof_out)
     }
 
     /// `prove` on a thread of its own: `done` receives the flat proof (or
     /// the error) when it finishes. The bridge's client serializes proves,
     /// so this frees the caller's thread rather than the GPU.
-    pub fn prove_async(self: &Arc<Self>, owned: OwnedRequest, done: Box<dyn FnOnce(Result<(Vec<u64>, ProveOutputs), String>) + Send + 'static>) {
+    pub fn prove_async(self: &Arc<Self>, mut owned: OwnedRequest, done: Box<dyn FnOnce(Result<(Vec<u64>, ProveOutputs), String>) + Send + 'static>) {
         let bridge = self.clone();
         std::thread::spawn(move || {
             let mut proof = vec![0u64; owned.proof_words];
@@ -1161,7 +1195,7 @@ impl Bridge {
             // the error path so the caller can stop the process instead of
             // waiting forever on a completion that will not come.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                bridge.prove_owned(&owned, &mut proof).map_err(|e| e.to_string())
+                bridge.prove_owned(&mut owned, &mut proof).map_err(|e| e.to_string())
             }));
             let result = match result {
                 Ok(Ok(out)) => Ok((proof, out)),
@@ -1209,7 +1243,7 @@ impl Bridge {
         Ok(Some(ahead))
     }
 
-    pub fn prove_owned(&self, req: &OwnedRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
+    pub fn prove_owned(&self, req: &mut OwnedRequest, proof_out: &mut [u64]) -> Result<ProveOutputs, Error> {
         let mut phase = nvtx::Phase::start("artifact");
         let t0 = Instant::now();
         let key = req.key.clone();
@@ -1235,14 +1269,10 @@ impl Bridge {
             // what a tighter budget trades for a lower peak.
             zzlog!("  {key} admitted after {:.2} s with {} MiB of uploads", t_admit.elapsed().as_secs_f64(), uploads >> 20);
         }
-        let mut inputs = InstanceInputs {
-            trace: &req.trace,
-            publics: &req.publics,
-            airvalues: &req.airvalues,
-            proofvalues: &req.proofvalues,
-            global_challenge: &req.global_challenge,
-            uploaded: None,
-        };
+        let host = req.take_host_words();
+        if let Ok(dir) = std::env::var("ZZ_DUMP_INPUTS") {
+            dump_case(&dir, &art.manifest, req, &host)?;
+        }
         // Ahead of the slot, while another prove may have the client: the
         // instance's uploads (their transfers queue behind that prove's
         // work) and, unless the AIR's fixed sections are already on the
@@ -1250,7 +1280,12 @@ impl Bridge {
         // residency only costs a read.
         let t = Instant::now();
         phase.set("upload_inputs");
-        let uploaded = driver::upload_inputs(&art, &inputs)?;
+        let uploaded = driver::upload_inputs(&art, &host.sections())?;
+        // No reader left: the prove binds the buffers above, and the dump
+        // has run. Held to the end of the prove they would cost a base trace
+        // of host memory per admitted prove, and admission allows more than
+        // one per client.
+        drop(host);
         let plan = self.fixed_ahead[slot_idx].plan(&key);
         phase.set("fixed_ahead");
         let prefetched = self.read_ahead_fixed(plan, &art, req)?;
@@ -1326,7 +1361,6 @@ impl Bridge {
             drop(prefetched);
             self.fixed_ahead[slot_idx].installed(&key, None);
         }
-        inputs.uploaded = Some(uploaded);
         if proof_out.len() != driver.proof_words() {
             return Err(format!(
                 "{key}: proof buffer holds {} words, layout says {}",
@@ -1336,35 +1370,11 @@ impl Bridge {
             .into());
         }
         let m = driver.manifest();
-        if let Ok(dir) = std::env::var("ZZ_DUMP_INPUTS") {
-            // The instance exactly as received, as a `zz_prove` case
-            // directory (the fixed sections and `case.json` included), for
-            // replaying it outside proofman.
-            let d = std::path::PathBuf::from(dir).join(format!("{}_{}", req.instance_id, key));
-            let _ = std::fs::create_dir_all(&d);
-            let (const_base, customs) = read_fixed(m, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
-            let mut files: Vec<(String, &[u64])> = vec![
-                ("trace".into(), inputs.trace),
-                ("publics".into(), inputs.publics),
-                ("airvalues".into(), inputs.airvalues),
-                ("proofvalues".into(), inputs.proofvalues),
-                ("global_challenge".into(), inputs.global_challenge),
-                ("const_base".into(), &const_base),
-            ];
-            files.extend(customs.iter().map(|(id, w)| (format!("custom_base_{id}"), w.as_slice())));
-            for (name, words) in files {
-                let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
-                let _ = std::fs::write(d.join(format!("{name}.bin")), bytes);
-            }
-            let _ = std::fs::write(
-                d.join("case.json"),
-                format!("{{\"air\": \"{}\", \"n_bits\": {}}}\n", m.air, m.n_bits),
-            );
-        }
         // `prove` opens phases of its own inside this one, so what stays
         // here is only the transcript's own setup.
         phase.set("prove");
         let mut transcript = transcript::HostTranscript::new(&m.hash_family)?;
+        let inputs = InstanceInputs { global_challenge: &req.global_challenge, uploaded };
         let proved = driver.prove(inputs, residency, &mut transcript, proof_out);
         if residency == driver::Residency::Release {
             // The sections went with the prove, on the error path too —
@@ -1453,6 +1463,31 @@ fn read_words(path: &str, skip_bytes: usize, n_words: usize) -> Result<Vec<u64>,
         *w = u64::from_le(*w);
     }
     Ok(words)
+}
+
+/// Write the instance exactly as received, as a `zz_prove` case directory
+/// (the fixed sections and `case.json` included), for replaying it outside
+/// proofman (`ZZ_DUMP_INPUTS`). Called where the host words still exist,
+/// which is before the upload releases them.
+fn dump_case(dir: &str, m: &manifest::Manifest, req: &OwnedRequest, host: &HostWords) -> Result<(), Error> {
+    let d = std::path::PathBuf::from(dir).join(format!("{}_{}", req.instance_id, req.key));
+    let _ = std::fs::create_dir_all(&d);
+    let (const_base, customs) = read_fixed(m, &req.const_pols_path, req.custom_fixed_path.as_deref())?;
+    let mut files: Vec<(String, &[u64])> = vec![
+        ("trace".into(), &host.trace),
+        ("publics".into(), &host.publics),
+        ("airvalues".into(), &host.airvalues),
+        ("proofvalues".into(), &host.proofvalues),
+        ("global_challenge".into(), &req.global_challenge),
+        ("const_base".into(), &const_base),
+    ];
+    files.extend(customs.iter().map(|(id, w)| (format!("custom_base_{id}"), w.as_slice())));
+    for (name, words) in files {
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        let _ = std::fs::write(d.join(format!("{name}.bin")), bytes);
+    }
+    let _ = std::fs::write(d.join("case.json"), format!("{{\"air\": \"{}\", \"n_bits\": {}}}\n", m.air, m.n_bits));
+    Ok(())
 }
 
 /// Whether pil2 wrote the custom-commit fixed file in its tiled device
@@ -1751,6 +1786,22 @@ mod tests {
         assert_eq!(parse_pending_bytes(Some("0")), 0);
     }
 
+    fn owned_request(trace_words: usize) -> OwnedRequest {
+        OwnedRequest {
+            key: "Rom_n22".into(),
+            const_pols_path: String::new(),
+            custom_fixed_path: None,
+            stream_id: None,
+            instance_id: 0,
+            trace: vec![0; trace_words],
+            publics: vec![0; 8],
+            airvalues: vec![0; 4],
+            proofvalues: vec![0; 2],
+            global_challenge: vec![0; 3],
+            proof_words: 0,
+        }
+    }
+
     #[test]
     fn an_instance_is_weighed_by_what_it_uploads() {
         // The budget is compared against the four sections
@@ -1758,20 +1809,26 @@ mod tests {
         // them -- it reaches the device inside the prove, not ahead of it --
         // and counting it here would weigh the instance by a buffer the
         // admission is not holding back.
-        let req = OwnedRequest {
-            key: "Rom_n22".into(),
-            const_pols_path: String::new(),
-            custom_fixed_path: None,
-            stream_id: None,
-            instance_id: 0,
-            trace: vec![0; 1 << 22],
-            publics: vec![0; 8],
-            airvalues: vec![0; 4],
-            proofvalues: vec![0; 2],
-            global_challenge: vec![0; 3],
-            proof_words: 0,
-        };
+        let req = owned_request(1 << 22);
         assert_eq!(req.upload_bytes(), (((1 << 22) + 8 + 4 + 2) * 8) as u64);
+    }
+
+    #[test]
+    fn the_instance_words_leave_the_request_at_its_upload() {
+        // The same four sections, moved out where the upload reads them, so
+        // the request holds no trace for the length of the prove that
+        // follows. `global_challenge` stays: it is the one section a prove
+        // still reads on the host, through the transcript.
+        let mut req = owned_request(1 << 22);
+        let host = req.take_host_words();
+        let sections = host.sections();
+        assert_eq!(sections.trace.len(), 1 << 22, "the upload was handed a short trace");
+        assert_eq!((sections.publics.len(), sections.airvalues.len(), sections.proofvalues.len()), (8, 4, 2));
+        // Moved, not copied: the allocation is the one the request held, so
+        // dropping `host` is what returns it.
+        assert_eq!(req.trace.capacity(), 0, "the request kept the trace's allocation");
+        assert_eq!(req.upload_bytes(), 0);
+        assert_eq!(req.global_challenge.len(), 3, "the prove lost the section it reads on the host");
     }
 
     #[test]

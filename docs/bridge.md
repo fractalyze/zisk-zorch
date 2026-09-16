@@ -622,6 +622,26 @@ with nothing on it admits any size, so the largest AIR is never refused
 outright. Any figure quoted against "the default admission" from before this
 is a different configuration.
 
+### The instance's host words go at the upload, not at the prove
+
+`gen_proof` returns before the prove runs, and the `StepsParams` pointers it
+was handed are valid only for that call, so the bridge copies each instance
+into host words of its own (`OwnedRequest`). `driver::upload_inputs` is that
+copy's only reader: a prove binds the device buffers the upload returned, and
+the one section it reads on the host is `global_challenge`, through the
+transcript. So the words leave the request where the upload is
+(`OwnedRequest::take_host_words`) and go when it returns. A base trace is a
+wide AIR's whole `2^nBits x cm1` section — over a gigabyte at `n22` — and
+admission allows more than one prove per client, so that is what holding them
+to the end of the prove costs in host RAM.
+
+The types carry the rule rather than a comment: the words the upload consumes
+are their own shape (`driver::HostInputs`), and what a prove takes
+(`driver::InstanceInputs`) carries an `Uploaded` that is not optional, so
+nothing on the prove's side can read host words at all. `ZZ_DUMP_INPUTS` is
+their one other reader, and it runs where they are still there, ahead of the
+slot.
+
 ### What the in-program transient is made of
 
 What a client holds beyond its registered buffers is what XLA allocated

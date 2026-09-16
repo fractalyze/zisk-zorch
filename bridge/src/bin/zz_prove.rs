@@ -22,7 +22,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use zisk_zorch_bridge::artifact::{new_client, Artifact};
-use zisk_zorch_bridge::driver::{AirDriver, FixedSections, InstanceInputs, Residency};
+use zisk_zorch_bridge::driver::{upload_inputs, AirDriver, FixedSections, HostInputs, InstanceInputs, Residency};
 use zisk_zorch_bridge::transcript::HostTranscript;
 
 /// Compile threads per AIR worker: one worker per AIR up to `threads`, and the
@@ -219,7 +219,8 @@ fn main() {
         custom_base: customs.iter().map(|(id, w)| (*id, w.as_slice())).collect::<HashMap<_, _>>(),
         uploaded: None,
     };
-    let mut driver = AirDriver::new(std::sync::Arc::new(art));
+    let art = std::sync::Arc::new(art);
+    let mut driver = AirDriver::new(art.clone());
     let t = Instant::now();
     driver.set_fixed(&fixed).unwrap();
     eprintln!("fixed sections in {:.2} s", t.elapsed().as_secs_f64());
@@ -229,16 +230,7 @@ fn main() {
     let airvalues = words(&case.join("airvalues.bin"));
     let proofvalues = words(&case.join("proofvalues.bin"));
     let global_challenge = words(&case.join("global_challenge.bin"));
-    // Built per prove: `prove` takes the inputs, uploads included, so each
-    // repeat uploads its own and releases them at their last reader.
-    let inputs = || InstanceInputs {
-        trace: &trace,
-        publics: &publics,
-        airvalues: &airvalues,
-        proofvalues: &proofvalues,
-        global_challenge: &global_challenge,
-        uploaded: None,
-    };
+    let host = HostInputs { trace: &trace, publics: &publics, airvalues: &airvalues, proofvalues: &proofvalues };
     let mut proof = vec![0u64; driver.proof_words()];
     let expected_path = case.join("expected_proof.bin");
     // Every prove is compared, not just the last: a prove that comes out wrong
@@ -247,9 +239,15 @@ fn main() {
     let expected = expected_path.exists().then(|| words(&expected_path));
     let mut wrong = Vec::new();
     for i in 0..=repeat {
+        // Per repeat, because a prove takes the buffers and releases them at
+        // their last reader, and off the clock, because the bridge's own
+        // uploads run ahead of the slot: what the figure below reports is a
+        // prove either way.
+        let uploaded = upload_inputs(&art, &host).unwrap();
         let t = Instant::now();
         let mut transcript = HostTranscript::new(&m.hash_family).unwrap();
-        let out = driver.prove(inputs(), Residency::Keep, &mut transcript, &mut proof).unwrap();
+        let inputs = InstanceInputs { global_challenge: &global_challenge, uploaded };
+        let out = driver.prove(inputs, Residency::Keep, &mut transcript, &mut proof).unwrap();
         let label = if i == 0 { "proved" } else { "warm prove" };
         eprintln!("{label} {:.3} s (nonce {})", t.elapsed().as_secs_f64(), out.nonce);
         let Some(expected) = expected.as_ref() else { continue };

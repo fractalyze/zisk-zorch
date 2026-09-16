@@ -54,8 +54,10 @@ pub fn upload_fixed(art: &Artifact, fixed: &FixedSections) -> Result<UploadedFix
     Ok(UploadedFixed { const_base, custom_base })
 }
 
-/// One `StepsParams` worth of host inputs, as canonical u64 words.
-pub struct InstanceInputs<'a> {
+/// The instance's host words, as canonical u64 words. `upload_inputs` is
+/// their only reader, which is what lets a caller holding a gigabyte of
+/// trace drop it as soon as the upload returns.
+pub struct HostInputs<'a> {
     /// (2^nBits, cm1 width)
     pub trace: &'a [u64],
     pub publics: &'a [u64],
@@ -63,10 +65,13 @@ pub struct InstanceInputs<'a> {
     pub airvalues: &'a [u64],
     /// dumped packing
     pub proofvalues: &'a [u64],
+}
+
+/// One `StepsParams` worth of inputs as a prove takes them: the sections
+/// already on the device, plus the one the transcript reads on the host.
+pub struct InstanceInputs<'a> {
     pub global_challenge: &'a [u64],
-    /// The same sections already on the device (`upload_inputs`), when the
-    /// caller could upload them while another prove had the client.
-    pub uploaded: Option<Uploaded>,
+    pub uploaded: Uploaded,
 }
 
 pub struct Uploaded {
@@ -80,11 +85,12 @@ pub struct Uploaded {
 /// behind another on the same client can have its uploads (a gigabyte for
 /// Main, DMA'd straight out of pageable host memory: the plugin stages a
 /// transfer through pinned memory only below `staging_threshold_bytes`,
-/// which defaults to 1 GiB) done before its turn. The caller hands the
-/// result back on `InstanceInputs::uploaded`, which `prove` takes: the
-/// buffers belong to that prove, and a second handle kept anywhere else
-/// would outlive the releases below and hold the trace to the last opening.
-pub fn upload_inputs(art: &Artifact, inp: &InstanceInputs) -> Result<Uploaded, Error> {
+/// which the bridge leaves at the plugin's own default) done before its
+/// turn. Every prove goes through here, so the words are dead from the
+/// moment it returns and the buffers are the prove's alone — a second
+/// handle kept anywhere else would outlive the releases below and hold the
+/// trace to the last opening.
+pub fn upload_inputs(art: &Artifact, inp: &HostInputs) -> Result<Uploaded, Error> {
     let m = &art.manifest;
     let spec = |prog: &str, input: &str| -> Result<crate::manifest::Spec, Error> {
         m.program(prog)?.input(input).cloned().ok_or_else(|| format!("{prog}: no input {input}").into())
@@ -313,7 +319,7 @@ impl AirDriver {
     /// words into `proof_out`.
     pub fn prove(
         &mut self,
-        mut inp: InstanceInputs,
+        inp: InstanceInputs,
         residency: Residency,
         transcript: &mut HostTranscript,
         proof_out: &mut [u64],
@@ -353,12 +359,9 @@ impl AirDriver {
         // Scalars ride PACKED, as the instance dumped them; the stage-2 hints
         // rewrite the air values below and every later program reads those.
         let mut env = fixed;
-        // Taken rather than cloned: from here the env holds the only handle
-        // to each uploaded section, so removing one below actually frees it.
-        let up = match inp.uploaded.take() {
-            Some(u) => u,
-            None => upload_inputs(art, &inp)?,
-        };
+        // Moved in, not borrowed: from here the env holds the only handle to
+        // each uploaded section, so removing one below actually frees it.
+        let up = inp.uploaded;
         env.insert("publics".into(), up.publics);
         env.insert("airvalues".into(), up.airvalues);
         env.insert("proofvalues".into(), up.proofvalues);
